@@ -510,7 +510,7 @@ export class RideMode {
     lines.push(`Top speed ${(st.topSpeed * MPH).toFixed(1)} mph`);
     const speed = ((st.finishSpeed ?? 0) * MPH).toFixed(1);
     const who = `${RIDERS[this.selection.rider].name} · ${TOBOGGANS[this.selection.toboggan].name} · ${this.setup.label}`;
-    this.card(beaten ? 'Hello Hello!' : 'Made it safely to Celerina!', who, lines, `${time.toFixed(2)}<small>s</small> ${speed}<small>mph</small>`);
+    this.card(beaten ? 'Hello Hello!' : 'Welcome to Celerina!', who, lines, `${time.toFixed(2)}<small>s</small> ${speed}<small>mph</small>`);
     $('ride-replay').hidden = true;
   }
 

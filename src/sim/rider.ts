@@ -98,9 +98,9 @@ export const PHYSICS = {
   /** Drag multiplier when sitting back on the knives (less streamlined). */
   dragKnives: 1.35,
   /** Peak rake deceleration per foot on the knives, at 1 g normal load (m/s²). */
-  rakeKnives: 1.6,
+  rakeKnives: 1.12,
   /** Rake deceleration per foot when lying forward (feet can't dig in as hard). */
-  rakeForward: 0.6,
+  rakeForward: 0.42,
   /** Arm steering on the knives (m/s² lateral at full input). */
   steerKnives: 6.5,
   /** Head-turn steering lying forward, per (m/s)² of speed. */

@@ -57,7 +57,7 @@ function start() {
   const bot = params.get('autopilot');
   if (bot && POLICIES[bot]) ride.autopilot = POLICIES[bot];
 
-  const select = new SelectMode(world, track, chosen);
+  const select = new SelectMode(world, track, chosen, sound);
   const showChoice = (sel: Selection) => {
     document.getElementById('menu-rider')!.textContent = `${RIDERS[sel.rider].name} · ${TOBOGGANS[sel.toboggan].name}`;
   };
@@ -75,7 +75,10 @@ function start() {
     viewer.setAttract(next === 'menu');
     if (next === 'select') select.open();
   };
-  document.getElementById('open-select')!.addEventListener('click', () => setMode('select'));
+  document.getElementById('open-select')!.addEventListener('click', () => {
+    sound.start();
+    setMode('select');
+  });
   select.onDone = (sel) => {
     ride.selection = sel;
     showChoice(sel);

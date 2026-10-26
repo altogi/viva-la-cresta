@@ -5,28 +5,37 @@ import * as THREE from 'three';
 import { RIDERS, TOBOGGANS, type RiderId, type RiderStats, type TobogganId } from '../sim/rider';
 import type { Track } from '../sim/track';
 import type { World } from '../render/world';
-import { RiderModel } from '../render/riderModel';
+import { RiderModel, type IdleAction } from '../render/riderModel';
 import { LOOKS } from '../render/riderLooks';
 import { toThree } from '../render/util';
+import { flagUrl } from '../ui/flags';
+import type { Sound } from '../audio/sound';
 import { saveSelection, type Selection } from './selection';
 
-const PROFILES: Record<RiderId, { flag: string; line: string; bio: string }> = {
+const PROFILES: Record<RiderId, { flag: string; line: string; bio: string; action: IdleAction }> = {
   maximilian: {
     flag: 'Germany · 20',
-    line: 'Light, lanky, quick',
-    bio: 'Lives his best life, curing Drakula hangovers at the run. Long arms steer hard and long legs make a powerful running start, but there is little weight to carry speed.',
+    line: 'Light. Lanky. Lightning off the start.',
+    bio: 'Out at Drakula till four, on the ice by nine. Arms like a crane, legs like a gazelle. Not much of him to carry speed.',
+    action: 'comb',
   },
   adelaide: {
     flag: 'England · 25',
-    line: 'The all-rounder',
-    bio: 'Loves a cold plunge and the family retreat to St Moritz. Middle of the field in weight and agility: no weakness to hide.',
+    line: 'Balanced. Fearless. No weak spots.',
+    bio: 'Cold plunge before breakfast, family chalet above the lake. Middle weight, middle agility, maximum nerve.',
+    action: 'flirt',
   },
   remo: {
     flag: 'Switzerland · 50',
-    line: 'Heavy, fast, hard to stop',
-    bio: 'Burly, bearded, rides all season and loves a beer after. A rocket on the straights, but slow to shift and slow to stop: plan Shuttlecock early.',
+    line: 'Heavy. Hairy. Hard to stop.',
+    bio: 'Rides every day of the season. A rocket on the straights, a nightmare to slow down. Plan Shuttlecock early. Beer after.',
+    action: 'burp',
   },
 };
+
+/** Seconds between idle gestures, and how long each takes. */
+const ACTION_EVERY = 5.5;
+const ACTION_LENGTH = 1.9;
 
 const TOBOGGAN_TEXT: Record<TobogganId, string> = {
   traditional: 'Steel frame and sliding cushion. Forgiving. Every rider starts on one.',
@@ -49,6 +58,7 @@ function ratings(r: RiderStats) {
 export class SelectMode {
   private preview: RiderModel | null = null;
   private time = 0;
+  private lastAction = -1;
   private readonly spot = new THREE.Vector3();
   private readonly heading: number;
   onDone: (selection: Selection) => void = () => {};
@@ -57,6 +67,7 @@ export class SelectMode {
     private readonly world: World,
     track: Track,
     public selection: Selection,
+    private readonly sound: Sound,
   ) {
     // Show the rider on the snow platform beside the Top start, by the hut.
     const st = track.frame(0);
@@ -77,7 +88,7 @@ export class SelectMode {
       card.className = 'rider-card';
       card.dataset.rider = id;
       card.innerHTML = `
-        <div class="rider-name">${r.name}</div>
+        <div class="rider-name"><img class="flag" src="${flagUrl(LOOKS[id].flag)}" alt="" />${r.name}</div>
         <div class="rider-flag">${p.flag} · ${p.line}</div>
         <div class="rider-bio">${p.bio}</div>
         <div class="rider-stats">${ratings(r)
@@ -102,7 +113,9 @@ export class SelectMode {
     for (const b of document.querySelectorAll<HTMLElement>('[data-toboggan]')) b.classList.toggle('chosen', b.dataset.toboggan === this.selection.toboggan);
     $('select-toboggan-text').textContent = `${TOBOGGANS[this.selection.toboggan].name}: ${TOBOGGAN_TEXT[this.selection.toboggan]}`;
     this.preview?.root.removeFromParent();
-    this.preview = new RiderModel(LOOKS[this.selection.rider], this.selection.toboggan);
+    this.preview = new RiderModel(LOOKS[this.selection.rider], this.selection.toboggan, { helmet: false });
+    this.time = 0;
+    this.lastAction = -1;
     this.preview.root.position.copy(this.spot);
     this.preview.root.rotation.y = this.heading;
     this.world.scene.add(this.preview.root);
@@ -120,14 +133,33 @@ export class SelectMode {
 
   update(dt: number) {
     this.time += dt;
-    this.preview?.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, cheer: 1, cheerTime: this.time * 0.35 });
-    // From a little way down the run, looking back up at the rider with the Top hut behind,
-    // swaying gently; aimed low so the rider sits in the open top third above the cards.
-    const a = this.heading - 0.35 + Math.sin(this.time * 0.25) * 0.25;
+    const preview = this.preview;
+    if (!preview) return;
+    // An idle gesture every few seconds (the first one soon after choosing).
+    const cycle = (this.time + ACTION_EVERY - 1.2) / ACTION_EVERY;
+    const index = Math.floor(cycle);
+    const into = (cycle - index) * ACTION_EVERY;
+    const acting = into < ACTION_LENGTH;
+    const action = PROFILES[this.selection.rider].action;
+    if (acting && index !== this.lastAction) {
+      this.lastAction = index;
+      if (action === 'burp') this.sound.burp();
+    }
+    preview.setPose({
+      posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0,
+      stand: { time: this.time, action: acting ? action : null, t: into / ACTION_LENGTH },
+    });
+    // A close-up: just in front of the rider, a touch below eye level (defiant), the face in the
+    // open top third of the screen above the cards.
+    preview.root.updateMatrixWorld(true);
+    const face = preview.head.getWorldPosition(new THREE.Vector3());
+    const forward = new THREE.Vector3(Math.cos(this.heading), 0, -Math.sin(this.heading));
+    const side = new THREE.Vector3(Math.sin(this.heading), 0, Math.cos(this.heading));
+    const sway = Math.sin(this.time * 0.3) * 0.25;
     const cam = this.world.camera;
-    cam.position.set(this.spot.x + Math.cos(a) * 7.5, this.spot.y + 1.4, this.spot.z - Math.sin(a) * 7.5);
+    cam.position.copy(face).addScaledVector(forward, 2.1).addScaledVector(side, 0.35 + sway).add(new THREE.Vector3(0, -0.25, 0));
     cam.up.set(0, 1, 0);
-    cam.lookAt(this.spot.x, this.spot.y - 1.5, this.spot.z);
+    cam.lookAt(face.clone().add(new THREE.Vector3(0, -0.62, 0)));
     this.world.followSun(this.spot);
   }
 }

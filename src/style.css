@@ -995,3 +995,11 @@ body.selecting #select {
   color: #fff;
   border: 0;
 }
+
+.rider-name .flag {
+  height: 16px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+}

@@ -1,18 +1,22 @@
-// A code-built rider on their toboggan, posed from the controls. Arms and legs are two-bone chains
-// solved by IK, so poses are described by where the hands, feet and hips should be:
-//   forward:   lying flat, hands tucked by the hips, legs out behind;
-//   knives:    slid back, chest up, right hand on the front-right handle, left hand on the
-//              toboggan's left edge by the hip (as in the photographs);
-//   raking:    a boot driven down onto the ice;
+// A code-built rider on their toboggan, after the character sheets. Arms and legs are two-bone
+// chains solved by IK, so poses are described by where the hands, feet and hips should be:
+//   forward:   lying flat, hands tucked by the hips, legs straight out behind and together;
+//   knives:    slid back, chest up, legs straight and apart; right hand on the front-right handle,
+//              left hand on the toboggan's left edge by the hip (as in the photographs);
+//   raking:    a straight leg swung down until the boot bites the ice;
 //   running:   bent over beside the toboggan, pushing it, legs striding with the ground covered;
-//   cheering:  on their feet beside the toboggan at Celerina, arms up.
+//   cheering:  on their feet beside the toboggan at Celerina, arms up;
+//   standing:  defiant, hands on hips, breathing; with each rider's own idle gesture.
 // Local frame: +X forward (head first), +Y up, +Z to the rider's right; origin on the ice under
-// the toboggan's centre.
+// the toboggan's centre. Head frame: +X is where the face looks, +Y the crown.
 
 import * as THREE from 'three';
 import type { TobogganId } from '../sim/rider';
+import { drawFlag } from '../ui/flags';
 import { solveTwoBone } from './ik';
 import { LOOKS, type RiderLook } from './riderLooks';
+
+export type IdleAction = 'comb' | 'flirt' | 'burp';
 
 export interface RiderPose {
   posture: number; // 0 forward … 1 knives
@@ -26,18 +30,34 @@ export interface RiderPose {
   cheer?: number;
   /** Seconds into the celebration, for the waving. */
   cheerTime?: number;
+  /** Standing for the camera (rider selection): breathing, with an occasional gesture. */
+  stand?: { time: number; action: IdleAction | null; t: number };
 }
 
 const m = (color: string, roughness = 0.55, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+const smooth = (t: number) => t * t * (3 - 2 * t);
+const window01 = (t: number, a: number, b: number) => THREE.MathUtils.smoothstep(t, a, a + 0.12) * (1 - THREE.MathUtils.smoothstep(t, b - 0.12, b));
 
 /** A limb segment along +X from 0 to `length`, tapering from r0 to r1, with a rounded joint at the start. */
 function segment(length: number, r0: number, r1: number, material: THREE.Material): THREE.Group {
   const g = new THREE.Group();
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, length, 12).rotateZ(-Math.PI / 2).translate(length / 2, 0, 0), material);
-  const joint = new THREE.Mesh(new THREE.SphereGeometry(r0 * 1.02, 12, 10), material);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, length, 14).rotateZ(-Math.PI / 2).translate(length / 2, 0, 0), material);
+  const joint = new THREE.Mesh(new THREE.SphereGeometry(r0 * 1.02, 14, 10), material);
   g.add(shaft, joint);
   return g;
+}
+
+/** A canvas texture for lettering and bibs. */
+function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  draw(canvas.getContext('2d')!);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
 }
 
 interface Chain {
@@ -52,10 +72,18 @@ interface Targets {
   pitch: number;
   roll: number;
   headYaw: number;
+  headTilt: number;
+  headRoll: number;
   hands: [THREE.Vector3, THREE.Vector3]; // left, right
   feet: [THREE.Vector3, THREE.Vector3];
   elbowPoles: [THREE.Vector3, THREE.Vector3];
   kneePoles: [THREE.Vector3, THREE.Vector3];
+}
+
+interface Face {
+  eyes: THREE.Group[];
+  mouth: THREE.Group;
+  open: THREE.Mesh;
 }
 
 export class RiderModel {
@@ -63,16 +91,20 @@ export class RiderModel {
   readonly toboggan = new THREE.Group();
   /** Everything of the rider, pivoting at the pelvis (detached as one body in a fall). */
   readonly body = new THREE.Group();
-  /** The helmet; hidden for the helmet-camera view. */
+  /** The head (centred on the skull); hidden for the helmet-camera view. */
   readonly head = new THREE.Group();
+  /** The helmet, worn when riding. */
+  readonly helmet = new THREE.Group();
   /** Soft contact shadow on the ice under the toboggan. */
   readonly contactShadow: THREE.Mesh;
   private readonly torso = new THREE.Group();
   private readonly arms: Chain[] = [];
   private readonly legs: Chain[] = [];
+  private readonly face: Face;
   private readonly shoulder: number;
   private readonly shoulderWidth: number;
   private readonly hipWidth: number;
+  private readonly legLength: number;
   private readonly seat: number;
   private readonly handleY: number;
   private readonly look: RiderLook;
@@ -80,12 +112,13 @@ export class RiderModel {
   constructor(
     look: RiderLook = LOOKS.adelaide,
     readonly tobogganId: TobogganId = 'traditional',
+    options: { helmet?: boolean } = {},
   ) {
     this.look = look;
     const s = look.scale;
     this.shoulder = 0.5 * s;
     this.shoulderWidth = 0.19 * s * look.build;
-    this.hipWidth = 0.1 * s * Math.sqrt(look.build);
+    this.hipWidth = 0.095 * s * Math.sqrt(look.build);
     const tob = tobogganId === 'flattop' ? buildFlatTop() : buildTraditional();
     this.toboggan.add(tob.group);
     this.seat = tob.seat;
@@ -93,46 +126,83 @@ export class RiderModel {
 
     this.root.add(this.toboggan, this.body);
     this.body.add(this.torso);
+    this.buildPelvis(look);
     this.buildTorso(look);
-    this.buildHead(look);
-    const gloves = m('#18181a', 0.7);
-    const boots = m('#151517', 0.6);
+    this.face = this.buildHead(look);
+    this.helmet.visible = (options.helmet ?? true) && look.helmet !== null;
+
+    const o = look.outfit;
+    const hands = m(o.hands, 0.7);
+    const boots = m(o.boots, 0.6);
+    const pads = m(o.pads, 0.6);
     const steel = m('#c9ccd1', 0.25, 0.6);
     const limb = 0.055 * s * look.limbs;
     for (const side of [-1, 1]) {
       // Arms hang off the shoulders, in the torso's frame.
       const upper = 0.3 * s * look.arms;
       const lower = 0.28 * s * look.arms;
-      const suitArm = m(side < 0 ? look.suit.leftArm : look.suit.rightArm, 0.45);
-      const arm = this.chain(upper, lower, limb * 1.05, limb * 0.85, limb * 0.75, suitArm, suitArm);
-      arm.root.position.set(this.shoulder, 0.02, side * this.shoulderWidth);
-      const glove = new THREE.Mesh(new THREE.SphereGeometry(limb * 1.15, 10, 8).scale(1.3, 0.8, 1), gloves);
-      glove.position.x = lower + limb * 0.6;
-      arm.mid.add(glove);
+      const arm = this.chain(upper, lower, limb * 1.05, limb * 0.88, limb * 0.75, m(o.upperArm, 0.5), m(o.forearm, 0.5));
+      arm.root.position.set(this.shoulder - 0.02, 0.0, side * this.shoulderWidth);
+      const hand = new THREE.Mesh(new THREE.SphereGeometry(limb * 1.15, 10, 8).scale(1.35, 0.75, 1.05), hands);
+      hand.position.x = lower + limb * 0.7;
+      const elbow = new THREE.Mesh(new THREE.SphereGeometry(limb * 1.18, 10, 8), pads);
+      arm.mid.add(hand, elbow);
+      if (o.shoulderPads) {
+        const pad = new THREE.Mesh(new THREE.SphereGeometry(limb * 1.6, 12, 8), pads);
+        arm.root.add(pad);
+      }
       this.torso.add(arm.root);
       this.arms.push(arm);
       // Legs from the hips, in the pelvis frame.
       const thigh = 0.44 * s;
       const shin = 0.43 * s;
-      const suitLeg = m(side < 0 ? look.suit.leftLeg : look.suit.rightLeg, 0.45);
-      const leg = this.chain(thigh, shin, limb * 1.7, limb * 1.25, limb * 0.95, suitLeg, suitLeg);
-      leg.root.position.set(-0.02, -0.02, side * this.hipWidth);
-      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.13 * s, 0.11 * s, 0.11 * s), boots);
-      boot.position.set(shin + 0.03 * s, -0.02 * s, 0);
-      const rake = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.06 * s, 0.1 * s), steel);
-      rake.position.set(shin + 0.1 * s, -0.04 * s, 0);
-      leg.mid.add(boot, rake);
+      const leg = this.chain(thigh, shin, limb * 1.75, limb * 1.25, limb * 0.95, m(o.thigh, 0.5), m(o.shin, 0.55));
+      leg.root.position.set(-0.03, -0.015, side * this.hipWidth);
+      const knee = new THREE.Mesh(new THREE.SphereGeometry(limb * 1.45, 12, 8).scale(1, 1.15, 1.15), pads);
+      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.14 * s, 0.11 * s, 0.11 * s), boots);
+      boot.position.set(shin + 0.04 * s, 0, 0);
+      const toe = new THREE.Mesh(new THREE.BoxGeometry(0.06 * s, 0.13 * s, 0.1 * s), boots);
+      toe.position.set(shin + 0.1 * s, -0.02 * s, 0);
+      const rake = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.08 * s, 0.1 * s), steel);
+      rake.position.set(shin + 0.14 * s, -0.03 * s, 0);
+      leg.mid.add(knee, boot, toe, rake);
+      if (o.legStripe) {
+        // A white stripe down both sides of thigh and shin.
+        const stripe = m(o.legStripe, 0.5);
+        for (const z of [-1, 1]) {
+          const a = new THREE.Mesh(new THREE.BoxGeometry(thigh * 0.9, 0.012, 0.006), stripe);
+          a.position.set(thigh * 0.5, 0, z * limb * 1.5);
+          leg.root.add(a);
+          const b = new THREE.Mesh(new THREE.BoxGeometry(shin * 0.85, 0.012, 0.006), stripe);
+          b.position.set(shin * 0.5, 0, z * limb * 1.12);
+          leg.mid.add(b);
+        }
+      }
+      if (o.bottle && side > 0) {
+        // The beer, tucked into the top of the right sock.
+        const bottle = new THREE.Group();
+        const glass = new THREE.MeshStandardMaterial({ color: '#4a2a10', roughness: 0.15, metalness: 0.2 });
+        const bodyGlass = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.14, 10).rotateZ(Math.PI / 2), glass);
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.02, 0.07, 8).rotateZ(Math.PI / 2), glass);
+        neck.position.x = -0.1;
+        const label = new THREE.Mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.06, 10).rotateZ(Math.PI / 2), m('#efe2c2', 0.6));
+        bottle.add(bodyGlass, neck, label);
+        bottle.position.set(0.14 * s, 0, limb * 1.2 + 0.03);
+        leg.mid.add(bottle);
+      }
       this.body.add(leg.root);
       this.legs.push(leg);
     }
+    this.legLength = (0.44 + 0.43) * s;
 
-    this.root.traverse((o) => (o.castShadow = true));
+    this.root.traverse((obj) => (obj.castShadow = true));
     this.contactShadow = new THREE.Mesh(
       new THREE.PlaneGeometry(1.9, 0.9).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, opacity: 0.55 }),
     );
     this.contactShadow.position.set(-0.15, 0.015, 0);
     this.contactShadow.renderOrder = 1;
+    this.contactShadow.castShadow = false;
     this.root.add(this.contactShadow);
     this.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0 });
   }
@@ -147,101 +217,276 @@ export class RiderModel {
     return { root, mid, upper, lower };
   }
 
-  /** Pelvis to shoulders: a lathe-turned torso, flattened front to back. */
+  /** Hips and seat: a pelvis and glutes joining the legs to the torso. */
+  private buildPelvis(look: RiderLook) {
+    const s = look.scale;
+    const w = Math.sqrt(look.build);
+    const mat = m(look.outfit.pelvis, 0.55);
+    const pelvis = new THREE.Mesh(new THREE.SphereGeometry(0.13 * s, 16, 12).scale(0.85, 0.78, 1.1 * w), mat);
+    pelvis.position.x = 0.01;
+    this.body.add(pelvis);
+    // The torso's back (+Y in the pelvis frame) faces up when lying: the glutes are there.
+    for (const side of [-1, 1]) {
+      const glute = new THREE.Mesh(new THREE.SphereGeometry(0.092 * s * w, 14, 10).scale(1.2, 0.85, 1), mat);
+      glute.position.set(-0.05 * s, 0.045 * s, side * 0.068 * s * w);
+      this.body.add(glute);
+    }
+  }
+
+  /** Pelvis to shoulders: a lathe-turned torso, flattened front to back, with lettering and bib. */
   private buildTorso(look: RiderLook) {
     const s = look.scale;
     const L = this.shoulder;
     const w = look.build;
+    const o = look.outfit;
     const profile = [
-      [0.0, 0.13], [0.04, 0.15], [0.14, 0.135], [0.24, 0.14], [0.34, 0.165], [0.43, 0.175], [(L * 0.94) / s, 0.15], [L / s, 0.09], [(L * 1.06) / s, 0.05],
+      [0.02, 0.135], [0.08, 0.14], [0.16, 0.13], [0.26, 0.142], [0.36, 0.165], [0.44, 0.172], [(L * 0.94) / s, 0.15], [L / s, 0.085], [(L * 1.04) / s, 0.05],
     ].map(([y, r]) => new THREE.Vector2(r * s, y * s));
-    const geo = new THREE.LatheGeometry(profile, 18).rotateZ(-Math.PI / 2);
+    const geo = new THREE.LatheGeometry(profile, 20).rotateZ(-Math.PI / 2);
     geo.scale(1, 0.72, w);
-    this.torso.add(new THREE.Mesh(geo, m(look.suit.torso, 0.45)));
-    // A suit stripe down each flank.
-    const stripe = m(look.suit.accent, 0.5);
-    for (const side of [-1, 1]) {
-      const band = new THREE.Mesh(new THREE.BoxGeometry(L * 0.85, 0.02 * s, 0.012), stripe);
-      band.position.set(L * 0.5, 0.02 * s, side * 0.155 * s * w);
-      this.torso.add(band);
+    this.torso.add(new THREE.Mesh(geo, m(o.torso, look.id === 'remo' ? 0.95 : 0.5)));
+    const depth = 0.165 * s * 0.72;
+    const front = -depth; // belly side (faces the ice when lying)
+    const back = depth;
+    // Neck, up into the head.
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045 * s, 0.052 * s, 0.12 * s, 10).rotateZ(-Math.PI / 2), m(look.skin, 0.6));
+    neck.position.set(L + 0.04 * s, 0, 0);
+    this.torso.add(neck);
+    if (o.lettering) {
+      // "CRESTA RUN" across the chest, with the flag patch.
+      const tex = canvasTexture(256, 96, (g) => {
+        g.clearRect(0, 0, 256, 96);
+        g.fillStyle = o.lettering!;
+        g.font = 'bold 44px Outfit, Verdana, sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText('CRESTA RUN', 128, 60);
+        drawFlag(g, look.flag, 196, 4, 36, 24);
+      });
+      const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.26 * s * w, 0.1 * s), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+      // Reads across the chest: text along the rider's right, facing out of the belly.
+      plate.rotation.set(Math.PI / 2, 0, -Math.PI / 2);
+      plate.position.set(L * 0.78, front - 0.004, 0);
+      this.torso.add(plate);
+    }
+    if (o.bib) {
+      // Race number on the back, under the flag.
+      const tex = canvasTexture(160, 192, (g) => {
+        g.fillStyle = '#f4f4f0';
+        g.fillRect(0, 0, 160, 192);
+        drawFlag(g, look.flag, 40, 10, 80, 48);
+        g.fillStyle = '#16181a';
+        g.font = 'bold 96px Outfit, Verdana, sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(o.bib!, 80, 128);
+      });
+      const bib = new THREE.Mesh(new THREE.PlaneGeometry(0.17 * s, 0.2 * s), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 }));
+      bib.rotation.set(-Math.PI / 2, 0, -Math.PI / 2);
+      bib.position.set(L * 0.62, back + 0.004, 0);
+      this.torso.add(bib);
+    }
+    if (o.braces) {
+      // Lederhosen braces over the shoulders, with the chest bar.
+      const leather = m(o.braces, 0.7);
+      // Each strap follows the curve of the body, front and back, over the shoulder.
+      const radiusAt = (x: number) => {
+        for (let i = 1; i < profile.length; i++) {
+          const a = profile[i - 1];
+          const b = profile[i];
+          if (x <= b.y) return a.x + ((b.x - a.x) * Math.max(0, x - a.y)) / (b.y - a.y);
+        }
+        return profile[profile.length - 1].x;
+      };
+      for (const side of [-1, 1]) {
+        const z = side * 0.075 * s * w;
+        for (const face of [-1, 1]) {
+          const points: THREE.Vector3[] = [];
+          for (let i = 0; i <= 10; i++) {
+            const x = 0.06 * s + (L * 0.96 - 0.06 * s) * (i / 10);
+            const r = radiusAt(x);
+            const y = face * (0.72 * r * Math.sqrt(Math.max(0, 1 - (z / (r * w)) ** 2)) + 0.008);
+            points.push(new THREE.Vector3(x, y, z));
+          }
+          const strap = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 16, 0.011 * s, 5), leather);
+          this.torso.add(strap);
+        }
+      }
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.06 * s, 0.01, 0.2 * s * w), leather);
+      bar.position.set(L * 0.7, front - 0.008, 0);
+      this.torso.add(bar);
+      const tex = canvasTexture(256, 64, (g) => {
+        g.fillStyle = '#e9d8b4';
+        g.font = 'bold 34px Georgia, serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText('CRESTA RUN', 128, 34);
+      });
+      const label = new THREE.Mesh(new THREE.PlaneGeometry(0.19 * s * w, 0.05 * s), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+      label.rotation.set(Math.PI / 2, 0, -Math.PI / 2);
+      label.position.set(L * 0.7, front - 0.014, 0);
+      this.torso.add(label);
+      // A flag patch on the right sleeve's shoulder.
+      const patch = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.05 * s, 0.05 * s),
+        new THREE.MeshBasicMaterial({ map: canvasTexture(40, 40, (g) => drawFlag(g, look.flag, 0, 0, 40, 40)) }),
+      );
+      patch.position.set(L * 0.88, 0, this.shoulderWidth + 0.035 * s);
+      this.torso.add(patch);
     }
   }
 
-  /** Full-face helmet: shell, dark visor, chin guard, stripes; ponytail or beard where they show. */
-  private buildHead(look: RiderLook) {
+  /** Head and face, hair, beard; the helmet over them. */
+  private buildHead(look: RiderLook): Face {
     const s = look.scale;
-    const r = 0.145;
-    this.head.position.set(this.shoulder + 0.07 * s, 0.02, 0);
+    this.head.position.set(this.shoulder + 0.17 * s, 0, 0);
+    this.head.scale.setScalar(s);
     this.torso.add(this.head);
-    const shell = m(look.helmet.shell, 0.3, 0.1);
-    const helmet = new THREE.Mesh(new THREE.SphereGeometry(r, 20, 16), shell);
-    helmet.position.x = r * 0.9;
-    helmet.scale.set(1.08, 1, 0.95);
-    // Visor and chin guard face forward (+X).
-    const visor = new THREE.Mesh(
-      new THREE.SphereGeometry(r * 1.02, 20, 10, Math.PI - 0.75, 1.5, 1.35, 0.55),
-      new THREE.MeshStandardMaterial({ color: '#15181c', roughness: 0.08, metalness: 0.6 }),
-    );
-    visor.position.copy(helmet.position);
-    visor.scale.copy(helmet.scale);
-    const chin = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 8, Math.PI - 0.6, 1.2, 1.9, 0.6), shell);
-    chin.position.copy(helmet.position);
-    chin.scale.copy(helmet.scale);
-    this.head.add(helmet, visor, chin);
-    look.helmet.stripes.forEach((color, i) => {
-      const stripe = new THREE.Mesh(new THREE.TorusGeometry(r * 1.005, 0.018, 6, 24, Math.PI), m(color, 0.35));
-      stripe.position.copy(helmet.position);
-      stripe.position.z += (i - (look.helmet.stripes.length - 1) / 2) * 0.042;
-      stripe.scale.copy(helmet.scale);
-      this.head.add(stripe);
-    });
-    if (look.id === 'remo') {
-      // A white cross on each side of the red helmet.
+    const skin = m(look.skin, 0.6);
+    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 16).scale(1.0, 1.16, 0.88), skin);
+    const jaw = new THREE.Mesh(new THREE.SphereGeometry(0.075, 16, 12).scale(1.05, 0.8, 0.9), skin);
+    jaw.position.set(0.03, -0.055, 0);
+    this.head.add(skull, jaw);
+    for (const side of [-1, 1]) {
+      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6).scale(0.6, 1.2, 0.5), skin);
+      ear.position.set(-0.005, 0, side * 0.09);
+      this.head.add(ear);
+    }
+    // Eyes (grouped so they can wink), brows, nose.
+    const eyes: THREE.Group[] = [];
+    const iris = m(look.id === 'adelaide' ? '#3b6fb6' : '#4a3226', 0.3);
+    for (const side of [-1, 1]) {
+      const eye = new THREE.Group();
+      eye.position.set(0.087, 0.022, side * 0.036);
+      eye.add(new THREE.Mesh(new THREE.SphereGeometry(0.016, 10, 8), m('#f6f4ef', 0.3)));
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.0095, 8, 6), iris);
+      pupil.position.x = 0.011;
+      eye.add(pupil);
+      this.head.add(eye);
+      eyes.push(eye);
+      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.008, 0.034), m(look.hair.color, 0.8));
+      brow.position.set(0.094, 0.05, side * 0.036);
+      brow.rotation.x = side * 0.22; // inner ends down: a determined look
+      this.head.add(brow);
+    }
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.016, 10, 8).scale(1, 1.4, 0.9), skin);
+    nose.position.set(0.102, 0.0, 0);
+    this.head.add(nose);
+    if (look.cheeks) {
       for (const side of [-1, 1]) {
-        const cross = new THREE.Group();
-        cross.add(new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.02, 0.004), m('#ffffff')));
-        cross.add(new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.07, 0.004), m('#ffffff')));
-        cross.position.set(helmet.position.x - 0.01, 0.02, side * r * 0.94);
-        this.head.add(cross);
+        const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.02, 10, 8).scale(0.3, 0.8, 1), m(look.cheeks, 0.7));
+        cheek.position.set(0.085, -0.012, side * 0.052);
+        this.head.add(cheek);
       }
     }
-    if (look.ponytail) {
-      const hair = m(look.ponytail, 0.8);
-      const tail = new THREE.Group();
-      tail.position.set(helmet.position.x - r * 0.95, -0.03, 0);
-      const a = new THREE.Mesh(new THREE.CapsuleGeometry(0.03, 0.12, 4, 8).rotateZ(Math.PI / 2), hair);
-      a.position.x = -0.08;
-      const b = new THREE.Mesh(new THREE.CapsuleGeometry(0.022, 0.1, 4, 8).rotateZ(Math.PI / 2), hair);
-      b.position.set(-0.19, -0.02, 0);
-      tail.add(a, b);
-      this.head.add(tail);
+    // Hair.
+    const hair = m(look.hair.color, 0.85);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.106, 18, 12, 0, Math.PI * 2, 0, look.hair.style === 'shaggy' ? 1.45 : 1.25), hair);
+    cap.position.set(-0.012, 0.008, 0);
+    cap.scale.set(1.05, 1.12, 0.94);
+    cap.rotation.z = 0.25; // hairline set back from the forehead
+    this.head.add(cap);
+    if (look.hair.style === 'slick') {
+      // Slicked back: a smooth crest swept towards the back.
+      const crest = new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 10).scale(1.5, 0.55, 0.95), hair);
+      crest.position.set(-0.01, 0.1, 0);
+      this.head.add(crest);
+    } else if (look.hair.style === 'bun') {
+      const bun = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), hair);
+      bun.position.set(-0.08, 0.11, 0);
+      this.head.add(bun);
+    } else {
+      for (const [x, y, z] of [[-0.05, 0.09, 0.05], [-0.06, 0.08, -0.05], [0.02, 0.11, 0.04], [-0.09, 0.03, 0]]) {
+        const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), hair);
+        tuft.position.set(x, y, z);
+        this.head.add(tuft);
+      }
     }
     if (look.beard) {
-      const beard = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 8).scale(1, 0.75, 1.2), m(look.beard, 0.95));
-      beard.position.set(helmet.position.x + r * 0.55, -r * 0.85, 0);
-      this.head.add(beard);
+      const beardMat = m(look.beard, 0.95);
+      const beard = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 10).scale(0.95, 1.05, 1.08), beardMat);
+      beard.position.set(0.045, -0.07, 0);
+      const moustache = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 6).scale(0.6, 0.45, 1.6), beardMat);
+      moustache.position.set(0.1, -0.025, 0);
+      this.head.add(beard, moustache);
     }
+    // Mouth: a grin, which can open (a burp).
+    const mouth = new THREE.Group();
+    mouth.position.set(look.beard ? 0.112 : 0.097, -0.042, 0);
+    const smile = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.0055, 6, 14, Math.PI).rotateY(Math.PI / 2).rotateX(Math.PI), m('#7a2a2a', 0.5));
+    smile.position.y = 0.012;
+    const teeth = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.008, 0.032), m('#f7f5ee', 0.3));
+    teeth.position.set(0.002, -0.004, 0);
+    const open = new THREE.Mesh(new THREE.SphereGeometry(0.02, 10, 8).scale(0.3, 1, 1.3), m('#3a1414', 0.6));
+    open.scale.y = 0.001;
+    mouth.add(smile, teeth, open);
+    this.head.add(mouth);
+    // The helmet, worn when riding.
+    if (look.helmet) {
+      const shell = m(look.helmet.shell, 0.28, 0.15);
+      const r = 0.142;
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(r, 22, 16), shell);
+      dome.scale.set(1.08, 1.02, 0.95);
+      dome.position.set(0.01, 0.005, 0);
+      const visor = new THREE.Mesh(
+        new THREE.SphereGeometry(r * 1.025, 22, 10, Math.PI - 0.8, 1.6, 1.3, 0.62),
+        new THREE.MeshStandardMaterial({ color: look.helmet.visor, roughness: 0.06, metalness: 0.75 }),
+      );
+      visor.scale.copy(dome.scale);
+      visor.position.copy(dome.position);
+      const chin = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 8, Math.PI - 0.65, 1.3, 1.92, 0.62), shell);
+      chin.scale.copy(dome.scale);
+      chin.position.copy(dome.position);
+      const trim = new THREE.Mesh(new THREE.TorusGeometry(r * 1.02, 0.009, 6, 28), m(look.helmet.trim, 0.3, 0.4));
+      trim.rotation.y = Math.PI / 2;
+      trim.scale.copy(dome.scale);
+      trim.position.copy(dome.position);
+      this.helmet.add(dome, visor, chin, trim);
+      this.head.add(this.helmet);
+    }
+    return { eyes, mouth, open };
+  }
+
+  /** Facial expression: a wink of the left eye, an open mouth. */
+  private express(wink: number, open: number) {
+    this.face.eyes[0].scale.y = 1 - 0.9 * wink;
+    this.face.open.scale.y = Math.max(0.001, open);
+    this.face.mouth.scale.setScalar(1 + open * 0.4);
   }
 
   setPose(p: RiderPose) {
-    const ride = this.ridingTargets(p);
-    let targets = ride;
-    if (p.cheer && p.cheer > 0) targets = blendTargets(ride, this.cheeringTargets(p.cheerTime ?? 0), smooth(p.cheer));
-    else if (p.mount < 1) {
-      targets = blendTargets(this.runningTargets(p.runPhase), ride, smooth(p.mount));
-      targets.pelvis.y += Math.sin(Math.PI * p.mount) * 0.32; // the little spring onto the toboggan
+    let targets: Targets;
+    let wink = 0;
+    let open = 0;
+    if (p.stand) {
+      ({ targets, wink, open } = this.standingTargets(p.stand.time, p.stand.action, p.stand.t));
+    } else {
+      targets = this.ridingTargets(p);
+      if (p.cheer && p.cheer > 0) targets = blendTargets(targets, this.cheeringTargets(p.cheerTime ?? 0), smooth(p.cheer));
+      else if (p.mount < 1) {
+        targets = blendTargets(this.runningTargets(p.runPhase), targets, smooth(p.mount));
+        targets.pelvis.y += Math.sin(Math.PI * p.mount) * 0.32; // the little spring onto the toboggan
+      }
     }
     this.apply(targets);
+    this.express(wink, open);
     const cushion = this.toboggan.getObjectByName('cushion');
     if (cushion) cushion.position.x = THREE.MathUtils.clamp(this.body.position.x * 0.8, -0.25, 0.12);
+  }
+
+  /** Where a hip sits in the toboggan frame, for a pelvis position and pitch/roll. */
+  private hipAt(pelvis: THREE.Vector3, pitch: number, roll: number, side: number): THREE.Vector3 {
+    const local = V(-0.03, -0.015, side * this.hipWidth);
+    return local.applyEuler(new THREE.Euler(roll, 0, pitch)).add(pelvis);
   }
 
   /** Lying on the toboggan: forward on the smooth runners, or slid back on the knives. */
   private ridingTargets(p: RiderPose): Targets {
     const s = this.look.scale;
     const k = p.posture;
-    const pelvis = V(0.08 - 0.3 * k, this.seat + 0.07 * this.look.build, 0);
+    const pelvis = V(0.08 - 0.3 * k, this.seat + 0.075 * Math.sqrt(this.look.build), 0);
     const pitch = 0.03 + 0.24 * k;
+    const roll = -p.steer * k * 0.18;
     const steerKnives = p.steer * k;
     // Hands: tucked by the hips when forward; on the knives, right on the front handle,
     // left on the left edge by the hip. Steering pushes the hands forward or back a touch.
@@ -251,20 +496,29 @@ export class RiderModel {
       V(0.55 + steerKnives * 0.04, this.handleY, 0.21),
     ];
     const hands: [THREE.Vector3, THREE.Vector3] = [tucked[0].lerp(knives[0], k), tucked[1].lerp(knives[1], k)];
-    // Feet: out behind, a little raised and spread (wider on the knives); a raking boot goes down to the ice.
-    const legLen = (0.44 + 0.43) * s;
-    const foot = (side: number, rake: number) =>
-      V(pelvis.x - legLen * (0.95 - rake * 0.12), this.seat + 0.1 - (this.seat + 0.07) * rake, side * (0.14 + 0.08 * k) * s);
+    // Legs straight: together lying forward, apart on the knives. A raking leg swings down,
+    // still straight, until the boot reaches the ice. Targets sit just past full reach.
+    const reach = this.legLength + 0.06;
+    const foot = (side: number, rake: number) => {
+      const hip = this.hipAt(pelvis, pitch, roll, side);
+      const spread = side * (0.015 + 0.24 * k);
+      const lift = 0.06;
+      const down = (0.025 - hip.y) / this.legLength;
+      const dir = V(-1, lift + (down - lift) * rake, spread).normalize();
+      return hip.addScaledVector(dir, reach);
+    };
     return {
       pelvis,
       pitch,
-      roll: -steerKnives * 0.18,
+      roll,
       headYaw: p.steer * (1 - k) * 0.6,
+      headTilt: 0,
+      headRoll: 0,
       hands,
       feet: [foot(-1, p.rakeLeft), foot(1, p.rakeRight)],
-      // Elbows bend up and out, just above the back, never up into the air.
+      // Elbows bend up and out, just above the back; any knee bend goes up, never into the ice.
       elbowPoles: [V(pelvis.x + 0.3, this.seat + 0.38, -0.5), V(pelvis.x + 0.45, this.seat + 0.42, 0.55)],
-      kneePoles: [V(pelvis.x - 0.4, -0.6, -0.2), V(pelvis.x - 0.4, -0.6, 0.2)],
+      kneePoles: [V(pelvis.x - 0.4, this.seat + 1.2, -0.2), V(pelvis.x - 0.4, this.seat + 1.2, 0.2)],
     };
   }
 
@@ -281,6 +535,8 @@ export class RiderModel {
       pitch: 0.55,
       roll: 0,
       headYaw: 0,
+      headTilt: 0,
+      headRoll: 0,
       hands: [V(0.05, this.handleY + 0.04, -0.24), V(0.42, this.handleY + 0.04, -0.17)],
       feet: [stride(0), stride(Math.PI)],
       elbowPoles: [V(-0.2, 0.4, -1), V(0.2, 0.4, -0.9)],
@@ -298,6 +554,8 @@ export class RiderModel {
       pitch: Math.PI / 2 - 0.05,
       roll: 0,
       headYaw: 0,
+      headTilt: 0.15,
+      headRoll: 0,
       hands: [V(pelvis.x + 0.05 + wave(0), pelvis.y + 1.0 * s, pelvis.z - 0.35), V(pelvis.x + 0.05 + wave(1), pelvis.y + 1.0 * s, pelvis.z + 0.35)],
       feet: [V(pelvis.x + 0.05, 0.05, pelvis.z - 0.13), V(pelvis.x + 0.05, 0.05, pelvis.z + 0.13)],
       elbowPoles: [V(pelvis.x, pelvis.y + 0.4, pelvis.z - 1), V(pelvis.x, pelvis.y + 0.4, pelvis.z + 1)],
@@ -305,12 +563,68 @@ export class RiderModel {
     };
   }
 
+  /**
+   * Standing beside the toboggan for the camera, facing +X: chin up, chest out, hands on hips,
+   * breathing. Gestures: Maximilian combs his hair back, Adelaide winks and blows a kiss, Remo burps.
+   */
+  private standingTargets(time: number, action: IdleAction | null, t: number): { targets: Targets; wink: number; open: number } {
+    const s = this.look.scale;
+    const breath = Math.sin((time * Math.PI * 2) / 3.4);
+    const pelvis = V(0, 0.93 * s + breath * 0.006, -0.75);
+    const shoulderY = pelvis.y + this.shoulder;
+    const headY = shoulderY + 0.2 * s;
+    const hip = (side: number) => V(pelvis.x - 0.02, pelvis.y + 0.04, pelvis.z + side * (this.hipWidth + 0.13 * this.look.build));
+    const targets: Targets = {
+      pelvis,
+      pitch: Math.PI / 2 + 0.04 + breath * 0.008,
+      roll: 0,
+      headYaw: 0,
+      headTilt: 0.12,
+      headRoll: 0,
+      hands: [hip(-1), hip(1)],
+      feet: [V(pelvis.x + 0.03, 0.06, pelvis.z - 0.19), V(pelvis.x + 0.03, 0.06, pelvis.z + 0.19)],
+      elbowPoles: [V(pelvis.x - 0.2, pelvis.y + 0.3, pelvis.z - 1.2), V(pelvis.x - 0.2, pelvis.y + 0.3, pelvis.z + 1.2)],
+      kneePoles: [V(pelvis.x + 1, 0.45, pelvis.z - 0.2), V(pelvis.x + 1, 0.45, pelvis.z + 0.2)],
+    };
+    let wink = 0;
+    let open = 0;
+    if (action === 'comb') {
+      // Right hand sweeps from the forehead, over the top, to the back of the head.
+      const w = window01(t, 0, 1);
+      const u = THREE.MathUtils.smoothstep(t, 0.2, 0.8);
+      const a = Math.PI * 0.15 + u * Math.PI * 0.8;
+      const sweep = V(pelvis.x + Math.cos(a) * 0.15 * s, headY + Math.sin(a) * 0.13 * s, pelvis.z + 0.05);
+      targets.hands[1] = targets.hands[1].lerp(sweep, w);
+      targets.elbowPoles[1] = V(pelvis.x + 0.2, headY + 0.4, pelvis.z + 1);
+      targets.headTilt += w * 0.15;
+    } else if (action === 'flirt') {
+      // A wink, a tilt of the head, and a kiss blown at the camera.
+      const w = window01(t, 0, 1);
+      wink = window01(t, 0.15, 0.6);
+      targets.headRoll = w * 0.22;
+      const lips = V(pelvis.x + 0.12 * s, headY - 0.04, pelvis.z + 0.03);
+      const out = V(pelvis.x + 0.5 * s, headY - 0.08, pelvis.z + 0.18);
+      const hand = lips.lerp(out, THREE.MathUtils.smoothstep(t, 0.45, 0.75));
+      targets.hands[1] = targets.hands[1].lerp(hand, w);
+      targets.elbowPoles[1] = V(pelvis.x - 0.2, pelvis.y + 0.2, pelvis.z + 1.2);
+    } else if (action === 'burp') {
+      // Hand on the belly, head back, a big open-mouthed burp.
+      const w = window01(t, 0, 1);
+      open = window01(t, 0.25, 0.7);
+      targets.headTilt += open * 0.45;
+      targets.pelvis.y += open * 0.012;
+      targets.hands[0] = targets.hands[0].lerp(V(pelvis.x + 0.2 * s * this.look.build, pelvis.y + 0.22 * s, pelvis.z - 0.02), w);
+      targets.elbowPoles[0] = V(pelvis.x, pelvis.y, pelvis.z - 1.2);
+    }
+    return { targets, wink, open };
+  }
+
   private apply(t: Targets) {
     this.body.position.copy(t.pelvis);
     this.body.rotation.set(t.roll, 0, t.pitch);
     this.torso.rotation.set(0, 0, 0);
-    // Keep the face looking ahead: the neck counters the body's pitch.
-    this.head.rotation.set(0, t.headYaw, -t.pitch * 0.85 + 0.05);
+    // Keep the face looking ahead: the neck counters the body's pitch; tilt lifts the chin.
+    this.head.rotation.set(t.headRoll, t.headYaw, -t.pitch * 0.9 + 0.05 + t.headTilt);
     this.body.updateMatrix();
     this.torso.updateMatrix();
     const toBody = this.body.matrix.clone().invert();
@@ -325,16 +639,17 @@ export class RiderModel {
   }
 }
 
-const smooth = (t: number) => t * t * (3 - 2 * t);
-
 function blendTargets(a: Targets, b: Targets, t: number): Targets {
   const lerp = (x: THREE.Vector3, y: THREE.Vector3) => x.clone().lerp(y, t);
   const pair = (x: [THREE.Vector3, THREE.Vector3], y: [THREE.Vector3, THREE.Vector3]): [THREE.Vector3, THREE.Vector3] => [lerp(x[0], y[0]), lerp(x[1], y[1])];
+  const mix = (x: number, y: number) => x + (y - x) * t;
   return {
     pelvis: lerp(a.pelvis, b.pelvis),
-    pitch: a.pitch + (b.pitch - a.pitch) * t,
-    roll: a.roll + (b.roll - a.roll) * t,
-    headYaw: a.headYaw + (b.headYaw - a.headYaw) * t,
+    pitch: mix(a.pitch, b.pitch),
+    roll: mix(a.roll, b.roll),
+    headYaw: mix(a.headYaw, b.headYaw),
+    headTilt: mix(a.headTilt, b.headTilt),
+    headRoll: mix(a.headRoll, b.headRoll),
     hands: pair(a.hands, b.hands),
     feet: pair(a.feet, b.feet),
     elbowPoles: pair(a.elbowPoles, b.elbowPoles),
@@ -342,38 +657,38 @@ function blendTargets(a: Targets, b: Targets, t: number): Targets {
   };
 }
 
-/** Traditional: red steel frame on round runners turned up at the front, a sliding cushion, knives at the back. */
+/** Traditional: a low red steel frame on round runners turned up at the front, a sliding cushion, knives at the back. */
 function buildTraditional(): { group: THREE.Group; seat: number; handleY: number } {
   const g = new THREE.Group();
   const frame = m('#b3261e', 0.5);
   const steel = m('#c9ccd1', 0.25, 0.7);
   for (const z of [-0.21, 0.21]) {
-    const runner = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.15, 8).rotateZ(Math.PI / 2), steel);
-    runner.position.set(-0.03, 0.022, z);
-    const nose = new THREE.Mesh(new THREE.TorusGeometry(0.09, 0.012, 6, 12, Math.PI / 2), steel);
-    nose.position.set(0.54, 0.11, z);
+    const runner = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 1.12, 8).rotateZ(Math.PI / 2), steel);
+    runner.position.set(-0.03, 0.016, z);
+    const nose = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.011, 6, 12, Math.PI / 2), steel);
+    nose.position.set(0.53, 0.066, z);
     nose.rotation.z = -Math.PI / 2;
-    const knife = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.03, 0.006), steel);
-    knife.position.set(-0.46, 0.012, z);
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.03, 0.03), frame);
-    rail.position.set(0, 0.15, z);
+    const knife = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.022, 0.006), steel);
+    knife.position.set(-0.45, 0.009, z);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(1.04, 0.022, 0.026), frame);
+    rail.position.set(0, 0.075, z);
     g.add(runner, nose, knife, rail);
-    for (const x of [-0.45, -0.05, 0.38]) {
-      const strut = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.13, 0.025), frame);
-      strut.position.set(x, 0.085, z);
+    for (const x of [-0.45, -0.05, 0.36]) {
+      const strut = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.06, 0.022), frame);
+      strut.position.set(x, 0.045, z);
       g.add(strut);
     }
-    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.03, 0.03), frame);
-    handle.position.set(0.55, 0.17, z * 1.04);
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.022, 0.024), frame);
+    handle.position.set(0.55, 0.085, z * 1.05);
     g.add(handle);
   }
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.012, 0.44), frame);
-  plate.position.y = 0.165;
-  const cushion = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.07, 0.38), m('#202022', 0.8));
-  cushion.position.y = 0.205;
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.01, 0.44), frame);
+  plate.position.y = 0.088;
+  const cushion = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 0.38), m('#202022', 0.8));
+  cushion.position.y = 0.118;
   cushion.name = 'cushion';
   g.add(plate, cushion);
-  return { group: g, seat: 0.24, handleY: 0.17 };
+  return { group: g, seat: 0.15, handleY: 0.085 };
 }
 
 /** Flat-top: a low carbon board on fine runners, side grips, no cushion. */
@@ -384,27 +699,26 @@ function buildFlatTop(): { group: THREE.Group; seat: number; handleY: number } {
   const L = 0.6;
   const W = 0.23;
   shape.moveTo(-L, -W);
-  shape.lineTo(L - 0.1, -W);
-  shape.quadraticCurveTo(L, -W, L, -W + 0.1);
-  shape.lineTo(L, W - 0.1);
-  shape.quadraticCurveTo(L, W, L - 0.1, W);
+  shape.lineTo(L - 0.12, -W);
+  shape.quadraticCurveTo(L, -W, L, -W + 0.12);
+  shape.lineTo(L, W - 0.12);
+  shape.quadraticCurveTo(L, W, L - 0.12, W);
   shape.lineTo(-L, W);
   shape.lineTo(-L, -W);
+  // Extruded downward from the top face, so the board's top is flat and clean at the front.
   const board = new THREE.Mesh(
-    new THREE.ExtrudeGeometry(shape, { depth: 0.025, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.01, bevelSegments: 2 }).rotateX(-Math.PI / 2),
+    new THREE.ExtrudeGeometry(shape, { depth: 0.022, bevelEnabled: false }).rotateX(Math.PI / 2),
     m('#2a2c30', 0.35, 0.3),
   );
-  board.position.y = 0.08;
-  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.03, 0.42), m('#f2f2f2', 0.4));
-  nose.position.set(0.5, 0.1, 0);
-  g.add(board, nose);
+  board.position.y = 0.1;
+  g.add(board);
   for (const z of [-0.2, 0.2]) {
     const runner = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1.15, 8).rotateZ(Math.PI / 2), steel);
     runner.position.set(0, 0.012, z);
     const knife = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.025, 0.005), steel);
     knife.position.set(-0.45, 0.008, z);
     const grip = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.01, 6, 12, Math.PI), steel);
-    grip.position.set(0.52, 0.1, z * 1.12);
+    grip.position.set(0.48, 0.09, z * 1.12);
     grip.rotation.x = Math.PI / 2;
     for (const x of [-0.4, 0.35]) {
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.07, 0.02), steel);
@@ -413,7 +727,7 @@ function buildFlatTop(): { group: THREE.Group; seat: number; handleY: number } {
     }
     g.add(runner, knife, grip);
   }
-  return { group: g, seat: 0.14, handleY: 0.11 };
+  return { group: g, seat: 0.13, handleY: 0.09 };
 }
 
 let blob: THREE.CanvasTexture | null = null;
