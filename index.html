@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#c8401c" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="description" content="Ride the Cresta Run, from Beginner Day to the Grand National." />
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
+    <title>Viva la Cresta</title>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+
+    <header id="hud">
+      <div id="zone">Junction</div>
+      <div class="stats">
+        <span id="distance">0 m</span>
+        <span id="elevation">0 m</span>
+        <span id="gradient">flat</span>
+      </div>
+      <div class="speed"><span id="mph">0</span><small>mph</small><span id="clock">0.00</span><small>s</small></div>
+    </header>
+
+    <section id="inspector">
+      <canvas id="section"></canvas>
+      <canvas id="profile"></canvas>
+    </section>
+
+    <footer id="controls">
+      <input id="scrub" type="range" min="0" step="0.5" value="322" aria-label="Position on the run" />
+      <div class="row">
+        <button id="play" aria-label="Play or pause">▶</button>
+        <button id="from-top">Top</button>
+        <button id="from-junction">Junction</button>
+        <select id="jump" aria-label="Jump to a bank"><option value="">Bank…</option></select>
+      </div>
+      <div class="row">
+        <button id="camera">Chase</button>
+        <button id="speed">1×</button>
+        <button id="inspect">Profile</button>
+      </div>
+    </footer>
+
+    <div id="loading">
+      <img src="/smtc-logo.svg" alt="" />
+      <p>Preparing the ice…</p>
+    </div>
+    <div id="rotate">Turn your phone upright to ride.</div>
+    <div id="fps"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

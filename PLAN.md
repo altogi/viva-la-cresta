@@ -184,11 +184,13 @@ tests/                    Vitest: physics invariants, progression rules, handica
 
 ## Phases
 
-### Phase 0 — Foundations
+### Phase 0 — Foundations ✅
 Vite + TS + Three.js scaffold, PWA (manifest, service worker, icons), GitHub Pages deploy via Actions, Vitest, debug overlay (FPS, sim state), portrait lock and safe-area handling.
 **Done when** an empty 3D scene installs to a phone home screen from the Pages URL.
 
-### Phase 1 — The Run (Junction → Finish)
+### Phase 1 — The Run ✅ (awaiting your review)
+*Built for the whole run, Top included: Phase 4 keeps the Top-specific calibration and Top hut detail. The viewer's rough ghost descent already lands close to real splits (Junction 49.3 s: Rise 14.3, Stream 27.9, Bulpetts 36.2, 65 mph at the finish).*
+
 Digitise the map into `cresta.ts` (Junction to Finish first). Cross-section generator for straights and banks. Track mesh: ice with subtle grooves/specular, curved walls, lips, straw beyond Shuttlecock, padded walls, bridges (Hanis, Road, Railway), snow terrain, trees. Track viewer tool.
 **Done when** you can fly down the run in the viewer and recognise every bank from Junction to the finish. **Your review**: does it look like the Cresta?
 

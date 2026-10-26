@@ -1,0 +1,280 @@
+// Track viewer: fly down the run with a ghost rider, switch cameras, scrub along the run,
+// and inspect the elevation profile and the cross-section at the current point.
+
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import type { Track } from '../sim/track';
+import { BENDS, JUNCTION_S, PROFILE, TRACK_LENGTH } from '../track/cresta';
+import type { World } from '../render/world';
+import { toThree } from '../render/util';
+import type { Terrain } from '../render/terrain';
+import { Ghost } from './ghost';
+
+type CameraMode = 'chase' | 'helmet' | 'trackside' | 'orbit';
+const MODES: CameraMode[] = ['chase', 'helmet', 'trackside', 'orbit'];
+const MODE_LABELS: Record<CameraMode, string> = {
+  chase: 'Chase',
+  helmet: 'Helmet',
+  trackside: 'Trackside',
+  orbit: 'Orbit',
+};
+const SPEEDS = [1, 0.5, 0.25, 2];
+const MPH = 2.23694;
+
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+
+export class Viewer {
+  private s = JUNCTION_S;
+  private ghost: Ghost;
+  private playing = false;
+  private mode: CameraMode = 'chase';
+  private speedIndex = 0;
+  private readonly orbit: OrbitControls;
+  private readonly camPos = new THREE.Vector3();
+  private readonly camLook = new THREE.Vector3();
+  private readonly riderPos = new THREE.Vector3();
+  private snapCamera = true;
+  private readonly profileCanvas = $<HTMLCanvasElement>('profile');
+  private readonly sectionCanvas = $<HTMLCanvasElement>('section');
+
+  constructor(
+    private readonly world: World,
+    private readonly track: Track,
+    private readonly terrain: Terrain,
+    private readonly rider: THREE.Object3D,
+  ) {
+    this.ghost = new Ghost(track, JUNCTION_S);
+    this.orbit = new OrbitControls(world.camera, world.renderer.domElement);
+    this.orbit.enabled = false;
+    this.orbit.enableDamping = true;
+    this.orbit.maxDistance = 1500;
+    this.bindUi();
+    this.placeRider();
+  }
+
+  private bindUi() {
+    const scrub = $<HTMLInputElement>('scrub');
+    scrub.max = String(TRACK_LENGTH);
+    scrub.addEventListener('input', () => {
+      this.goTo(Number(scrub.value));
+    });
+    $('play').addEventListener('click', () => {
+      if (this.s >= TRACK_LENGTH - 0.01) this.s = this.ghost.startS;
+      this.playing = !this.playing;
+    });
+    $('from-top').addEventListener('click', () => this.startFrom(0, true));
+    $('from-junction').addEventListener('click', () => this.startFrom(JUNCTION_S, true));
+    $('camera').addEventListener('click', () => this.setMode(MODES[(MODES.indexOf(this.mode) + 1) % MODES.length]));
+    $('speed').addEventListener('click', () => {
+      this.speedIndex = (this.speedIndex + 1) % SPEEDS.length;
+      $('speed').textContent = `${SPEEDS[this.speedIndex]}×`;
+    });
+    $('jump').addEventListener('change', (e) => {
+      const sel = e.target as HTMLSelectElement;
+      if (!sel.value) return;
+      this.goTo(Number(sel.value));
+      sel.value = '';
+    });
+    const jump = $<HTMLSelectElement>('jump');
+    for (const b of BENDS) jump.add(new Option(b.name, String(Math.max(0, b.s0 - 25))));
+    $('inspect').addEventListener('click', () => document.body.classList.toggle('inspecting'));
+    this.setMode('chase');
+  }
+
+  /** Move to s, restarting the ghost from Top if s is above its start. */
+  private goTo(s: number) {
+    if (s < this.ghost.startS) this.ghost = new Ghost(this.track, s < JUNCTION_S ? 0 : JUNCTION_S);
+    this.s = s;
+    this.snapCamera = true;
+  }
+
+  private startFrom(s0: number, play: boolean) {
+    this.ghost = new Ghost(this.track, s0);
+    this.s = s0;
+    this.playing = play;
+    this.snapCamera = true;
+  }
+
+  private setMode(mode: CameraMode) {
+    this.mode = mode;
+    this.orbit.enabled = mode === 'orbit';
+    $('camera').textContent = MODE_LABELS[mode];
+    if (mode === 'orbit') {
+      const cam = this.world.camera;
+      cam.position.copy(this.riderPos).add(new THREE.Vector3(60, 45, 60));
+      this.orbit.target.copy(this.riderPos);
+    }
+    this.snapCamera = true;
+  }
+
+  private placeRider() {
+    const g = this.ghost.state(this.s);
+    const frame = this.track.frame(this.s);
+    const pos = this.track.toWorld(frame, g.lateral, g.height);
+    toThree(pos, this.riderPos);
+    // Surface normal and heading in world space.
+    const [ny, nz] = g.normal;
+    const up = toThree([
+      frame.left[0] * ny + frame.up[0] * nz,
+      frame.left[1] * ny + frame.up[1] * nz,
+      frame.left[2] * ny + frame.up[2] * nz,
+    ]).normalize();
+    const forward = toThree(frame.forward).normalize();
+    const right = new THREE.Vector3().crossVectors(forward, up).normalize();
+    forward.crossVectors(up, right).normalize();
+    this.rider.matrix.makeBasis(forward, up, right).setPosition(this.riderPos);
+    this.rider.matrixAutoUpdate = false;
+    this.rider.matrixWorldNeedsUpdate = true;
+  }
+
+  update(dt: number) {
+    if (this.playing) {
+      const speed = this.ghost.state(this.s).speed;
+      this.s = Math.min(TRACK_LENGTH, this.s + speed * dt * SPEEDS[this.speedIndex]);
+      if (this.s >= TRACK_LENGTH) this.playing = false;
+    }
+    this.placeRider();
+    this.updateCamera(dt);
+    this.world.followSun(this.riderPos);
+    this.updateHud();
+  }
+
+  private updateCamera(dt: number) {
+    const cam = this.world.camera;
+    if (this.mode === 'orbit') {
+      const delta = this.riderPos.clone().sub(this.orbit.target);
+      this.orbit.target.add(delta);
+      cam.position.add(delta);
+      this.orbit.update();
+      return;
+    }
+    const g = this.ghost.state(this.s);
+    const desiredPos = new THREE.Vector3();
+    const desiredLook = new THREE.Vector3();
+    if (this.mode === 'chase') {
+      // Sit behind the rider on their own line, a little above and inside it.
+      const sBack = Math.max(0, this.s - 6);
+      const gb = this.ghost.state(sBack);
+      const back = this.track.frame(sBack);
+      const behind = this.track.toWorld(back, gb.lateral * 0.7, 2.0 + gb.height * 0.8);
+      // Before the start there is no track behind: back off along the first frame.
+      const extra = 6 - (this.s - sBack);
+      toThree([behind[0] - back.forward[0] * extra, behind[1] - back.forward[1] * extra, behind[2] - back.forward[2] * extra], desiredPos);
+      const ahead = this.track.frame(Math.min(TRACK_LENGTH, this.s + 4));
+      const ga = this.ghost.state(Math.min(TRACK_LENGTH, this.s + 4));
+      toThree(this.track.toWorld(ahead, (g.lateral + ga.lateral) / 2, 0.3 + g.height), desiredLook);
+    } else if (this.mode === 'helmet') {
+      const here = this.track.frame(Math.min(TRACK_LENGTH, this.s + 0.7));
+      toThree(this.track.toWorld(here, g.lateral, g.height + 0.55), desiredPos);
+      const sAhead = Math.min(TRACK_LENGTH, this.s + 20);
+      const ahead = this.track.frame(sAhead);
+      const ga = this.ghost.state(sAhead);
+      toThree(this.track.toWorld(ahead, ga.lateral, ga.height + 0.3), desiredLook);
+    } else {
+      // Trackside: a fixed spectator spot every 60 m, on the outside of the bend ahead.
+      const spot = Math.min(TRACK_LENGTH - 5, Math.floor((this.s + 20) / 60) * 60 + 25);
+      const sec = this.track.section(spot);
+      const pts = this.track.crossSection(spot, sec);
+      const side = sec.outerSide === 'right' ? pts[0].y - 11 : pts[pts.length - 1].y + 11;
+      const st = this.track.frame(spot);
+      const x = st.pos[0] + st.left[0] * side;
+      const y = st.pos[1] + st.left[1] * side;
+      desiredPos.set(x, this.terrain.height(x, y) + 4.5, -y);
+      desiredLook.copy(this.riderPos);
+    }
+    const k = this.snapCamera ? 1 : 1 - Math.exp(-dt * (this.mode === 'trackside' ? 4 : 8));
+    if (this.mode === 'trackside' && this.camPos.distanceTo(desiredPos) > 5) this.camPos.copy(desiredPos);
+    else this.camPos.lerp(desiredPos, k);
+    this.camLook.lerp(desiredLook, this.snapCamera ? 1 : 1 - Math.exp(-dt * 10));
+    this.snapCamera = false;
+    cam.position.copy(this.camPos);
+    cam.up.set(0, 1, 0);
+    cam.lookAt(this.camLook);
+  }
+
+  private updateHud() {
+    const g = this.ghost.state(this.s);
+    const grade = -this.track.grade(this.s);
+    $('zone').textContent = this.track.zoneName(this.s);
+    $('distance').textContent = `${this.s.toFixed(0)} m`;
+    $('elevation').textContent = `${this.track.elevation(this.s).toFixed(1)} m`;
+    $('gradient').textContent = grade > 0.005 ? `1 in ${(1 / grade).toFixed(1)}` : 'flat';
+    $('mph').textContent = (g.speed * MPH).toFixed(0);
+    $('clock').textContent = (g.time).toFixed(2);
+    $('play').textContent = this.playing ? '❚❚' : '▶';
+    ($('scrub') as HTMLInputElement).value = String(this.s);
+    if (document.body.classList.contains('inspecting')) {
+      this.drawProfile();
+      this.drawSection(g.lateral, g.height);
+    }
+  }
+
+  private drawProfile() {
+    const c = this.profileCanvas;
+    const g = fitCanvas(c);
+    const w = c.width;
+    const h = c.height;
+    const pad = 10 * devicePixelRatio;
+    const x = (s: number) => pad + (s / TRACK_LENGTH) * (w - 2 * pad);
+    const zMax = PROFILE[0].z;
+    const y = (z: number) => pad + (1 - z / zMax) * (h - 2 * pad);
+    g.clearRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(255,255,255,0.9)';
+    g.lineWidth = 2 * devicePixelRatio;
+    g.beginPath();
+    for (let s = 0; s <= TRACK_LENGTH; s += 4) {
+      const px = x(s);
+      const py = y(this.track.elevation(s));
+      if (s === 0) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    }
+    g.stroke();
+    g.fillStyle = 'rgba(255,255,255,0.65)';
+    g.font = `${9 * devicePixelRatio}px system-ui, sans-serif`;
+    for (const b of BENDS) {
+      const s = (b.s0 + b.s1) / 2;
+      g.fillRect(x(s) - 1, y(this.track.elevation(s)) - 4, 2, 8);
+    }
+    g.fillStyle = '#ff6a3d';
+    g.beginPath();
+    g.arc(x(this.s), y(this.track.elevation(this.s)), 5 * devicePixelRatio, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  private drawSection(riderLateral: number, riderHeight: number) {
+    const c = this.sectionCanvas;
+    const g = fitCanvas(c);
+    const w = c.width;
+    const h = c.height;
+    const pts = this.track.crossSection(this.s);
+    const scale = Math.min(w / 12, h / 6);
+    // Looking down the run: the rider's left is on screen left.
+    const x = (lat: number) => w / 2 - lat * scale;
+    const y = (z: number) => h - 12 * devicePixelRatio - z * scale;
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = 'rgba(200,225,245,0.35)';
+    g.strokeStyle = 'rgba(255,255,255,0.95)';
+    g.lineWidth = 2 * devicePixelRatio;
+    g.beginPath();
+    pts.forEach((p, i) => (i === 0 ? g.moveTo(x(p.y), y(p.z)) : g.lineTo(x(p.y), y(p.z))));
+    g.stroke();
+    g.fillStyle = '#ff6a3d';
+    g.beginPath();
+    g.arc(x(riderLateral), y(riderHeight + 0.2), 5 * devicePixelRatio, 0, Math.PI * 2);
+    g.fill();
+    const sec = this.track.section(this.s);
+    g.fillStyle = 'rgba(255,255,255,0.8)';
+    g.font = `${10 * devicePixelRatio}px system-ui, sans-serif`;
+    g.fillText(`floor ${sec.floorWidth.toFixed(1)} m · walls L ${sec.left.height.toFixed(1)} / R ${sec.right.height.toFixed(1)} m`, 8 * devicePixelRatio, 14 * devicePixelRatio);
+  }
+}
+
+function fitCanvas(c: HTMLCanvasElement) {
+  const w = Math.round(c.clientWidth * devicePixelRatio);
+  const h = Math.round(c.clientHeight * devicePixelRatio);
+  if (c.width !== w || c.height !== h) {
+    c.width = w;
+    c.height = h;
+  }
+  return c.getContext('2d')!;
+}
