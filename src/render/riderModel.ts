@@ -372,11 +372,7 @@ export class RiderModel {
       const chin = new THREE.Mesh(new THREE.SphereGeometry(r, 18, 8, Math.PI - 0.65, 1.3, 1.92, 0.62), shell);
       chin.scale.copy(dome.scale);
       chin.position.copy(dome.position);
-      const trim = new THREE.Mesh(new THREE.TorusGeometry(r * 1.02, 0.009, 6, 28), m(look.helmet.trim, 0.3, 0.4));
-      trim.rotation.y = Math.PI / 2;
-      trim.scale.copy(dome.scale);
-      trim.position.copy(dome.position);
-      this.helmet.add(dome, visor, chin, trim);
+      this.helmet.add(dome, visor, chin);
       this.head.add(this.helmet);
     }
     return face;

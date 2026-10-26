@@ -89,6 +89,63 @@ export const POLICIES: Record<string, Policy> = {
     line: 1,
     steers: false,
   },
+  /** Lying start from Top: on the knives most of the way, raking steadily (about 80 s). */
+  topLying: {
+    name: 'topLying',
+    start: 'lying',
+    startS: 0,
+    knives: [[100, 640]],
+    rake: [
+      [105, 320, 16.5],
+      [330, 470, 13.5],
+      [490, 640, 11.5],
+      [650, 1300, 22],
+    ],
+    line: 0.9,
+  },
+  /**
+   * A good traditional rider from Top: on the knives and raking through Church Leap, Curzon,
+   * Brabazon and Thoma, braking again down Junction Straight, then the expert line below.
+   */
+  topGood: {
+    name: 'topGood',
+    start: 'running',
+    steps: 7,
+    startS: 0,
+    knives: [[100, 320], [330, 470], [530, 636]],
+    rake: [[105, 320, 22], [330, 470, 18], [535, 636, 15.4]],
+    line: 1,
+  },
+  /** A very good flat-top rider from Top: more speed everywhere, the flat-top's Shuttlecock. */
+  topGoodFlattop: {
+    name: 'topGoodFlattop',
+    start: 'running',
+    steps: 7,
+    startS: 0,
+    knives: [[100, 320], [330, 470], [535, 636]],
+    rake: [[105, 320, 26], [330, 470, 20], [538, 636, 18]],
+    line: 1,
+  },
+  /** From Top, braking above Junction but not down Junction Straight: too fast for Rise. */
+  topNoJunctionBrake: {
+    name: 'topNoJunctionBrake',
+    start: 'running',
+    steps: 7,
+    startS: 0,
+    knives: [[100, 320], [530, 636]],
+    rake: [[105, 320, 22], [535, 636, 16.2]],
+    line: 1,
+  },
+  /** From Top with no brakes at all: into the wall at Curzon. */
+  topReckless: {
+    name: 'topReckless',
+    start: 'running',
+    steps: 7,
+    startS: 0,
+    knives: [],
+    rake: [],
+    line: 0.5,
+  },
   /** No brakes at all: should fly out of Shuttlecock. */
   reckless: {
     name: 'reckless',

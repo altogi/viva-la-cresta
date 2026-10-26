@@ -11,6 +11,7 @@ import { RiderModel } from './render/riderModel';
 import { LOOKS } from './render/riderLooks';
 import { loadSelection, type Selection } from './game/selection';
 import { SelectMode } from './game/selectMode';
+import { Crowd } from './render/crowd';
 import { RIDERS, TOBOGGANS } from './sim/rider';
 import { Viewer } from './viewer/viewer';
 import { RideMode, type RideSetup } from './game/rideMode';
@@ -27,6 +28,7 @@ if (debug) document.body.classList.add('debug');
 const RIDES: Record<string, RideSetup> = {
   'junction-lying': { startS: JUNCTION_S, start: 'lying', label: 'Junction · lying start' },
   'junction-running': { startS: JUNCTION_S, start: 'running', steps: 7, label: 'Junction · running start' },
+  'top-lying': { startS: 0, start: 'lying', label: 'Top · lying start' },
   'top-running': { startS: 0, start: 'running', steps: 7, label: 'Top · running start' },
 };
 
@@ -50,8 +52,11 @@ function start() {
   const viewer = new Viewer(world, track, terrain, ghost);
   const sound = new Sound();
   const ride = new RideMode(world, track, terrain, sound);
+  const crowd = new Crowd(track, terrain);
+  world.scene.add(crowd.group);
+  ride.crowd = crowd;
   if (debug) {
-    Object.assign(window, { world, track, viewer, ride });
+    Object.assign(window, { world, track, viewer, ride, crowd });
     createTuningPanel();
   }
   const bot = params.get('autopilot');
@@ -110,6 +115,7 @@ function start() {
     if (mode === 'ride') ride.update(dt);
     else if (mode === 'select') select.update(dt);
     else viewer.update(dt);
+    crowd.update(dt, mode === 'ride' ? ride.riderPosition : null);
     world.renderer.render(world.scene, world.camera);
     if (debug) {
       frames++;

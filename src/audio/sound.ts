@@ -1,5 +1,7 @@
-// Procedural sound, no audio files: the start bell, runners hissing on the ice (louder and higher
-// with speed), the knives scraping, rakes biting, wind at speed, running strides and the thud of a fall.
+// Procedural sound: the start bell, runners hissing on the ice (louder and higher with speed), the
+// knives scraping, rakes biting, wind at speed, running strides, the thud of a fall, the crowd's gasp
+// and applause. Recorded crowd clips are used instead when present (public/sfx/gasp.mp3 and
+// public/sfx/applause.mp3); without them, the synthesised versions play.
 
 export interface SoundState {
   speed: number; // m/s
@@ -16,6 +18,7 @@ export class Sound {
   private rake!: { gain: GainNode };
   private wind!: { filter: BiquadFilterNode; gain: GainNode };
   muted = false;
+  private readonly samples = new Map<string, AudioBuffer>();
 
   /** Must be called from a user gesture (browsers block audio until then). */
   start() {
@@ -45,6 +48,78 @@ export class Sound {
     this.knives = chain('highpass', 3200, 0.7);
     this.rake = chain('bandpass', 2400, 2.5);
     this.wind = chain('lowpass', 420, 0.5);
+    for (const name of ['gasp', 'applause']) void this.loadSample(ctx, name);
+  }
+
+  /** Load an optional recorded clip; a missing file just leaves the synthesised sound. */
+  private async loadSample(ctx: AudioContext, name: string) {
+    try {
+      const res = await fetch(`${import.meta.env.BASE_URL}sfx/${name}.mp3`);
+      if (!res.ok || !(res.headers.get('content-type') ?? '').startsWith('audio')) return;
+      this.samples.set(name, await ctx.decodeAudioData(await res.arrayBuffer()));
+    } catch {
+      // No clip: keep the synthesised version.
+    }
+  }
+
+  /** Play a loaded clip; false when there isn't one. */
+  private playSample(name: string, gain: number): boolean {
+    const buffer = this.samples.get(name);
+    if (!this.ctx || !buffer) return false;
+    const src = this.ctx.createBufferSource();
+    src.buffer = buffer;
+    const g = this.ctx.createGain();
+    g.gain.value = gain;
+    src.connect(g).connect(this.master);
+    src.start();
+    return true;
+  }
+
+  /** The crowd gasps at a fall: a rising "ooh" from many voices over a sharp intake of breath. */
+  gasp() {
+    const ctx = this.ctx;
+    if (!ctx || this.playSample('gasp', 0.9)) return;
+    const t = ctx.currentTime;
+    const out = ctx.createGain();
+    out.gain.value = 0.32;
+    out.connect(this.master);
+    // Two vowel formants for "oh".
+    const formants = [450, 820].map((f, i) => {
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = f;
+      filter.Q.value = 5;
+      const g = ctx.createGain();
+      g.gain.value = i ? 0.6 : 1;
+      filter.connect(g).connect(out);
+      return filter;
+    });
+    for (let v = 0; v < 18; v++) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      const pitch = (v % 2 ? 210 : 120) * (0.85 + Math.random() * 0.4);
+      const start = t + Math.random() * 0.12;
+      osc.frequency.setValueAtTime(pitch * 0.9, start);
+      osc.frequency.linearRampToValueAtTime(pitch * 1.15, start + 0.35);
+      osc.frequency.linearRampToValueAtTime(pitch * 0.85, start + 1.4);
+      const vibrato = ctx.createOscillator();
+      vibrato.frequency.value = 4 + Math.random() * 3;
+      const depth = ctx.createGain();
+      depth.gain.value = pitch * 0.02;
+      vibrato.connect(depth).connect(osc.frequency);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, start);
+      g.gain.linearRampToValueAtTime(0.09, start + 0.18);
+      g.gain.exponentialRampToValueAtTime(0.001, start + 1.5 + Math.random() * 0.4);
+      osc.connect(g);
+      for (const f of formants) g.connect(f);
+      osc.start(start);
+      vibrato.start(start);
+      osc.stop(start + 2);
+      vibrato.stop(start + 2);
+    }
+    // The intake of breath.
+    this.burst(1600, 0.35, 0.35, 'bandpass');
   }
 
   setMuted(muted: boolean) {
@@ -111,7 +186,7 @@ export class Sound {
   /** The crowd at the finish: a few seconds of applause and cheering. */
   applause() {
     const ctx = this.ctx;
-    if (!ctx) return;
+    if (!ctx || this.playSample('applause', 0.8)) return;
     const duration = 3.2;
     const rate = ctx.sampleRate;
     const buffer = ctx.createBuffer(1, Math.ceil(rate * duration), rate);

@@ -19,7 +19,7 @@ export interface RiderLook {
   beard?: string;
   cheeks?: string;
   /** Helmet worn when riding; null rides bareheaded (as drawn). */
-  helmet: { shell: string; visor: string; trim: string } | null;
+  helmet: { shell: string; visor: string } | null;
   outfit: {
     torso: string;
     upperArm: string;
@@ -55,7 +55,7 @@ export const LOOKS: Record<RiderId, RiderLook> = {
     limbs: 0.84,
     skin: '#e6bea4',
     hair: { style: 'slick', color: '#1d1a19' },
-    helmet: { shell: '#1f3d2b', visor: '#11161a', trim: '#2c5a3e' },
+    helmet: { shell: '#1f3d2b', visor: '#11161a' },
     outfit: {
       torso: '#244a33',
       upperArm: '#244a33',
@@ -84,7 +84,7 @@ export const LOOKS: Record<RiderId, RiderLook> = {
     skin: '#f0cbb5',
     hair: { style: 'bun', color: '#e2c27a' },
     cheeks: '#ec9a9a',
-    helmet: { shell: '#1f47a8', visor: '#c9a13d', trim: '#d8b45a' },
+    helmet: { shell: '#1f47a8', visor: '#c9a13d' },
     outfit: {
       torso: '#2147ad',
       upperArm: '#2147ad',

@@ -208,9 +208,16 @@ Physics model in track coordinates. Traditional toboggan. One placeholder rider 
 Semi-realistic rigged models for Maximilian, Adelaide and Remo (proportions, hair, beard, skin suits, helmets, rakes on the boots) with pose blending: running, jump-on, forward, knives, arm steering, head turn, raking feet, fall tumble. Rider stats wired into the physics. Flat-top toboggan with its own handling. Agility-dependent transitions. Bot balance check across all rider × toboggan combinations.
 **Done when** the three riders feel distinct and all can reach the targets.
 
-### Phase 4 — From Top
+### Phase 4 — From Top ✅
+*Top rides are playable from a lying or running start, and the Top hut has riders waiting with their toboggans. Bot calibration from Top (all three riders): lying start ~82 s; a good traditional rider ~65.5 s (Junction about 20.7 s, 59 mph finish); a very good flat-top rider ~58.5 s. A cautious bot braking to 14 m/s above Junction rides 71.3 s with Junction 24.9 s and Rise 33.5 s, matching the season's real Top splits. The original 60 s and 55 s targets would need a faster Top section than the 1906 profile allows without breaking the Junction calibration, so the targets follow the physics for now. With no brakes, a rider hits the wall at Curzon. Not braking down Junction Straight flies a rider out at Rise. Charybdis is sharper and higher: a rider who doesn't steer hits the wall.*
+
 Digitise Top → Junction: Church Leap's near free fall, Curzon, Brabazon, Thoma (first possible fly-out). Top hut scene with waiting riders and the St Moritz panorama. Calibration to the 80 s / 60 s / 55 s Top targets.
 **Done when** a Top ride is playable and the Junction Straight braking decision matters.
+
+### Surroundings, zone by zone (with your photos)
+Rebuild the run's surroundings one zone at a time from reference photos you supply: Top, Church Leap, Junction and the clubhouse, Rise and Battledore, Shuttlecock, Stream, Bledisloe Straight, the bridges, Scylla and Charybdis, Cresta Leap, the finish and Celerina.
+*In place now:* a packed-snow visitors' path along the left of the run from Junction to the finish. Visitors stand on it in parties: a man walking his dog, a mother with two children, an old lady with a stick. One ride in ten, they are all young blondes in fur coats. A crowd always gathers behind Shuttlecock's straw. They turn to watch riders go past, and run when a rider falls within about 25 m, then stop and stare back before returning. A fall brings a gasp from the crowd, and a finish brings applause. Both are synthesised; recorded clips dropped in `public/sfx/gasp.mp3` and `public/sfx/applause.mp3` play instead.
+*With music (Phase 6):* the gasp plays over the crash music and the applause over the finish music.
 
 ### Target game flow (from playtesting, to build in Phase 5)
 1. **Intro.** "VIVA LA CRESTA" centred under the SMTC Cresta Run badge (`public/cresta-run-badge.png`), a flyover of the run behind, and TAP TO START underneath.

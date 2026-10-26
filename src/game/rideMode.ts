@@ -13,9 +13,10 @@ import { SPLITS, autopilotInput, runOutInput, type Policy } from '../sim/autopil
 import type { World } from '../render/world';
 import type { Terrain } from '../render/terrain';
 import { RiderModel } from '../render/riderModel';
-import { trackSurfaceHeight } from '../render/trackMesh';
 import { Ragdoll } from '../render/ragdoll';
 import { FallDebris } from '../render/particles';
+import type { Crowd } from '../render/crowd';
+import { groundHeight } from '../render/ground';
 import { toThree } from '../render/util';
 import type { Sound } from '../audio/sound';
 
@@ -91,6 +92,13 @@ export class RideMode {
   private readonly camPos = new THREE.Vector3();
   private readonly camLook = new THREE.Vector3();
   private readonly riderPos = new THREE.Vector3();
+  /** Visitors beside the run, who react to falls. */
+  crowd: Crowd | null = null;
+
+  /** Where the rider is now, for the visitors to watch (null when not on the ice). */
+  get riderPosition(): THREE.Vector3 | null {
+    return this.stage === 'live' || this.stage === 'runout' || this.stage === 'countdown' ? this.riderPos : null;
+  }
   private readonly riderVel = new THREE.Vector3();
   private snap = true;
   private fallCamPos = new THREE.Vector3();
@@ -113,15 +121,7 @@ export class RideMode {
       if (zone === 'run') this.sound.step();
     };
     // Ground for tumbling bodies and debris: the track's ice, banks and straw where they are, else the hillside.
-    const groundAt = (x: number, z: number) => {
-      const y = -z;
-      const ground = terrain.height(x, y);
-      const { station } = terrain.distanceToTrack(x, y);
-      if (!station) return ground;
-      const lateral = (x - station.pos[0]) * station.left[0] + (y - station.pos[1]) * station.left[1];
-      const h = trackSurfaceHeight(track, station.s, lateral);
-      return h === null ? ground : Math.max(ground, station.pos[2] + h);
-    };
+    const groundAt = (x: number, z: number) => groundHeight(track, terrain, x, z);
     this.ragdoll = new Ragdoll(world.scene, groundAt);
     this.debris = new FallDebris(groundAt);
     world.scene.add(this.debris.group);
@@ -171,6 +171,7 @@ export class RideMode {
 
   begin(setup: RideSetup) {
     this.setup = setup;
+    this.crowd?.populate();
     this.ragdoll.clear();
     this.replayModel?.root.removeFromParent();
     this.replayModel = null;
@@ -434,6 +435,9 @@ export class RideMode {
     const st = this.sim.state;
     this.fallTime = this.simClock;
     this.fallPoint.copy(this.riderPos);
+    // A gasp from the path, and the visitors nearby run for it.
+    this.sound.gasp();
+    this.crowd?.scare(this.fallPoint);
     const frame = this.track.frame(Math.min(st.s, this.track.length));
     const side = st.fall?.side === 'left' ? -1 : 1;
     this.closeUpSide.copy(toThree([frame.left[0] * side, frame.left[1] * side, 0])).normalize();

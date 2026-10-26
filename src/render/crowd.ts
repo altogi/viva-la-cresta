@@ -1,0 +1,471 @@
+// Visitors on the path beside the run: a man walking his dog, a mother with two children, an old
+// lady with a stick, and (one ride in ten) nothing but young blondes in fur coats, St Moritz style.
+// They watch riders go past, and run for it when one falls near them, then stop to look back.
+// Also the riders waiting their turn at Top, with their toboggans.
+
+import * as THREE from 'three';
+import type { Track } from '../sim/track';
+import type { Terrain } from './terrain';
+import { lips } from '../sim/surface';
+import { RiderModel } from './riderModel';
+import { LOOKS, type RiderLook } from './riderLooks';
+import { toThree } from './util';
+import { groundHeight } from './ground';
+
+type Kind = 'man' | 'mother' | 'child' | 'oldLady' | 'furGirl' | 'dog';
+
+interface Body {
+  group: THREE.Group;
+  legs: THREE.Object3D[];
+  arms: THREE.Object3D[];
+  head: THREE.Object3D;
+  /** Where a lead clips on (the dog's collar, the man's hand), in the body's frame. */
+  hand?: THREE.Vector3;
+}
+
+interface Agent {
+  kind: Kind;
+  body: Body;
+  home: THREE.Vector3;
+  pos: THREE.Vector3;
+  heading: number;
+  /** Faces the run when idle. */
+  homeHeading: number;
+  mode: 'idle' | 'flee' | 'look' | 'return';
+  timer: number;
+  dir: THREE.Vector2;
+  phase: number;
+  speed: number;
+  /** Followers (children, the dog) keep near their leader. */
+  leader?: Agent;
+  offset: THREE.Vector2;
+  scared: THREE.Vector3;
+}
+
+const mats = new Map<string, THREE.MeshStandardMaterial>();
+const mat = (color: string, roughness = 0.8) => {
+  const key = `${color}-${roughness}`;
+  let m = mats.get(key);
+  if (!m) mats.set(key, (m = new THREE.MeshStandardMaterial({ color, roughness })));
+  return m;
+};
+
+const RUN_SPEED: Record<Kind, number> = { man: 4.6, mother: 3.8, child: 3.4, oldLady: 1.4, furGirl: 3.2, dog: 6.5 };
+
+/** A person standing on the origin facing +X: legs, a coat, arms, a head with hair and a hat. */
+function person(o: {
+  height: number;
+  coat: string;
+  trousers: string;
+  boots: string;
+  skin: string;
+  hair: string;
+  hairLong?: boolean;
+  hat?: string;
+  /** 0 = jacket to the hips, 1 = coat to the knees. */
+  coatLength: number;
+  width?: number;
+  fur?: boolean;
+  scarf?: string;
+  glasses?: boolean;
+  stick?: boolean;
+  stoop?: number;
+}): Body {
+  const k = o.height / 1.75;
+  const w = (o.width ?? 1) * k;
+  const g = new THREE.Group();
+  const legs: THREE.Object3D[] = [];
+  const arms: THREE.Object3D[] = [];
+  const hipY = 0.92 * k;
+  for (const side of [-1, 1]) {
+    const hip = new THREE.Group();
+    hip.position.set(0, hipY, side * 0.09 * w);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.062 * w, 0.05 * w, hipY - 0.06 * k, 8).translate(0, -(hipY - 0.06 * k) / 2, 0), mat(o.trousers));
+    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.24 * k, 0.1 * k, 0.11 * w), mat(o.boots, 0.6));
+    boot.position.set(0.04 * k, -hipY + 0.05 * k, 0);
+    hip.add(leg, boot);
+    g.add(hip);
+    legs.push(hip);
+  }
+  const torso = new THREE.Group();
+  torso.position.y = hipY;
+  torso.rotation.z = -(o.stoop ?? 0);
+  g.add(torso);
+  // The coat: turned from a profile, flaring below the waist for a long coat.
+  const hem = -0.25 * k - o.coatLength * 0.38 * k;
+  const profile = [
+    [0.15 + o.coatLength * 0.07, hem],
+    [0.14, -0.05 * k],
+    [0.135, 0.15 * k],
+    [0.16, 0.38 * k],
+    [0.12, 0.5 * k],
+    [0.05, 0.54 * k],
+  ].map(([r, y]) => new THREE.Vector2(r * w * (o.fur ? 1.12 : 1), y));
+  const coat = new THREE.Mesh(new THREE.LatheGeometry(profile, 14).scale(0.8, 1, 1), mat(o.coat, o.fur ? 1 : 0.75));
+  torso.add(coat);
+  if (o.fur) {
+    // A big fur collar.
+    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.1 * w, 0.055 * w, 8, 16).rotateX(Math.PI / 2), mat(o.coat, 1));
+    collar.position.y = 0.49 * k;
+    torso.add(collar);
+  }
+  if (o.scarf) {
+    const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.075 * w, 0.03 * w, 6, 14).rotateX(Math.PI / 2), mat(o.scarf, 0.9));
+    scarf.position.y = 0.53 * k;
+    torso.add(scarf);
+  }
+  for (const side of [-1, 1]) {
+    const shoulder = new THREE.Group();
+    shoulder.position.set(0, 0.47 * k, side * 0.19 * w);
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * w, 0.042 * w, 0.56 * k, 8).translate(0, -0.28 * k, 0), mat(o.coat, o.fur ? 1 : 0.75));
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.042 * k, 8, 6), mat(o.skin, 0.6));
+    hand.position.y = -0.58 * k;
+    shoulder.add(arm, hand);
+    shoulder.rotation.x = side * 0.08;
+    if (o.stick && side > 0) {
+      const stick = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.85 * k, 6).translate(0, -0.42 * k, 0), mat('#4a3020', 0.6));
+      stick.position.y = -0.58 * k;
+      stick.rotation.z = 0.25;
+      shoulder.add(stick);
+    }
+    torso.add(shoulder);
+    arms.push(shoulder);
+  }
+  const head = new THREE.Group();
+  head.position.y = 0.66 * k;
+  torso.add(head);
+  head.add(new THREE.Mesh(new THREE.SphereGeometry(0.105 * k, 14, 10).scale(1, 1.15, 0.92), mat(o.skin, 0.6)));
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.022 * k, 6, 5), mat(o.skin, 0.6));
+  nose.position.set(0.1 * k, -0.01 * k, 0);
+  head.add(nose);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.112 * k, 14, 8, 0, Math.PI * 2, 0, 1.6).scale(1, 1.1, 0.95), mat(o.hair, 0.85));
+  hair.position.x = -0.01 * k;
+  hair.rotation.z = 0.35;
+  head.add(hair);
+  if (o.hairLong) {
+    // Long hair down the back.
+    const fall = new THREE.Mesh(new THREE.BoxGeometry(0.07 * k, 0.32 * k, 0.2 * k), mat(o.hair, 0.85));
+    fall.position.set(-0.07 * k, -0.14 * k, 0);
+    head.add(fall);
+  }
+  if (o.hat) {
+    const hat = o.fur
+      ? new THREE.Mesh(new THREE.CylinderGeometry(0.12 * k, 0.115 * k, 0.15 * k, 14), mat(o.hat, 1))
+      : new THREE.Mesh(new THREE.SphereGeometry(0.115 * k, 12, 8, 0, Math.PI * 2, 0, 1.4), mat(o.hat, 0.9));
+    hat.position.y = (o.fur ? 0.1 : 0.03) * k;
+    head.add(hat);
+  }
+  if (o.glasses) {
+    const glasses = new THREE.Mesh(new THREE.BoxGeometry(0.02 * k, 0.035 * k, 0.17 * k), mat('#101010', 0.2));
+    glasses.position.set(0.095 * k, 0.025 * k, 0);
+    head.add(glasses);
+  }
+  g.traverse((m) => (m.castShadow = true));
+  return { group: g, legs, arms, head, hand: new THREE.Vector3(0.05, 0.36 * k, 0.2 * w) };
+}
+
+function dog(): Body {
+  const g = new THREE.Group();
+  const coat = mat(['#6b4a2a', '#d9b479', '#222222', '#efe9df'][Math.floor(Math.random() * 4)], 0.9);
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.42, 4, 10).rotateZ(Math.PI / 2), coat);
+  body.position.y = 0.42;
+  const head = new THREE.Group();
+  head.position.set(0.36, 0.58, 0);
+  head.add(new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), coat));
+  const snout = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.07, 0.08), coat);
+  snout.position.set(0.11, -0.03, 0);
+  head.add(snout);
+  for (const side of [-1, 1]) {
+    const ear = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.09, 0.05), coat);
+    ear.position.set(-0.02, 0.06, side * 0.08);
+    ear.rotation.x = side * 0.4;
+    head.add(ear);
+  }
+  const legs: THREE.Object3D[] = [];
+  for (const [x, z] of [[0.24, 0.08], [0.24, -0.08], [-0.24, 0.08], [-0.24, -0.08]]) {
+    const hip = new THREE.Group();
+    hip.position.set(x, 0.36, z);
+    hip.add(new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.03, 0.36, 6).translate(0, -0.18, 0), coat));
+    g.add(hip);
+    legs.push(hip);
+  }
+  const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.035, 0.28, 6).translate(0, 0.14, 0), coat);
+  tail.position.set(-0.33, 0.5, 0);
+  tail.rotation.z = 0.6;
+  g.add(body, head, tail);
+  g.traverse((m) => (m.castShadow = true));
+  return { group: g, legs, arms: [tail], head, hand: new THREE.Vector3(0.3, 0.5, 0) };
+}
+
+const pick = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];
+const SKINS = ['#f1cdb5', '#e6bea4', '#d9a384', '#c68e6b', '#8d5a3c'];
+
+function makeBody(kind: Kind): Body {
+  switch (kind) {
+    case 'man':
+      return person({ height: 1.8, coat: pick(['#2d3a4f', '#5a2a24', '#3b3f2e', '#1d1d20']), trousers: '#2a2a30', boots: '#3a2a1c', skin: pick(SKINS), hair: pick(['#3a2a1e', '#1a1716', '#8a6a48']), hat: pick(['#8a1c1c', '#20304e', '#d9d2c2']), coatLength: 0.1, scarf: pick(['#c9a13d', '#7c1b1b', '#e8e2d4']) });
+    case 'mother':
+      return person({ height: 1.68, coat: pick(['#b34a3a', '#e7e1d4', '#3d5f8a', '#6d4c7d']), trousers: '#2c2c34', boots: '#2b211a', skin: pick(SKINS), hair: pick(['#5b3a22', '#c9a26a', '#22191a']), hairLong: true, hat: pick(['#f2ede3', '#2d2d33']), coatLength: 0.5, width: 0.92 });
+    case 'child':
+      return person({ height: 1.1 + Math.random() * 0.25, coat: pick(['#e0402e', '#2f8ad8', '#f2c230', '#4fb35a', '#e86fa8']), trousers: pick(['#1f3f7a', '#303034']), boots: '#222', skin: pick(SKINS), hair: pick(['#c9a26a', '#5b3a22']), hat: pick(['#f2c230', '#e0402e', '#ffffff', '#2f8ad8']), coatLength: 0.1, width: 1.1 });
+    case 'oldLady':
+      return person({ height: 1.58, coat: pick(['#6a5a4a', '#4a5a6a', '#7a3a4a']), trousers: '#3a3a3a', boots: '#2a2018', skin: '#ecc9b5', hair: '#d8d4cf', hat: pick(['#8a7a9a', '#5a2a3a', '#2a3a4a']), coatLength: 0.8, stick: true, stoop: 0.22, scarf: '#9a6a8a' });
+    case 'furGirl':
+      return person({ height: 1.72, coat: pick(['#f2eadc', '#e8dcc6', '#c8a27a', '#1c1a18', '#efe6d8']), trousers: '#1a1a1c', boots: pick(['#efe6d8', '#1a1a1c', '#7a5a3a']), skin: '#f3d3be', hair: pick(['#ecd08a', '#e2c27a', '#f3dc9e']), hairLong: true, hat: Math.random() < 0.6 ? pick(['#f2eadc', '#c8a27a', '#1c1a18']) : undefined, coatLength: 0.85, width: 0.9, fur: true, glasses: true });
+    case 'dog':
+      return dog();
+  }
+}
+
+/** Riders waiting their turn at Top, in their own colours, on a walkway kit of the three builds. */
+function waitingLook(base: RiderLook, suit: string, helmet: string): RiderLook {
+  return {
+    ...base,
+    hair: { ...base.hair },
+    helmet: { shell: helmet, visor: '#15191c' },
+    outfit: { ...base.outfit, torso: suit, upperArm: suit, forearm: suit, pelvis: suit, thigh: suit, shin: suit, lettering: '#f4f4f0', bib: String(20 + Math.floor(Math.random() * 60)), bottle: false, braces: undefined },
+  };
+}
+
+export class Crowd {
+  readonly group = new THREE.Group();
+  private agents: Agent[] = [];
+  private leads: { line: THREE.Line; from: Agent; to: Agent }[] = [];
+  private readonly waiting: { model: RiderModel; time: number }[] = [];
+  /** This ride's visitors are all fur coats (one ride in ten). */
+  furDay = false;
+
+  constructor(
+    private readonly track: Track,
+    private readonly terrain: Terrain,
+  ) {
+    this.group.name = 'crowd';
+    this.group.add(this.buildPath());
+    this.buildWaitingRiders();
+    this.populate();
+  }
+
+  /** Lateral offset of the visitors' path (left of the run), smoothed along it. */
+  private pathU(s: number): number {
+    let sum = 0;
+    let n = 0;
+    for (let d = -14; d <= 14; d += 2) {
+      const at = THREE.MathUtils.clamp(s + d, 0, this.track.length);
+      sum += lips(this.track.section(at)).left + 4.2;
+      n++;
+    }
+    return Math.max(5.2, sum / n);
+  }
+
+  private ground(s: number, u: number, out = new THREE.Vector3()): THREE.Vector3 {
+    const st = this.track.frame(s);
+    const x = st.pos[0] + st.left[0] * u;
+    const y = st.pos[1] + st.left[1] * u;
+    return out.set(x, groundHeight(this.track, this.terrain, x, -y), -y);
+  }
+
+  /** A trodden path of packed snow alongside the run, from Junction to the finish. */
+  private buildPath(): THREE.Mesh {
+    const positions: number[] = [];
+    const index: number[] = [];
+    const a = new THREE.Vector3();
+    const b = new THREE.Vector3();
+    let row = 0;
+    for (let s = 335; s <= this.track.length - 10; s += 2, row++) {
+      const u = this.pathU(s);
+      this.ground(s, u - 0.8, a);
+      this.ground(s, u + 0.8, b);
+      positions.push(a.x, a.y + 0.04, a.z, b.x, b.y + 0.04, b.z);
+      if (row > 0) {
+        const i = row * 2;
+        index.push(i - 2, i, i - 1, i - 1, i, i + 1);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(index);
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#dcd6ca', roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }));
+    mesh.receiveShadow = true;
+    return mesh;
+  }
+
+  private buildWaitingRiders() {
+    const top = this.track.frame(0);
+    const fwd = new THREE.Vector3(top.forward[0], 0, -top.forward[1]).normalize();
+    const kit: [RiderLook, string, string][] = [
+      [LOOKS.maximilian, '#7a1d1d', '#151515'],
+      [LOOKS.adelaide, '#1a1a1c', '#c9c9c9'],
+      [LOOKS.remo, '#e9e4d6', '#9a1c1c'],
+      [LOOKS.maximilian, '#244f7a', '#244f7a'],
+    ];
+    kit.forEach(([base, suit, helmet], i) => {
+      const model = new RiderModel(waitingLook(base, suit, helmet), i % 2 ? 'flattop' : 'traditional');
+      // On the snow platform beside the start, behind where the chosen rider poses.
+      const spot = toThree(this.track.toWorld(top, 5.2 + (i % 2) * 1.4, 0)).addScaledVector(fwd, -5.5 - i * 1.5);
+      model.root.position.copy(spot);
+      // Facing the start, waiting for the bell.
+      model.root.rotation.y = Math.atan2(-fwd.z, fwd.x) + 0.9 + i * 0.25;
+      this.group.add(model.root);
+      this.waiting.push({ model, time: i * 1.3 });
+    });
+  }
+
+  /** New visitors for a ride: a party every so often along the path. */
+  populate() {
+    for (const a of this.agents) a.body.group.removeFromParent();
+    for (const l of this.leads) l.line.removeFromParent();
+    this.agents = [];
+    this.leads = [];
+    this.furDay = Math.random() < 0.1;
+    // Along the path, a party every so often; and always a gathering behind Shuttlecock's straw,
+    // just beyond the padding, where the fallers land.
+    const spots: [number, number][] = [];
+    for (let s = 345; s < this.track.length - 30; s += 38 + Math.random() * 55) {
+      if (Math.random() < 0.25) continue;
+      spots.push([s, this.pathU(s) + (Math.random() - 0.5) * 0.8]);
+    }
+    for (const s of [588, 597, 606]) spots.push([s + Math.random() * 3, lips(this.track.section(s)).right - 10.5 - Math.random() * 1.5]);
+    for (const [s, u] of spots) {
+      const add = (kind: Kind, ds: number, du: number, leader?: Agent) => this.addAgent(kind, s + ds, u + du, leader);
+      if (this.furDay) {
+        const n = 1 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < n; i++) add('furGirl', i * 0.8, (i % 2) * 0.5);
+        continue;
+      }
+      const party = pick(['man', 'mother', 'oldLady'] as const);
+      if (party === 'man') {
+        const man = add('man', 0, 0);
+        const d = add('dog', 1.2, -0.3, man);
+        const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: '#b02020' }));
+        line.frustumCulled = false;
+        this.group.add(line);
+        this.leads.push({ line, from: man, to: d });
+      } else if (party === 'mother') {
+        const mum = add('mother', 0, 0);
+        add('child', 0.7, 0.4, mum);
+        add('child', -0.7, 0.35, mum);
+      } else {
+        add('oldLady', 0, 0);
+      }
+    }
+  }
+
+  private addAgent(kind: Kind, s: number, u: number, leader?: Agent): Agent {
+    const side = Math.sign(u) || 1;
+    const body = makeBody(kind);
+    const home = this.ground(s, u);
+    const st = this.track.frame(s);
+    // Face the run (it lies to their right-hand side of the path), give or take.
+    const towardRun = Math.atan2(side * -st.left[1], side * -st.left[0]) + (Math.random() - 0.5) * 0.8;
+    const agent: Agent = {
+      kind,
+      body,
+      home: home.clone(),
+      pos: home.clone(),
+      heading: towardRun,
+      homeHeading: towardRun,
+      mode: 'idle',
+      timer: 0,
+      dir: new THREE.Vector2(),
+      phase: Math.random() * 10,
+      speed: 0,
+      leader,
+      offset: new THREE.Vector2(),
+      scared: new THREE.Vector3(),
+    };
+    if (leader) agent.offset.set(home.x - leader.home.x, home.z - leader.home.z);
+    body.group.position.copy(home);
+    this.group.add(body.group);
+    this.agents.push(agent);
+    return agent;
+  }
+
+  /** A rider has fallen at `at`: everyone close enough runs away from it, then looks back. */
+  scare(at: THREE.Vector3) {
+    for (const a of this.agents) {
+      const d = Math.hypot(a.pos.x - at.x, a.pos.z - at.z);
+      if (d > 26) continue;
+      a.mode = 'flee';
+      a.timer = 2.2 + Math.random() * 1.4 + (a.kind === 'oldLady' ? 2 : 0);
+      a.dir.set(a.pos.x - at.x, a.pos.z - at.z).normalize();
+      a.scared.copy(at);
+    }
+  }
+
+  update(dt: number, rider: THREE.Vector3 | null) {
+    for (const w of this.waiting) {
+      w.time += dt;
+      w.model.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, stand: { time: w.time, action: null, t: 0 } });
+    }
+    for (const a of this.agents) this.step(a, dt, rider);
+    for (const l of this.leads) {
+      const p = l.line.geometry.attributes.position as THREE.BufferAttribute;
+      const hand = l.from.body.hand!.clone().applyMatrix4(l.from.body.group.matrixWorld);
+      const collar = l.to.body.hand!.clone().applyMatrix4(l.to.body.group.matrixWorld);
+      p.setXYZ(0, hand.x, hand.y, hand.z);
+      p.setXYZ(1, collar.x, collar.y, collar.z);
+      p.needsUpdate = true;
+    }
+  }
+
+  private step(a: Agent, dt: number, rider: THREE.Vector3 | null) {
+    let target = a.homeHeading;
+    let speed = 0;
+    a.timer -= dt;
+    if (a.mode === 'flee') {
+      speed = RUN_SPEED[a.kind];
+      target = Math.atan2(-a.dir.y, a.dir.x);
+      if (a.timer <= 0) {
+        a.mode = 'look';
+        a.timer = 3 + Math.random() * 2;
+      }
+    } else if (a.mode === 'look') {
+      // Stop and stare back at the fall.
+      target = Math.atan2(-(a.scared.z - a.pos.z), a.scared.x - a.pos.x);
+      if (a.timer <= 0) a.mode = 'return';
+    } else if (a.mode === 'return') {
+      const home = a.leader && a.leader.mode !== 'idle' ? null : a.home;
+      const dx = (home ?? a.home).x - a.pos.x;
+      const dz = (home ?? a.home).z - a.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 0.2) a.mode = 'idle';
+      else {
+        speed = Math.min(1.2, d);
+        target = Math.atan2(-dz, dx);
+      }
+    } else if (rider) {
+      // Curious: turn to watch a rider coming past.
+      const dx = rider.x - a.pos.x;
+      const dz = rider.z - a.pos.z;
+      if (dx * dx + dz * dz < 40 * 40) target = Math.atan2(-dz, dx);
+    }
+    // Followers stay near their leader when it moves.
+    if (a.leader && a.mode !== 'flee' && a.leader.mode !== 'idle') {
+      const want = new THREE.Vector3(a.leader.pos.x + a.offset.x * 0.6, 0, a.leader.pos.z + a.offset.y * 0.6);
+      const dx = want.x - a.pos.x;
+      const dz = want.z - a.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d > 0.4) {
+        speed = Math.min(RUN_SPEED[a.kind], d * 2);
+        target = Math.atan2(-dz, dx);
+      }
+    }
+    const turn = ((target - a.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    a.heading += turn * Math.min(1, dt * (speed > 0 ? 8 : 3));
+    a.speed += (speed - a.speed) * Math.min(1, dt * 6);
+    a.pos.x += Math.cos(a.heading) * a.speed * dt;
+    a.pos.z -= Math.sin(a.heading) * a.speed * dt;
+    a.pos.y = groundHeight(this.track, this.terrain, a.pos.x, a.pos.z);
+    // Legs and arms swing with the pace; a gentle sway standing still.
+    const pace = a.speed;
+    a.phase += dt * (pace > 0.1 ? 2.2 + pace * 1.6 : 1.2);
+    const swing = pace > 0.1 ? Math.min(0.9, 0.3 + pace * 0.15) : 0;
+    const b = a.body;
+    b.legs.forEach((leg, i) => (leg.rotation.z = Math.sin(a.phase + (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI : 0)) * swing));
+    if (a.kind === 'dog') b.arms[0].rotation.x = Math.sin(a.phase * 4) * 0.5; // the tail wags
+    else b.arms.forEach((arm, i) => (arm.rotation.z = -Math.sin(a.phase + (i ? 0 : Math.PI)) * swing * 0.8 + (a.mode === 'flee' ? 0.3 : 0)));
+    b.group.position.set(a.pos.x, a.pos.y + (pace > 0.1 ? Math.abs(Math.sin(a.phase)) * 0.04 : Math.sin(a.phase) * 0.004), a.pos.z);
+    b.group.rotation.y = a.heading;
+  }
+}
