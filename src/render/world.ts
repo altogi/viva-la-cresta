@@ -60,7 +60,9 @@ export function createWorld(canvas: HTMLCanvasElement): World {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   };
+  // Follow the canvas's real size (window resizes, rotation, browser toolbars showing or hiding).
   window.addEventListener('resize', resize);
+  new ResizeObserver(resize).observe(canvas);
   resize();
   return { renderer, scene, camera, sun, followSun, resize };
 }

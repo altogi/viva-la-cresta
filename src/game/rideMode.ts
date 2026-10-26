@@ -197,7 +197,8 @@ export class RideMode {
     const helmet = this.cam === 'helmet' && (this.stage === 'live' || this.stage === 'done');
     if (this.model) this.model.head.visible = !helmet;
     this.world.camera.near = helmet ? 0.03 : 0.1;
-    this.world.camera.fov = helmet ? 82 : 62;
+    // A moderately wider lens through the visor; much wider stretches a tall phone screen.
+    this.world.camera.fov = helmet ? 68 : 62;
     this.world.camera.updateProjectionMatrix();
   }
 
@@ -209,6 +210,11 @@ export class RideMode {
   }
 
   private exit() {
+    // Leave the camera as the menu and viewer expect it (no helmet lens).
+    this.stage = 'done';
+    this.cam = 'chase';
+    $('ride-cam').textContent = 'Chase';
+    this.applyCam();
     this.ragdoll.clear();
     this.replayModel?.root.removeFromParent();
     this.replayModel = null;
