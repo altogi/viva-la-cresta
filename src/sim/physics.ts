@@ -258,21 +258,39 @@ export class RideSim {
     } else if (normal < -1 && sp.angle > 0.5) {
       // Thrown off the wall: the bend demands more than the ice can hold.
       this.fall('fly-out', side);
-    } else if (sp.angle > PHYSICS.wallAngle && (side === 'left' ? st.w > 0 : st.w < 0)) {
-      // Into a near-vertical wall (a bankina): glance off it, or hit it too squarely and fall.
-      // Too squarely (angle) and with some force (sideways speed): the toboggan is gone.
+    } else if (this.againstBankina(section, side)) {
+      // Into a bankina: bump off it, or hit it too squarely and fall.
       const impact = Math.abs(st.w);
       if (Math.abs(st.heading) > PHYSICS.impactAngle && impact > PHYSICS.impactSpeed) {
         this.fall('wall', side);
       } else {
         const speed = Math.hypot(st.v, st.w - st.slide);
         const loss = 1 - PHYSICS.glanceLoss * Math.abs(Math.sin(st.heading));
-        st.heading = -st.heading * 0.35;
-        st.slide = -st.slide * 0.2;
+        st.heading = -st.heading * 0.3;
+        st.slide = 0;
         st.v = speed * loss * Math.cos(st.heading);
-        st.w = speed * loss * Math.sin(st.heading) + st.slide;
+        st.w = speed * loss * Math.sin(st.heading);
       }
     }
+  }
+
+  /**
+   * True when the rider is pressed against a bankina, moving outward. Square-cornered walls
+   * (the straights) are a solid barrier at the toboggan's edge, so the rider stays flat on the
+   * floor and is pushed back to it; curved bank walls only count once they're near vertical.
+   */
+  private againstBankina(section: ReturnType<Track['section']>, side: 'left' | 'right'): boolean {
+    const st = this.state;
+    const outward = side === 'left' ? st.w > 0 : st.w < 0;
+    if (!outward) return false;
+    const wall = side === 'left' ? section.left : section.right;
+    if (wall.radius < 0.3) {
+      const barrier = section.floorWidth / 2 - PHYSICS.tobogganHalfWidth;
+      if (Math.abs(st.u) < barrier) return false;
+      st.u = side === 'left' ? barrier : -barrier;
+      return true;
+    }
+    return surfaceAt(section, st.u).angle > PHYSICS.wallAngle;
   }
 
   private fall(kind: FallKind, side: 'left' | 'right') {

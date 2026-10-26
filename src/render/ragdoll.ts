@@ -60,11 +60,17 @@ export class Ragdoll {
 
   /** Put the parts where they were t seconds into the fall (for the replay). */
   showAt(t: number) {
-    const f = this.frames.find((fr) => fr.t >= t) ?? this.frames[this.frames.length - 1];
-    if (!f) return;
-    this.bodies.forEach((b, i) => {
-      b.object.position.copy(f.poses[i].p);
-      b.object.quaternion.copy(f.poses[i].q);
+    const frames = this.frames;
+    if (!frames.length) return;
+    // Blend between the two recorded frames around t, so slow motion stays smooth.
+    let i = frames.findIndex((fr) => fr.t >= t);
+    if (i < 0) i = frames.length - 1;
+    const b = frames[i];
+    const a = frames[Math.max(0, i - 1)];
+    const k = b.t > a.t ? Math.min(1, Math.max(0, (t - a.t) / (b.t - a.t))) : 1;
+    this.bodies.forEach((body, j) => {
+      body.object.position.lerpVectors(a.poses[j].p, b.poses[j].p, k);
+      body.object.quaternion.slerpQuaternions(a.poses[j].q, b.poses[j].q, k);
     });
   }
 

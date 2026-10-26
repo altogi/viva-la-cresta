@@ -313,14 +313,14 @@ function buildFinish(ctx: Placer): THREE.Group {
   const ext = ctx.extent(s);
   const banner = new THREE.Mesh(
     new THREE.PlaneGeometry(ext.left - ext.right + 2, 1),
-    new THREE.MeshBasicMaterial({ map: signTexture('FINISH', '#c8401c', '#ffffff'), side: THREE.DoubleSide }),
+    new THREE.MeshBasicMaterial({ map: signTexture('FINISH', '#930303', '#ffffff'), side: THREE.DoubleSide }),
   );
   const width = ext.left - ext.right + 2;
   banner.position.set(0, 3.2, 0);
   banner.rotation.y = -Math.PI / 2;
   finish.add(banner);
   for (const side of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 3.8, 0.25), mat('#c8401c'));
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 3.8, 0.25), mat('#930303'));
     post.position.set(0, 1.9, side * (width / 2));
     finish.add(post);
   }

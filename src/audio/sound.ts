@@ -82,7 +82,7 @@ export class Sound {
   /** Two strikes of the bell: the signal that a rider has fallen. */
   fallBells() {
     this.bell(0);
-    this.bell(0.55);
+    this.bell(0.22);
   }
 
   /** The start bell: a struck bell with inharmonic partials. */

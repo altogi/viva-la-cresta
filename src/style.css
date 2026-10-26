@@ -1,10 +1,16 @@
 :root {
+  /* The club's palette, from cresta-run.com. */
   --ink: #ffffff;
-  --panel: rgba(16, 28, 44, 0.55);
-  --accent: #c8401c;
+  --charcoal: #24282a;
+  --cream: #fffcf6;
+  --gold: #da9a38;
+  --panel: rgba(36, 40, 42, 0.62);
+  --accent: #930303;
+  --display: 'Outfit', Verdana, sans-serif;
+  --serif: 'Habibi', Georgia, serif;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--display);
   color: var(--ink);
   -webkit-tap-highlight-color: transparent;
 }
@@ -581,4 +587,208 @@ body.viewing #viewer {
 
 #ride-card button[hidden] {
   display: none;
+}
+
+/* ---------- Club style (after cresta-run.com) ---------- */
+#zone,
+#ride-zone {
+  font-family: var(--display);
+  font-weight: 800;
+  letter-spacing: -0.5px;
+}
+
+.stats,
+.ride-numbers,
+.speed {
+  font-family: var(--display);
+}
+
+#controls button,
+#controls select,
+.ride-buttons button {
+  font-family: var(--display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 13px;
+  background: var(--panel);
+}
+
+#menu {
+  background: linear-gradient(rgba(36, 40, 42, 0.05) 20%, rgba(36, 40, 42, 0.8));
+  text-align: left;
+  display: none;
+  padding-left: 28px;
+  padding-right: 28px;
+}
+
+body.in-menu #menu {
+  display: flex;
+  flex-direction: column;
+}
+
+#menu .logo {
+  width: 64px;
+  filter: invert(1);
+  margin-bottom: auto;
+}
+
+#menu .tagline {
+  order: -1;
+  font-family: var(--serif);
+  font-size: 22px;
+  letter-spacing: 0;
+  text-transform: none;
+  margin: 0 0 4px;
+  opacity: 1;
+}
+
+#menu h1 {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 50px;
+  line-height: 0.95;
+  letter-spacing: -2px;
+  text-transform: uppercase;
+  margin: 0 0 28px;
+}
+
+#menu .titles {
+  display: flex;
+  flex-direction: column;
+}
+
+#menu .choices {
+  margin: 0;
+  max-width: 420px;
+}
+
+#menu button,
+#ride-card button {
+  font-family: var(--display);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 15px;
+  border-radius: 4px;
+  background: var(--cream);
+  color: var(--accent);
+  backdrop-filter: none;
+}
+
+#menu button.primary,
+#ride-card button.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+#menu button.quiet {
+  background: transparent;
+  color: #fff;
+  text-align: left;
+  padding-left: 0;
+}
+
+#menu button small {
+  color: var(--gold);
+  font-weight: 700;
+}
+
+#menu .how {
+  max-width: 420px;
+  margin: 14px 0 0;
+  background: var(--cream);
+  color: var(--charcoal);
+  border-radius: 4px;
+  font-family: var(--serif);
+}
+
+#menu .how summary {
+  font-family: var(--display);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+#menu .how b {
+  font-family: var(--display);
+  font-weight: 700;
+}
+
+#ride-posture {
+  font-family: var(--display);
+  border-radius: 3px;
+}
+
+.zone span {
+  font-family: var(--display);
+  font-weight: 700;
+}
+
+.run {
+  font-family: var(--display);
+}
+
+#ride-banner-title {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 46px;
+  letter-spacing: -1.5px;
+  text-transform: uppercase;
+}
+
+#ride-banner-hint {
+  font-family: var(--serif);
+  font-size: 16px;
+}
+
+#ride-banner.replay #ride-banner-title {
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.3em;
+  border-radius: 3px;
+}
+
+#ride-card {
+  background: var(--cream);
+  color: var(--charcoal);
+  border-radius: 6px;
+  text-align: left;
+  backdrop-filter: none;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+
+#ride-card-title {
+  font-family: var(--display);
+  font-weight: 800;
+  letter-spacing: -1.5px;
+  text-transform: uppercase;
+  color: var(--accent);
+  line-height: 1;
+}
+
+#ride-card-subtitle {
+  font-family: var(--serif);
+  font-size: 18px;
+}
+
+#ride-card-lines {
+  font-family: var(--serif);
+  color: #555;
+  opacity: 1;
+}
+
+#ride-card button {
+  border: 1px solid rgba(147, 3, 3, 0.25);
+}
+
+#loading {
+  background: var(--cream);
+  color: var(--charcoal);
+  font-family: var(--serif);
+}
+
+#rotate {
+  font-family: var(--serif);
 }

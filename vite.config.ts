@@ -12,7 +12,7 @@ export default defineConfig({
         name: 'Viva la Cresta',
         short_name: 'Cresta',
         description: 'Ride the Cresta Run, from Beginner Day to the Grand National.',
-        theme_color: '#c8401c',
+        theme_color: '#930303',
         background_color: '#eef3f8',
         display: 'standalone',
         orientation: 'portrait',
@@ -25,6 +25,14 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,ico}'],
+        // The club's typefaces (Outfit, Habibi) from Google Fonts, kept for offline play.
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/,
+            handler: 'CacheFirst',
+            options: { cacheName: 'google-fonts', expiration: { maxEntries: 20, maxAgeSeconds: 31536000 } },
+          },
+        ],
       },
     }),
   ],

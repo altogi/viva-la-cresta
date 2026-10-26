@@ -188,7 +188,7 @@ export class RideMode {
     this.runPhase = 0;
     document.body.classList.add('riding');
     $('ride-card').hidden = true;
-    this.banner('Rider on the ice', setup.start === 'running' ? 'Tap to start · then tap RUN to run' : 'Tap to start · lying start');
+    this.banner('Run Clear!', setup.start === 'running' ? 'Tap to start · then tap RUN to run' : 'Tap to start · lying start');
     this.placeRider();
   }
 
@@ -404,7 +404,7 @@ export class RideMode {
     this.orbitTime += realDt;
     const model = this.replayModel!;
     if (this.replayClock < this.fallTime) {
-      const snap = this.history.find((h) => h.t >= this.replayClock) ?? this.history[this.history.length - 1];
+      const snap = this.historyAt(this.replayClock);
       model.root.visible = true;
       this.ragdoll.setVisible(false);
       this.placeModel(model, snap);
@@ -414,6 +414,31 @@ export class RideMode {
       this.ragdoll.showAt(this.replayClock - this.fallTime);
       if (this.replayClock - this.fallTime > this.ragdoll.duration + 0.4) this.endReplay();
     }
+  }
+
+  /** The rider's state at time t, blended between the recorded frames either side. */
+  private historyAt(t: number): Snapshot {
+    const h = this.history;
+    let i = h.findIndex((x) => x.t >= t);
+    if (i < 0) return h[h.length - 1];
+    if (i === 0) return h[0];
+    const a = h[i - 1];
+    const b = h[i];
+    const k = (t - a.t) / Math.max(1e-6, b.t - a.t);
+    const mix = (x: number, y: number) => x + (y - x) * k;
+    return {
+      t,
+      s: mix(a.s, b.s),
+      u: mix(a.u, b.u),
+      v: mix(a.v, b.v),
+      w: mix(a.w, b.w),
+      posture: mix(a.posture, b.posture),
+      steer: mix(a.steer, b.steer),
+      rakeLeft: mix(a.rakeLeft, b.rakeLeft),
+      rakeRight: mix(a.rakeRight, b.rakeRight),
+      mount: mix(a.mount, b.mount),
+      runPhase: mix(a.runPhase, b.runPhase),
+    };
   }
 
   private endReplay() {

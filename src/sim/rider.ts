@@ -70,6 +70,8 @@ export const PHYSICS = {
   impactAngle: 0.21,
   /** …provided the sideways speed is at least this (m/s). */
   impactSpeed: 2.2,
+  /** Half the toboggan's width: how close its centre gets to a square-cornered wall (m). */
+  tobogganHalfWidth: 0.28,
   /** Share of speed lost glancing off a wall, at a 90° impact. */
   glanceLoss: 0.6,
   /** Speed added diving onto the toboggan after a running start (m/s). */
