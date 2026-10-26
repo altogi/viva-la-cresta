@@ -11,23 +11,32 @@ import { toThree } from '../render/util';
 import { flagUrl } from '../ui/flags';
 import { saveSelection, type Selection } from './selection';
 
-const PROFILES: Record<RiderId, { flag: string; line: string; bio: string; action: IdleAction }> = {
+const PROFILES: Record<RiderId, { flag: string; line: string; bio: string; story: string; good: string; watch: string; action: IdleAction }> = {
   maximilian: {
     flag: 'Germany · 20',
     line: 'Light. Lanky. Lightning off the start.',
     bio: 'Out at Drakula till four, on the ice by nine. Arms like a crane, legs like a gazelle. Not much of him to carry speed.',
+    story: "Munich money, St Moritz manners, and a grin that gets him into every party at the Kulm. He came for the nightlife and stayed for the ice. Light enough that the banks barely notice him, quick enough that he's halfway down before the bell stops ringing.",
+    good: 'Fastest off the start. Long reach for steering on the knives. Easy to slow down for Shuttlecock.',
+    watch: "Too light to carry speed down the straights: he has to win the race at the top.",
     action: 'comb',
   },
   adelaide: {
     flag: 'England · 25',
     line: 'Balanced. Fearless. No weak spots.',
     bio: 'Cold plunge before breakfast, family chalet above the lake. Middle weight, middle agility, maximum nerve.',
+    story: "Third generation on the Cresta: her grandfather's name is on a board in the clubhouse and she means to put hers above it. She rides like she does everything else, cheerfully and flat out, and has never once been seen to hesitate at Shuttlecock.",
+    good: 'No weak spot anywhere: the all-rounder who can win from any start.',
+    watch: 'No single gift to lean on either. Every course has to be clean.',
     action: 'flirt',
   },
   remo: {
     flag: 'Switzerland · 50',
     line: 'Heavy. Hairy. Hard to stop.',
     bio: 'Rides every day of the season. A rocket on the straights, a nightmare to slow down. Plan Shuttlecock early. Beer after.',
+    story: 'Born in Celerina, at the bottom of the run, and has ridden it every winter since the old wooden toboggans. Thirty years of Shuttlecock stories, most of them true. The Tower knows his laugh before they see him.',
+    good: 'All that weight: a rocket down Bledisloe Straight and the fastest at the finish.',
+    watch: 'Slow to move about on the toboggan and heavy to stop. Rake early, or meet the straw.',
     action: 'burp',
   },
 };
@@ -114,6 +123,11 @@ export class SelectMode {
         <div class="rider-name"><img class="flag" src="${flagUrl(LOOKS[id].flag)}" alt="" />${r.name}</div>
         <div class="rider-flag">${p.flag} · ${p.line}</div>
         <div class="rider-bio">${p.bio}</div>
+        <div class="rider-story">
+          <p>${p.story}</p>
+          <p><b>Strengths</b> ${p.good}</p>
+          <p><b>Watch out</b> ${p.watch}</p>
+        </div>
         <div class="rider-stats">${ratings(r)
           .map(([label, v]) => `<div class="stat"><span>${label}</span><i><b style="width:${Math.round(v * 100)}%"></b></i></div>`)
           .join('')}</div>`;
@@ -217,7 +231,15 @@ export class SelectMode {
     return this.selection.rider;
   }
 
-  open() {
+  /**
+   * Show the selection. For a new career there's no toboggan to choose (everyone starts on a
+   * traditional), so the rider's card gets the room.
+   */
+  open(options: { career?: boolean } = {}) {
+    const career = !!options.career;
+    $('select').classList.toggle('career', career);
+    $('select-done').textContent = career ? 'Begin' : 'Done';
+    if (career) this.selection = { ...this.selection, toboggan: 'traditional' };
     this.time = 0;
     this.savedFov = this.world.camera.fov;
     this.refresh();
@@ -293,19 +315,20 @@ export class SelectMode {
     const h = canvas.clientHeight;
     const side = w >= 760 && w >= h;
     cam.fov = PORTRAIT_FOV;
+    // On a phone, the slice above the panel (whatever its height); beside the side panel, all of it.
+    const panel = document.querySelector<HTMLElement>('#select .select-panel')?.offsetHeight ?? h * 0.5;
+    const visible = side ? 1 : THREE.MathUtils.clamp((h - panel) / h, 0.3, 1);
     if (side) cam.setViewOffset(w, h, 200, 0, w, h);
-    else cam.setViewOffset(w, h, 0, h * 0.24, w, h);
-    // The visible slice is half the frame tall on a phone, all of it beside the side panel.
-    const visible = side ? 1 : 0.5;
+    else cam.setViewOffset(w, h, 0, h * (0.5 - visible / 2), w, h);
     // Ease the framing between riders of different heights.
-    const wanted = 1.75 * LOOKS[this.selection.rider].scale + 0.35;
+    const wanted = 1.75 * LOOKS[this.selection.rider].scale + 0.6;
     this.height = this.height ? this.height + (wanted - this.height) * (1 - Math.exp(-dt * 5)) : wanted;
     const height = this.height;
     const tan = Math.tan(THREE.MathUtils.degToRad(PORTRAIT_FOV / 2)) * visible;
     const width = 1.9;
     const dist = Math.max(height / 2 / tan, width / 2 / (tan * Math.min(1, (side ? w - 400 : w) / (h * visible))));
     // Aim between the rider and the toboggan, at mid height.
-    const target = new THREE.Vector3(0.1, height / 2 - 0.12, -0.92).applyMatrix4(this.anchor);
+    const target = new THREE.Vector3(0.1, height / 2 - 0.25, -0.92).applyMatrix4(this.anchor);
     const yaw = 0.42 + Math.sin(this.time * 0.25) * 0.08;
     const local = new THREE.Vector3(Math.cos(yaw) * dist, 0, Math.sin(yaw) * dist).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.heading);
     cam.position.copy(target).add(local).add(new THREE.Vector3(0, -0.12, 0));

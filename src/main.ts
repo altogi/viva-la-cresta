@@ -11,6 +11,8 @@ import { RiderModel } from './render/riderModel';
 import { LOOKS } from './render/riderLooks';
 import { loadSelection, type Selection } from './game/selection';
 import { SelectMode } from './game/selectMode';
+import { CareerMode } from './game/careerMode';
+import { clearBadgeBackground } from './ui/badge';
 import { Crowd } from './render/crowd';
 import { RIDERS, TOBOGGANS } from './sim/rider';
 import { Viewer } from './viewer/viewer';
@@ -46,7 +48,7 @@ function start() {
   lap('scene');
 
   // The ghost rider behind the menu and in the viewer wears the chosen rider's kit.
-  const chosen = loadSelection();
+  let chosen = loadSelection();
   let ghost = new RiderModel(LOOKS[chosen.rider], chosen.toboggan).root;
   world.scene.add(ghost);
   const viewer = new Viewer(world, track, terrain, ghost);
@@ -69,31 +71,62 @@ function start() {
   };
   showChoice(chosen);
 
-  type Mode = 'menu' | 'ride' | 'viewer' | 'select';
-  let mode: Mode = 'menu';
+  type Mode = 'intro' | 'saves' | 'hub' | 'menu' | 'ride' | 'viewer' | 'select';
+  let mode: Mode = 'intro';
+  /** Where the track viewer goes back to. */
+  let viewerReturn: Mode = 'saves';
   const setMode = (next: Mode) => {
     if (mode === 'select' && next !== 'select') select.close();
     mode = next;
     document.body.classList.toggle('in-menu', next === 'menu');
     document.body.classList.toggle('viewing', next === 'viewer');
     document.body.classList.toggle('selecting', next === 'select');
-    ghost.visible = next === 'menu' || next === 'viewer';
-    viewer.setAttract(next === 'menu');
-    if (next === 'select') select.open();
+    for (const screen of ['intro', 'saves', 'hub']) document.body.classList.toggle(`screen-${screen}`, next === screen);
+    // The rider flies down the run behind the menus.
+    const attract = next === 'menu' || next === 'intro' || next === 'saves' || next === 'hub';
+    ghost.visible = attract || next === 'viewer';
+    viewer.setAttract(attract);
   };
-  document.getElementById('open-select')!.addEventListener('click', () => {
-    sound.start();
-    setMode('select');
-  });
-  select.onDone = (sel) => {
-    ride.selection = sel;
-    showChoice(sel);
+  const setGhost = (sel: Selection) => {
     ghost.removeFromParent();
     ghost = new RiderModel(LOOKS[sel.rider], sel.toboggan).root;
     world.scene.add(ghost);
     viewer.setRider(ghost);
+  };
+
+  // The career: intro, saved games, hub, races.
+  const career = new CareerMode(
+    ride,
+    select,
+    (screen) => setMode(screen),
+    (sel) => setGhost(sel),
+  );
+  if (debug) Object.assign(window, { career });
+  for (const img of document.querySelectorAll<HTMLImageElement>('.badge, .badge-small')) clearBadgeBackground(img);
+  document.getElementById('intro')!.addEventListener('click', () => sound.start());
+  document.getElementById('new-game')!.addEventListener('click', () => sound.start());
+
+  // Free ride: any start, any rider, outside the career.
+  const freeRideDone = (sel: Selection) => {
+    chosen = sel;
+    ride.selection = sel;
+    showChoice(sel);
+    setGhost(sel);
     setMode('menu');
   };
+  document.getElementById('free-ride')!.addEventListener('click', () => {
+    sound.start();
+    ride.selection = chosen;
+    setGhost(chosen);
+    setMode('menu');
+  });
+  document.getElementById('menu-back')!.addEventListener('click', () => career.saves());
+  document.getElementById('open-select')!.addEventListener('click', () => {
+    sound.start();
+    select.onDone = freeRideDone;
+    setMode('select');
+    select.open();
+  });
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-ride]')) {
     button.addEventListener('click', () => {
       sound.start();
@@ -101,10 +134,13 @@ function start() {
       ride.begin(RIDES[button.dataset.ride!]);
     });
   }
-  document.getElementById('open-viewer')!.addEventListener('click', () => setMode('viewer'));
-  document.getElementById('viewer-close')!.addEventListener('click', () => setMode('menu'));
+  document.getElementById('open-viewer')!.addEventListener('click', () => ((viewerReturn = 'menu'), setMode('viewer')));
+  document.getElementById('saves-viewer')!.addEventListener('click', () => ((viewerReturn = 'saves'), setMode('viewer')));
+  document.getElementById('viewer-close')!.addEventListener('click', () => (viewerReturn === 'saves' ? career.saves() : setMode(viewerReturn)));
   ride.onExit = () => setMode('menu');
-  setMode(params.has('viewer') ? 'viewer' : 'menu');
+  if (params.has('viewer')) setMode('viewer');
+  else if (params.has('free')) setMode('menu');
+  else career.intro();
 
   const clock = new THREE.Clock();
   const fps = document.getElementById('fps')!;

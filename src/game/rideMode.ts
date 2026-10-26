@@ -19,12 +19,30 @@ import type { Crowd } from '../render/crowd';
 import { groundHeight } from '../render/ground';
 import { toThree } from '../render/util';
 import type { Sound } from '../audio/sound';
+import type { Coach } from './coach';
 
 export interface RideSetup {
   startS: number;
   start: StartStyle;
   label: string;
   steps?: number;
+  /** A ride in a career: its own banner line, an optional coach, and where the result goes. */
+  career?: {
+    /** Under "Run Clear!", e.g. "The Curzon Cup · Course 2 of 3". */
+    title: string;
+    coach?: Coach;
+    /** Extra lines on the fall card (advice after a first fall). */
+    fallLines?: (kind: string, zone: string) => string[];
+    /** Called when the rider leaves the ride: the result, or null if they quit before the end. */
+    onDone: (result: RideResult | null) => void;
+  };
+}
+
+export interface RideResult {
+  time: number | null;
+  fall: { kind: string; zone: string } | null;
+  /** Finish speed, mph. */
+  speed: number;
 }
 
 type Stage = 'ready' | 'countdown' | 'live' | 'runout' | 'celebrate' | 'falling' | 'replay' | 'done';
@@ -66,6 +84,7 @@ const FALL_TEXT: Record<string, string> = {
 export class RideMode {
   private sim!: RideSim;
   private model!: RiderModel;
+  private result: RideResult | null = null;
   private readonly powderDue = [0, 0];
   private readonly rakePos = new THREE.Vector3();
   private setup!: RideSetup;
@@ -197,7 +216,13 @@ export class RideMode {
     this.runPhase = 0;
     document.body.classList.add('riding');
     $('ride-card').hidden = true;
-    this.banner('Run Clear!', setup.start === 'running' ? 'Tap to start · then tap RUN to run' : 'Tap to start · lying start');
+    const hint = setup.start === 'running' ? 'Tap to start · then tap RUN to run' : 'Tap to start · lying start';
+    this.banner('Run Clear!', setup.career ? `${setup.career.title}<br>${hint}` : hint);
+    this.result = null;
+    // In a career the card leads on; there's no riding again straight away.
+    $('ride-again').hidden = !!setup.career;
+    $('ride-menu').textContent = setup.career ? 'Continue' : 'Menu';
+    if (setup.career?.coach) setup.career.coach.ready();
     this.placeRider();
   }
 
@@ -230,14 +255,17 @@ export class RideMode {
     this.model?.root.removeFromParent();
     document.body.classList.remove('riding');
     this.sound.update({ speed: 0, posture: 0, rake: 0, riding: false });
-    this.onExit();
+    this.setup.career?.coach?.hide();
+    const career = this.setup.career;
+    if (career) career.onDone(this.result ?? (this.sim.state.fall ? { time: null, fall: { kind: this.sim.state.fall.kind, zone: this.sim.state.fall.zone }, speed: 0 } : null));
+    else this.onExit();
   }
 
   private banner(title: string, hint: string) {
     const el = $('ride-banner');
     el.hidden = !title;
     $('ride-banner-title').textContent = title;
-    $('ride-banner-hint').textContent = hint;
+    $('ride-banner-hint').innerHTML = hint;
   }
 
   update(realDt: number) {
@@ -254,7 +282,7 @@ export class RideMode {
       this.applyCam();
       this.controls.setRunning(this.sim.state.phase === 'running');
     }
-    if (this.stage === 'live' || this.stage === 'runout') dt = realDt * GAME_SPEED;
+    if (this.stage === 'live' || this.stage === 'runout') dt = realDt * GAME_SPEED * (this.setup.career?.coach?.timeScale ?? 1);
     if (this.stage === 'falling') dt = realDt * (this.stageTime < 2.4 ? 0.3 : 1);
 
     if (this.stage === 'live') {
@@ -263,6 +291,7 @@ export class RideMode {
         ? autopilotInput(this.track, this.sim, this.autopilot, this.simClock, this.lastStride)
         : this.controls.read(dt);
       this.sim.update(dt, input);
+      this.setup.career?.coach?.update({ stage: this.stage, s: this.sim.state.s, steer: input.steer, knives: input.knives, rake: Math.max(input.rakeLeft, input.rakeRight) }, realDt);
       const st = this.sim.state;
       // Legs keep pace with the ground covered: one stride every ~1.7 m.
       if (st.phase === 'running') this.runPhase += (st.v * dt * Math.PI) / 1.7;
@@ -510,7 +539,8 @@ export class RideMode {
     $('ride-banner').classList.remove('replay');
     this.banner('', '');
     const fall = this.sim.state.fall!;
-    this.card(`Fall at ${fall.zone}`, `You ${FALL_TEXT[fall.kind]}. Disqualified.`, []);
+    this.result = { time: null, fall: { kind: fall.kind, zone: fall.zone }, speed: 0 };
+    this.card(`Fall at ${fall.zone}`, `You ${FALL_TEXT[fall.kind]}. Disqualified.`, this.setup.career?.fallLines?.(fall.kind, fall.zone) ?? []);
     $('ride-replay').hidden = false;
     this.stage = 'done';
   }
@@ -529,6 +559,7 @@ export class RideMode {
     }
     // "Hello Hello!" only when beating a best that already stood.
     const beaten = best !== null && time < best;
+    this.result = { time, fall: null, speed: (st.finishSpeed ?? 0) * MPH };
     const lines: string[] = [];
     if (beaten) lines.push(`New best · previous ${best!.toFixed(2)}`);
     else if (best) lines.push(`Best ${best.toFixed(2)}`);

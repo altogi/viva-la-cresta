@@ -227,7 +227,16 @@ Rebuild the run's surroundings one zone at a time from reference photos you supp
 5. **Practice.** Five more practice rides, then the rider is made a member (the moment comes at random).
 6. **Progression.** From then on the career's choices open up: convert to the flat-top, or move up to riding from Top.
 
-### Phase 5 — Career
+### Phase 5 — Career ✅ (first version; tune with playtesting)
+*Built:*
+- **Intro:** the badge over a flight down the run, then the saved games (name, rider, best time, last played), or a new game.
+- **New game:** rider selection without the toboggan, with each rider's story, strengths and weaknesses.
+- **Beginner Day:** a coached first ride (steer, knives, rake, then Shuttlecock and the banks), with advice after the first fall.
+- **Practice:** five rides (lying starts, then a running start of 2, 4 and 7 steps). The President's invitation comes at random after the third, and surely after the fifth.
+- **Hub and progression:** three rides a day and a season calendar. Three of the last five Junction rides under 48 s on a traditional gives the choice of flat-top or Top. Conversions follow the rules above, and the other route opens later (flat-top Junction rides under 47 s, or Top traditional rides under 66 s).
+- **Races:** handicap races at Junction and Top, and the scratch Curzon, Brabazon, Morgan and Grand National. NPC fields have surnames and nations from the sheets, form scaled to this run, falls mostly at Shuttlecock, and Tower handicaps from scratch to 13 s. A fall means DQ.
+- **Results:** sheets printed like the Tower's, then the Grand National ending and free play.
+
 Rider select, save slots, Beginner Day tutorial, Junction Practice, progression engine (rules above), unlock choice screens, club-membership moment. Race flow: handicap races (3 courses, Tower handicap) and the scratch majors (1–2 days), NPC fields, Tower-style results sheets, DQ. Practice between races, the majors through to the Grand National, and an ending.
 **Done when** you can play a full career from Beginner Day to winning the Grand National.
 
