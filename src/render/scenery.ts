@@ -251,7 +251,8 @@ function buildTopArea(ctx: Placer): THREE.Group {
   group.add(platform);
   // Snow wall closing the run behind the start.
   const wall = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.4, 5), mat(colors.snow, { flatShading: false }));
-  wall.position.set(-st.forward[0] * 1.2, z0 + 0.5, st.forward[1] * 1.2);
+  // Far enough back to stay behind the chase camera at the start.
+  wall.position.set(-st.forward[0] * 9, z0 + 0.5, st.forward[1] * 9);
   wall.rotation.y = heading;
   wall.castShadow = wall.receiveShadow = true;
   group.add(wall);

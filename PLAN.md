@@ -216,8 +216,20 @@ Rider select, save slots, Beginner Day tutorial, Junction Practice, progression 
 Weather generator and friction model, snow (visual snowfall + physics), wind, hangover effects, dramatic pre-race cards, the bell, a fuller soundscape (crowd at the finish, wind at speed, tannoy).
 **Done when** two race days feel different and the cards land.
 
-### Visual upgrade (runs alongside Phases 2–4)
-Move the Phase 1 scene to the semi-realistic target: textured pine LODs, PBR ice/snow, sky lighting, and accurate landmark models.
+### Visual upgrade (runs alongside Phases 3–4)
+Battle Drones builds its 3D models in TypeScript code (procedural Three.js geometry), with no external modelling, and so does this game so far. Code-built geometry can go a long way. The jump to *realistic* comes mostly from light, materials and post-processing, plus a few hand-made hero assets.
+
+1. **Light:** a physical sky (Three.js `Sky`) feeding an environment map, so ice and glass reflect the sky and snow gets proper ambient light. Sharper shadows near the camera (cascaded shadow maps). Low winter sun with long shadows.
+2. **Materials:** snow and ice with normal and roughness maps (free CC0 textures from ambientCG or Poly Haven, or generated procedurally). Glinting snow. Ice with a clearcoat sheen and rider reflections.
+3. **Post-processing:** ambient occlusion (contact shading where the ice meets the walls), gentle bloom on sunlit snow, colour grading. At speed, motion blur, snow spray and a slight camera shake. Depth of field in replays.
+4. **Assets:**
+   - Riders and toboggans as rigged glTF models (Blender, or AI generation such as Meshy or Rodin, then rigged and animated) for the poses: running, jump-on, forward, knives, arm steering, raking, tumbling.
+   - Spruces as branch-card models, with flat billboards in the distance.
+   - Buildings from swisstopo (see *Accurate surroundings*).
+5. **Atmosphere:** falling snow on snow days, distant haze, clouds.
+6. **Performance tiers:** an automatic quality setting by device (shadow resolution, post effects, tree density, pixel ratio) to hold 60 fps on mid-range phones.
+
+**Fall effects** (a first version is in): straw and snow bursts when a body hits the ground or the padding. Later: straw that stays scattered, a padding wobble, camera shake on impact, snow spray from rakes and runners.
 
 ### Accurate surroundings (alongside the visual upgrade)
 Goal: the buildings and slopes around the run look like the real ones.

@@ -85,3 +85,32 @@ function crossColor(i: number, part: string, z: number, runoffRight: string, run
   // Walls whiten towards the top, where snow clings.
   return z > 1.2 ? colors.wall : colors.ice;
 }
+
+/**
+ * Height of the visible track surface (ice, walls, lips and embankments) above the floor,
+ * `lateral` metres left of the centreline at s; null beyond the embankments. Mirrors the mesh above.
+ */
+export function trackSurfaceHeight(track: Track, s: number, lateral: number): number | null {
+  const pts = track.crossSection(s);
+  const right = pts[0];
+  const left = pts[pts.length - 1];
+  if (lateral > right.y && lateral < left.y) {
+    // In the channel: floor, or up a wall towards its lip.
+    let best = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      if ((lateral - a.y) * (lateral - b.y) <= 0 && Math.abs(b.y - a.y) > 1e-6) {
+        best = Math.max(best, a.z + ((lateral - a.y) / (b.y - a.y)) * (b.z - a.z));
+      }
+    }
+    return best;
+  }
+  const lip = lateral >= left.y ? left : right;
+  const out = Math.abs(lateral - lip.y);
+  if (out > SKIRT_WIDTH) return null;
+  const mid = SKIRT_WIDTH * 0.45;
+  const midZ = Math.max(lip.z * 0.35, TERRAIN_BASE + 0.15);
+  if (out <= mid) return lip.z + (midZ - lip.z) * (out / mid);
+  return midZ + (TERRAIN_BASE - 0.9 - midZ) * ((out - mid) / (SKIRT_WIDTH - mid));
+}

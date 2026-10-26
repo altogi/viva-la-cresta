@@ -12,7 +12,9 @@ import { TRACK_LENGTH } from '../track/cresta';
 import type { World } from '../render/world';
 import type { Terrain } from '../render/terrain';
 import { RiderModel } from '../render/riderModel';
+import { trackSurfaceHeight } from '../render/trackMesh';
 import { Ragdoll } from '../render/ragdoll';
+import { FallDebris } from '../render/particles';
 import { toThree } from '../render/util';
 import type { Sound } from '../audio/sound';
 
@@ -41,7 +43,7 @@ interface Snapshot {
 }
 
 /** The ride plays a little quicker than real time, for fun; displayed times stay real. */
-export const GAME_SPEED = 1.15;
+export const GAME_SPEED = 1.35;
 
 const REPLAY_BEFORE = 2.2; // seconds of riding shown before the fall
 const REPLAY_SPEED = 0.5;
@@ -78,6 +80,9 @@ export class RideMode {
   private orbitTime = 0;
   private readonly controls: Controls;
   private readonly ragdoll: Ragdoll;
+  private readonly debris: FallDebris;
+  /** Whether the ground where the rider fell is straw (beyond Shuttlecock's lip). */
+  private fallOnStraw = false;
   private readonly camPos = new THREE.Vector3();
   private readonly camLook = new THREE.Vector3();
   private readonly riderPos = new THREE.Vector3();
@@ -100,7 +105,44 @@ export class RideMode {
     this.controls.onTap = (zone) => {
       if (zone === 'run') this.sound.step();
     };
-    this.ragdoll = new Ragdoll(world.scene, (x, z) => terrain.height(x, -z));
+    // Ground for tumbling bodies and debris: the track's ice, banks and straw where they are, else the hillside.
+    const groundAt = (x: number, z: number) => {
+      const y = -z;
+      const ground = terrain.height(x, y);
+      const { station } = terrain.distanceToTrack(x, y);
+      if (!station) return ground;
+      const lateral = (x - station.pos[0]) * station.left[0] + (y - station.pos[1]) * station.left[1];
+      const h = trackSurfaceHeight(track, station.s, lateral);
+      return h === null ? ground : Math.max(ground, station.pos[2] + h);
+    };
+    this.ragdoll = new Ragdoll(world.scene, groundAt);
+    this.debris = new FallDebris(groundAt);
+    world.scene.add(this.debris.group);
+    // The red padding beyond Shuttlecock's straw stops riders who fly out.
+    this.ragdoll.constrain = (pos, vel) => {
+      if (!this.fallOnStraw) return;
+      const { station } = terrain.distanceToTrack(pos.x, -pos.z);
+      if (!station) return;
+      const pts = track.crossSection(station.s);
+      const lateral = (pos.x - station.pos[0]) * station.left[0] + (-pos.z - station.pos[1]) * station.left[1];
+      const side = this.sim.state.fall?.side === 'left' ? 1 : -1;
+      const pad = (side > 0 ? pts[pts.length - 1].y : pts[0].y) + side * 8.3;
+      if (side * (lateral - pad) > 0) {
+        const push = lateral - pad;
+        pos.x -= station.left[0] * push;
+        pos.z += station.left[1] * push;
+        // The padding absorbs the sideways and forward speed; the rider still drops into the straw.
+        if (this.stage === 'falling' && Math.hypot(vel.x, vel.z) > 3) this.debris.burst(pos.clone(), vel.clone().multiplyScalar(-0.3), true, 0.6);
+        vel.x *= 0.15;
+        vel.z *= 0.15;
+      }
+    };
+    this.ragdoll.onImpact = (at, velocity, index) => {
+      // Only live impacts kick up debris, not the replay.
+      if (this.stage !== 'falling') return;
+      this.debris.burst(at, velocity, this.fallOnStraw, index === 0 ? 1 : 0.5);
+      if (index === 0) this.sound.thud();
+    };
     $('ride-banner').addEventListener('pointerdown', (e) => {
       e.preventDefault();
       if (this.stage === 'ready') this.countdown();
@@ -116,6 +158,7 @@ export class RideMode {
     $('ride-cam').addEventListener('click', () => {
       this.cam = this.cam === 'chase' ? 'helmet' : 'chase';
       $('ride-cam').textContent = this.cam === 'chase' ? 'Chase' : 'Helmet';
+      this.applyCam();
     });
   }
 
@@ -137,6 +180,7 @@ export class RideMode {
     this.controls.reset(false);
     this.controls.setRunning(false);
     this.stage = 'ready';
+    this.applyCam();
     this.stageTime = 0;
     this.snap = true;
     this.mountTime = 0;
@@ -146,6 +190,15 @@ export class RideMode {
     $('ride-card').hidden = true;
     this.banner('Rider on the ice', setup.start === 'running' ? 'Tap to start · then tap RUN to run' : 'Tap to start · lying start');
     this.placeRider();
+  }
+
+  /** Helmet view: hide your own helmet and let the camera get close to the toboggan. */
+  private applyCam() {
+    const helmet = this.cam === 'helmet' && (this.stage === 'live' || this.stage === 'done');
+    if (this.model) this.model.head.visible = !helmet;
+    this.world.camera.near = helmet ? 0.03 : 0.1;
+    this.world.camera.fov = helmet ? 82 : 62;
+    this.world.camera.updateProjectionMatrix();
   }
 
   private countdown() {
@@ -183,6 +236,7 @@ export class RideMode {
       this.sim.release();
       this.stage = 'live';
       this.stageTime = 0;
+      this.applyCam();
       this.controls.setRunning(this.sim.state.phase === 'running');
     }
     if (this.stage === 'live' || this.stage === 'done') dt = realDt * GAME_SPEED;
@@ -208,6 +262,7 @@ export class RideMode {
       this.sim.update(dt, this.controls.read(dt));
     }
 
+    this.debris.update(this.stage === 'falling' ? dt : realDt * REPLAY_SPEED);
     if (this.stage === 'falling') {
       this.ragdoll.update(dt);
       if (this.stageTime > 3.2) this.startReplay();
@@ -299,8 +354,12 @@ export class RideMode {
   private startFall() {
     this.model.contactShadow.visible = false;
     this.stage = 'falling';
+    this.applyCam();
     this.stageTime = 0;
-    this.sound.thud();
+    this.sound.fallBells();
+    const fallen = this.sim.state.fall!;
+    const sec = this.track.section(fallen.s);
+    this.fallOnStraw = (fallen.side === 'left' ? sec.runoffLeft : sec.runoffRight) === 'straw';
     navigator.vibrate?.([30, 40, 60]);
     const root = this.model.root;
     root.matrixAutoUpdate = true;
@@ -401,9 +460,9 @@ export class RideMode {
     const desiredLook = new THREE.Vector3();
     const st = this.sim.state;
     if (this.stage === 'falling') {
-      // Close-up beside the tumbling rider.
+      // Close-up from the run side of the fall, turning to follow the tumbling rider.
       const focus = this.ragdoll.focus() ?? this.fallPoint;
-      desiredPos.copy(focus).addScaledVector(this.closeUpSide, 4.5).add(new THREE.Vector3(0, 1.6, 0));
+      desiredPos.copy(this.fallPoint).addScaledVector(this.closeUpSide, 5).add(new THREE.Vector3(0, 2.4, 0));
       desiredLook.copy(focus);
     } else if (this.stage === 'replay' || (this.stage === 'done' && st.phase === 'fallen')) {
       // Fly over the fall: circle above it, watching the rider.
@@ -411,6 +470,14 @@ export class RideMode {
       desiredPos.copy(this.fallPoint).add(new THREE.Vector3(Math.cos(angle) * 12, 8.5, Math.sin(angle) * 12));
       const subject = this.replayModel?.root.visible ? this.riderPos : this.ragdoll.focus();
       desiredLook.copy(subject ?? this.fallPoint);
+    } else if (this.stage === 'ready' || this.stage === 'countdown') {
+      // The start, seen from a little way down the run looking back up: rider, start and hut.
+      const s0 = this.setup.startS;
+      const below = this.track.frame(s0 + 11);
+      toThree(this.track.toWorld(below, -1.6, 2.4), desiredPos);
+      const behind = this.track.frame(Math.max(0, s0 - 4));
+      toThree(this.track.toWorld(behind, 1.5, 1.6), desiredLook);
+      if (s0 < 4) desiredLook.addScaledVector(toThree(this.track.frame(0).forward), -6);
     } else {
       const s = Math.min(st.s, TRACK_LENGTH);
       const sp = surfaceAt(this.track.section(s), st.u);
@@ -424,10 +491,20 @@ export class RideMode {
         const ahead = this.track.frame(Math.min(TRACK_LENGTH, s + 4));
         toThree(this.track.toWorld(ahead, sp.y * 0.8, 0.35 + sp.z), desiredLook);
       } else {
-        const here = this.track.frame(Math.min(TRACK_LENGTH, s + 0.8));
-        toThree(this.track.toWorld(here, sp.y, sp.z + 0.5), desiredPos);
-        const ahead = this.track.frame(Math.min(TRACK_LENGTH, s + 18));
-        toThree(this.track.toWorld(ahead, sp.y * 0.5, 0.4), desiredLook);
+        // Through the visor: at the rider's eyes, half-rolling with them on the banks, looking
+        // along the run with the toboggan's nose and the gloves at the bottom of a wide view.
+        this.model.root.updateMatrixWorld(true);
+        const eyes = this.model.head.getWorldPosition(new THREE.Vector3());
+        const m = this.model.root.matrix;
+        const fwd = new THREE.Vector3().setFromMatrixColumn(m, 0);
+        const up = new THREE.Vector3().setFromMatrixColumn(m, 1);
+        cam.position.copy(eyes).addScaledVector(fwd, 0.17).addScaledVector(up, 0.04);
+        cam.up.set(0, 1, 0).lerp(up, 0.45).normalize();
+        const ahead = this.track.frame(Math.min(TRACK_LENGTH, s + 14));
+        cam.lookAt(toThree(this.track.toWorld(ahead, sp.y * 0.6, sp.z * 0.6 - 0.4)));
+        this.camPos.copy(cam.position);
+        this.world.followSun(this.riderPos);
+        return;
       }
     }
     const k = this.snap ? 1 : 1 - Math.exp(-dt * 9);

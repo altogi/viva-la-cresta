@@ -21,7 +21,8 @@ export class RiderModel {
   readonly toboggan = new THREE.Group();
   readonly body = new THREE.Group();
   private readonly torso = new THREE.Group();
-  private readonly head = new THREE.Group();
+  /** The helmet; hidden for the helmet-camera view. */
+  readonly head = new THREE.Group();
   private readonly arms: THREE.Group[] = [];
   private readonly legs: THREE.Group[] = [];
   /** Soft contact shadow on the ice under the toboggan. */

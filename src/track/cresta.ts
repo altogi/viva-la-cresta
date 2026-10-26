@@ -81,7 +81,8 @@ export const PROFILE: ProfilePoint[] = [
   { s: 1212.25, z: 0.0 },
 ];
 
-export const STRAIGHT_WALL: WallShape = { radius: 0.35, height: 0.75 };
+/** Straights: a square corner where floor meets wall, so a rider bumps the bankina instead of riding up it. */
+export const STRAIGHT_WALL: WallShape = { radius: 0.05, height: 0.75 };
 export const FLOOR_WIDTH = 1.3;
 export const LIP_WIDTH = 0.6;
 

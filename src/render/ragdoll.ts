@@ -20,6 +20,10 @@ export class Ragdoll {
   private frames: Frame[] = [];
   private time = 0;
   active = false;
+  /** Optional barriers (the padding beyond Shuttlecock): may move a body back and absorb its speed. */
+  constrain: (position: THREE.Vector3, velocity: THREE.Vector3) => void = () => {};
+  /** Called when a body lands hard: where, how fast it was going. */
+  onImpact: (at: THREE.Vector3, velocity: THREE.Vector3, index: number) => void = () => {};
 
   constructor(
     private readonly scene: THREE.Scene,
@@ -75,9 +79,11 @@ export class Ragdoll {
     for (const b of this.bodies) {
       b.velocity.y -= 9.81 * dt;
       b.object.position.addScaledVector(b.velocity, dt);
+      this.constrain(b.object.position, b.velocity);
       const ground = this.groundAt(b.object.position.x, b.object.position.z) + b.radius;
       if (b.object.position.y < ground) {
         b.object.position.y = ground;
+        if (b.velocity.y < -1) this.onImpact(b.object.position.clone(), b.velocity.clone(), this.bodies.indexOf(b));
         if (b.velocity.y < 0) b.velocity.y *= -0.25;
         // Scrub speed and spin on contact.
         const k = Math.exp(-dt * 2.2);

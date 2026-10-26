@@ -7,6 +7,9 @@ import type { Terrain } from './terrain';
 import { mulberry32 } from './util';
 
 const FLOOR = 3;
+const TIMBER = new THREE.Color('#9b7450');
+/** OSM ids of the buildings beside Shuttlecock (one is the Olympia Bob Run's). */
+const TRACKSIDE_HUTS = new Set([209032886, 209032907]);
 const WINDOW_CELL = 3; // metres per window, horizontally and vertically
 
 const FACADES = ['#f3eee4', '#efe6d2', '#e9dcc3', '#f1e1d3', '#e6e1d7', '#ede3c9', '#e8d6c6', '#f5f2ea'].map(
@@ -99,7 +102,7 @@ interface Spec {
   length: number;
   width: number;
   levels: number;
-  roof: 'flat' | 'gabled' | 'hipped' | 'canopy';
+  roof: 'flat' | 'gabled' | 'hipped' | 'canopy' | 'spire';
   kind: string;
 }
 
@@ -110,7 +113,7 @@ function specFromBox(b: BoxBuilding): Spec {
   if (!levels) {
     if (kind === 'apartments' || kind === 'residential') levels = area > 450 ? 4 : 3;
     else if (kind === 'hotel') levels = area > 2000 ? 6 : 5;
-    else if (['garage', 'garages', 'shed', 'roof'].includes(kind)) levels = 1;
+    else if (['garage', 'garages', 'shed', 'roof', 'hut'].includes(kind)) levels = 1;
     else levels = area < 50 ? 1 : area < 220 ? 2 : 3;
   }
   let roof: Spec['roof'] = 'gabled';
@@ -151,7 +154,12 @@ export function buildTownBuildings(terrain: Terrain): THREE.Group {
   const special = new Set<number>(Object.values(OSM_IDS));
   const boxes: BoxBuilding[] = [
     ...OSM_BUILDINGS,
-    ...OSM_NEAR.filter((b) => !special.has(b.id)).map((b) => boxFromFootprint(b.c, b.p)),
+    ...OSM_NEAR.filter((b) => !special.has(b.id)).map((b) => {
+      const box = boxFromFootprint(b.c, b.p);
+      // The buildings right beside Shuttlecock are low timber huts, not apartment blocks.
+      if (TRACKSIDE_HUTS.has(b.id)) box[7] = 'hut';
+      return box;
+    }),
   ];
   const snow = new THREE.Color('#f4f7fb');
   const eave = new THREE.Color('#6e5a48');
@@ -163,7 +171,8 @@ export function buildTownBuildings(terrain: Terrain): THREE.Group {
       addChurch(walls, roofs, spec, terrain, snow);
       continue;
     }
-    addBuilding(walls, roofs, spec, terrain, FACADES[Math.floor(rng() * FACADES.length)], snow, eave);
+    const facade = spec.kind === 'hut' ? TIMBER : FACADES[Math.floor(rng() * FACADES.length)];
+    addBuilding(walls, roofs, spec, terrain, facade, snow, eave);
   }
   const facade = facadeTexture();
   group.add(walls.build(new THREE.MeshStandardMaterial({ map: facade, vertexColors: true, roughness: 0.9 })));
@@ -195,7 +204,7 @@ function addBuilding(
   facade: THREE.Color,
   snow: THREE.Color,
   eave: THREE.Color,
-) {
+): number {
   const c = corners(spec);
   // Sit on the lowest corner so the downhill side shows a plinth rather than floating.
   const ground = Math.min(...c.map(([x, y]) => terrain.height(x, y)));
@@ -203,7 +212,7 @@ function addBuilding(
   const wallTop = ground + 0.6 + spec.levels * FLOOR;
   if (spec.roof === 'canopy') {
     addCanopy(roofs, spec, ground, snow, eave);
-    return;
+    return wallTop;
   }
   const pitch = spec.roof === 'flat' ? 0 : Math.tan((24 * Math.PI) / 180);
   const ridgeRise = (spec.width / 2) * pitch;
@@ -224,6 +233,15 @@ function addBuilding(
       walls.tri(v3(ax, ay, wallTop), v3(bx, by, wallTop), v3(mx, my, wallTop + ridgeRise), [0.02, 0.02], [0.06, 0.02], [0.04, 0.06], facade);
     }
   }
+  if (spec.roof === 'spire') {
+    // A steep pyramid springing straight from the tower's eaves (no gap).
+    const base = corners(spec, 0.3).map(([x, y]) => v3(x, y, wallTop));
+    const tip = v3(spec.x, spec.y, wallTop + spec.width * 1.9);
+    const slate = new THREE.Color('#4d5560');
+    for (let i = 0; i < 4; i++) roofs.tri(base[i], base[(i + 1) % 4], tip, [0, 0], [1, 0], [0.5, 1], slate);
+    roofs.quad(base[3], base[2], base[1], base[0], [[0, 0], [1, 0], [1, 1], [0, 1]], eave);
+    return wallTop;
+  }
   // Roof, with an overhang, its upper faces under snow.
   const o = corners(spec, 0.7);
   const eaveZ = wallTop - 0.7 * pitch;
@@ -235,7 +253,7 @@ function addBuilding(
       const [bx, by] = o[(i + 1) % 4];
       roofs.quad(v3(ax, ay, wallTop), v3(bx, by, wallTop), v3(bx, by, z), v3(ax, ay, z), [[0, 0], [1, 0], [1, 1], [0, 1]], eave);
     }
-    return;
+    return wallTop;
   }
   const ca = Math.cos(spec.angle);
   const sa = Math.sin(spec.angle);
@@ -260,6 +278,7 @@ function addBuilding(
     const b = E[(i + 1) % 4];
     roofs.quad(a.clone().setY(a.y - 0.25), b.clone().setY(b.y - 0.25), b, a, uv, eave);
   }
+  return wallTop;
 }
 
 function addCanopy(roofs: MeshBuilder, spec: Spec, ground: number, snow: THREE.Color, eave: THREE.Color) {
@@ -292,14 +311,7 @@ function addChurch(walls: MeshBuilder, roofs: MeshBuilder, spec: Spec, terrain: 
     length: side,
     width: side,
     levels: 7,
-    roof: 'hipped',
+    roof: 'spire',
   };
   addBuilding(walls, roofs, tower, terrain, white, snow, new THREE.Color('#5b4c42'));
-  // Spire.
-  const ground = terrain.height(tower.x, tower.y);
-  const top = ground + 0.6 + tower.levels * FLOOR + side * 0.45;
-  const tip = v3(tower.x, tower.y, top + side * 1.6);
-  const c = corners(tower, 0.3).map(([x, y]) => v3(x, y, top));
-  const slate = new THREE.Color('#4d5560');
-  for (let i = 0; i < 4; i++) roofs.tri(c[i], c[(i + 1) % 4], tip, [0, 0], [1, 0], [0.5, 1], slate);
 }

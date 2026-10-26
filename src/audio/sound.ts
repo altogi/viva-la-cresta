@@ -79,11 +79,17 @@ export class Sound {
     this.wind.filter.frequency.setTargetAtTime(250 + v * 20, t, k);
   }
 
+  /** Two strikes of the bell: the signal that a rider has fallen. */
+  fallBells() {
+    this.bell(0);
+    this.bell(0.55);
+  }
+
   /** The start bell: a struck bell with inharmonic partials. */
-  bell() {
+  bell(delay = 0) {
     const ctx = this.ctx;
     if (!ctx) return;
-    const t = ctx.currentTime;
+    const t = ctx.currentTime + delay;
     for (const [ratio, amp, decay] of [
       [1, 0.35, 2.4],
       [2.76, 0.18, 1.6],
