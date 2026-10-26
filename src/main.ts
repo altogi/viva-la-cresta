@@ -7,7 +7,11 @@ import { createWorld } from './render/world';
 import { buildTrackMesh } from './render/trackMesh';
 import { Terrain } from './render/terrain';
 import { buildScenery } from './render/scenery';
-import { buildRiderPlaceholder } from './render/riderPlaceholder';
+import { RiderModel } from './render/riderModel';
+import { LOOKS } from './render/riderLooks';
+import { loadSelection, type Selection } from './game/selection';
+import { SelectMode } from './game/selectMode';
+import { RIDERS, TOBOGGANS } from './sim/rider';
 import { Viewer } from './viewer/viewer';
 import { RideMode, type RideSetup } from './game/rideMode';
 import { Sound } from './audio/sound';
@@ -39,7 +43,9 @@ function start() {
   world.scene.add(trackMesh, terrain.mesh, buildScenery(track, terrain));
   lap('scene');
 
-  const ghost = buildRiderPlaceholder();
+  // The ghost rider behind the menu and in the viewer wears the chosen rider's kit.
+  const chosen = loadSelection();
+  let ghost = new RiderModel(LOOKS[chosen.rider], chosen.toboggan).root;
   world.scene.add(ghost);
   const viewer = new Viewer(world, track, terrain, ghost);
   const sound = new Sound();
@@ -51,14 +57,33 @@ function start() {
   const bot = params.get('autopilot');
   if (bot && POLICIES[bot]) ride.autopilot = POLICIES[bot];
 
-  type Mode = 'menu' | 'ride' | 'viewer';
+  const select = new SelectMode(world, track, chosen);
+  const showChoice = (sel: Selection) => {
+    document.getElementById('menu-rider')!.textContent = `${RIDERS[sel.rider].name} · ${TOBOGGANS[sel.toboggan].name}`;
+  };
+  showChoice(chosen);
+
+  type Mode = 'menu' | 'ride' | 'viewer' | 'select';
   let mode: Mode = 'menu';
   const setMode = (next: Mode) => {
+    if (mode === 'select' && next !== 'select') select.close();
     mode = next;
     document.body.classList.toggle('in-menu', next === 'menu');
     document.body.classList.toggle('viewing', next === 'viewer');
-    ghost.visible = next !== 'ride';
+    document.body.classList.toggle('selecting', next === 'select');
+    ghost.visible = next === 'menu' || next === 'viewer';
     viewer.setAttract(next === 'menu');
+    if (next === 'select') select.open();
+  };
+  document.getElementById('open-select')!.addEventListener('click', () => setMode('select'));
+  select.onDone = (sel) => {
+    ride.selection = sel;
+    showChoice(sel);
+    ghost.removeFromParent();
+    ghost = new RiderModel(LOOKS[sel.rider], sel.toboggan).root;
+    world.scene.add(ghost);
+    viewer.setRider(ghost);
+    setMode('menu');
   };
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-ride]')) {
     button.addEventListener('click', () => {
@@ -79,6 +104,7 @@ function start() {
   world.renderer.setAnimationLoop(() => {
     const dt = Math.min(clock.getDelta(), 0.1);
     if (mode === 'ride') ride.update(dt);
+    else if (mode === 'select') select.update(dt);
     else viewer.update(dt);
     world.renderer.render(world.scene, world.camera);
     if (debug) {

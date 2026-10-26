@@ -202,7 +202,9 @@ Digitise the map into `cresta.ts` (Junction to Finish first). Cross-section gene
 Physics model in track coordinates. Traditional toboggan. One placeholder rider (Adelaide). Touch zones, lying start and running start, chase camera, fly-out and crash detection with ragdoll + slow-mo replay, finish timing, minimal HUD (time, speed), basic procedural audio (runner hiss, rakes, bell). Tuning page. Bot calibration to the 80 s / 49 s Junction targets and the CSV split shape.
 **Done when** a full Junction ride is playable on a phone and Shuttlecock is a real decision. **Your playtest**: as an actual rider, does it feel like the Cresta? Expect a few rounds of tuning here.
 
-### Phase 3 — Riders & toboggans
+### Phase 3 — Riders & toboggans ✅ (code-built riders; imported models deferred)
+*Maximilian, Adelaide and Remo with their own weight, drag, agility, reach and running speed; mass sets how hard the rakes bite. Flat-top: lower friction and drag forward, 1.6× steering sensitivity. Bot balance on the same solid ride: all three within 0.5 s (Maximilian quickest off the start, Remo fastest finishing at 70 mph but heaviest to stop); good flat-top riders 44.3–44.8 s against 49 s on a traditional; ridden that hard on a traditional, Remo flies out of Shuttlecock. Riders are code-built with IK elbows and knees, per-rider builds, suits and helmets (Adelaide's ponytail, Remo's beard and Swiss cross); a selection screen with a 3D preview; bests kept per rider, toboggan and start.*
+
 Semi-realistic rigged models for Maximilian, Adelaide and Remo (proportions, hair, beard, skin suits, helmets, rakes on the boots) with pose blending: running, jump-on, forward, knives, arm steering, head turn, raking feet, fall tumble. Rider stats wired into the physics. Flat-top toboggan with its own handling. Agility-dependent transitions. Bot balance check across all rider × toboggan combinations.
 **Done when** the three riders feel distinct and all can reach the targets.
 

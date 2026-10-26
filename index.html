@@ -25,6 +25,7 @@
         <p class="tagline">St Moritz Tobogganing Club</p>
         <h1>Viva la Cresta</h1>
       </div>
+      <button id="open-select" class="rider-line"><span id="menu-rider">Adelaide · Traditional</span><small>Change rider</small></button>
       <div class="choices">
         <button data-ride="junction-lying">Junction · lying start</button>
         <button data-ride="junction-running" class="primary">Junction · running start</button>
@@ -39,6 +40,21 @@
         <p><b>Running start:</b> tap RUN quickly after the bell.</p>
         <p class="keys">Keyboard: ↑ knives · ← → steer · Z X C rake · Space run</p>
       </details>
+    </section>
+
+    <!-- Choosing a rider and toboggan -->
+    <section id="select">
+      <div class="select-panel">
+        <h2>Choose your rider</h2>
+        <div id="select-riders"></div>
+        <h3>Toboggan</h3>
+        <div class="toboggan-switch">
+          <button data-toboggan="traditional">Traditional</button>
+          <button data-toboggan="flattop">Flat-top</button>
+        </div>
+        <p id="select-toboggan-text"></p>
+        <button id="select-done" class="primary">Done</button>
+      </div>
     </section>
 
     <!-- Riding -->

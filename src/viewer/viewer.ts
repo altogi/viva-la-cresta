@@ -43,7 +43,7 @@ export class Viewer {
     private readonly world: World,
     private readonly track: Track,
     private readonly terrain: Terrain,
-    private readonly rider: THREE.Object3D,
+    private rider: THREE.Object3D,
   ) {
     this.ghost = new Ghost(track, JUNCTION_S);
     this.orbit = new OrbitControls(world.camera, world.renderer.domElement);
@@ -127,6 +127,12 @@ export class Viewer {
     this.rider.matrix.makeBasis(forward, up, right).setPosition(this.riderPos);
     this.rider.matrixAutoUpdate = false;
     this.rider.matrixWorldNeedsUpdate = true;
+  }
+
+  /** Swap the ghost rider's model (after choosing a different rider or toboggan). */
+  setRider(rider: THREE.Object3D) {
+    this.rider = rider;
+    this.placeRider();
   }
 
   /** Start or stop the background descent shown behind the menu. */

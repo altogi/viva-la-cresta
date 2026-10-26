@@ -4,7 +4,9 @@
 import * as THREE from 'three';
 import { Controls } from '../input/controls';
 import { RideSim, type StartStyle } from '../sim/physics';
-import { ADELAIDE, TRADITIONAL } from '../sim/rider';
+import { RIDERS, TOBOGGANS } from '../sim/rider';
+import { LOOKS } from '../render/riderLooks';
+import { loadSelection, type Selection } from './selection';
 import { surfaceAt } from '../sim/surface';
 import type { Track } from '../sim/track';
 import { SPLITS, autopilotInput, runOutInput, type Policy } from '../sim/autopilot';
@@ -92,6 +94,8 @@ export class RideMode {
   private fallCamPos = new THREE.Vector3();
   private simClock = 0;
   private readonly lastStride = { t: -1 };
+  /** Who is riding, on what. */
+  selection: Selection = loadSelection();
   /** Debug: let a bot ride instead of the player (?autopilot=good). */
   autopilot: Policy | null = null;
   onExit: () => void = () => {};
@@ -170,9 +174,10 @@ export class RideMode {
     this.replayModel = null;
     this.history = [];
     if (this.model) this.model.root.removeFromParent();
-    this.model = new RiderModel();
+    const { rider, toboggan } = this.selection;
+    this.model = new RiderModel(LOOKS[rider], toboggan);
     this.world.scene.add(this.model.root);
-    this.sim = new RideSim(this.track, ADELAIDE, TRADITIONAL, {
+    this.sim = new RideSim(this.track, RIDERS[rider], TOBOGGANS[toboggan], {
       startS: setup.startS,
       start: setup.start,
       steps: setup.steps,
@@ -423,7 +428,7 @@ export class RideMode {
     this.orbitTime = 0;
     this.replayClock = Math.max(this.history[0]?.t ?? this.fallTime, this.fallTime - REPLAY_BEFORE);
     if (!this.replayModel) {
-      this.replayModel = new RiderModel();
+      this.replayModel = new RiderModel(LOOKS[this.selection.rider], this.selection.toboggan);
       this.world.scene.add(this.replayModel.root);
     }
     this.banner('Replay', 'Tap to skip');
@@ -489,7 +494,7 @@ export class RideMode {
     this.stage = 'done';
     const st = this.sim.state;
     const time = st.finishTime!;
-    const key = `vlc-best-${this.setup.label}`;
+    const key = `vlc-best-${this.selection.rider}-${this.selection.toboggan}-${this.setup.label}`;
     let best: number | null = null;
     try {
       best = Number(localStorage.getItem(key)) || null;
@@ -504,7 +509,8 @@ export class RideMode {
     else if (best) lines.push(`Best ${best.toFixed(2)}`);
     lines.push(`Top speed ${(st.topSpeed * MPH).toFixed(1)} mph`);
     const speed = ((st.finishSpeed ?? 0) * MPH).toFixed(1);
-    this.card(beaten ? 'Hello Hello!' : 'Made it safely to Celerina!', this.setup.label, lines, `${time.toFixed(2)}<small>s</small> ${speed}<small>mph</small>`);
+    const who = `${RIDERS[this.selection.rider].name} · ${TOBOGGANS[this.selection.toboggan].name} · ${this.setup.label}`;
+    this.card(beaten ? 'Hello Hello!' : 'Made it safely to Celerina!', who, lines, `${time.toFixed(2)}<small>s</small> ${speed}<small>mph</small>`);
     $('ride-replay').hidden = true;
   }
 

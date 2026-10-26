@@ -61,6 +61,15 @@ export const POLICIES: Record<string, Policy> = {
     rake: [[490, 640, 14.8]],
     line: 0.95,
   },
+  /** A good flat-top rider (the 45 s target): later on the knives, more speed through the banks. */
+  goodFlattop: {
+    name: 'goodFlattop',
+    start: 'running',
+    steps: 7,
+    knives: [[520, 638]],
+    rake: [[525, 638, 16.6]],
+    line: 1,
+  },
   /** Pushing hard: knives late, minimal raking, a high line through Shuttlecock. */
   expert: {
     name: 'expert',

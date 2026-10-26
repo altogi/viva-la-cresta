@@ -1,6 +1,10 @@
 // Rider and toboggan characteristics that feed the physics.
 
+export type RiderId = 'maximilian' | 'adelaide' | 'remo';
+export type TobogganId = 'traditional' | 'flattop';
+
 export interface RiderStats {
+  id: RiderId;
   name: string;
   /** Rider + kit mass (kg). */
   mass: number;
@@ -15,6 +19,7 @@ export interface RiderStats {
 }
 
 export interface TobogganStats {
+  id: TobogganId;
   name: string;
   /** Runner friction with the smooth front of the runners on the ice. */
   muForward: number;
@@ -26,7 +31,23 @@ export interface TobogganStats {
   steerGain: number;
 }
 
+/** Rake force is set for this mass; heavier riders get less deceleration from the same rakes. */
+export const REFERENCE_MASS = 78;
+
+/** Light and lanky: long arms steer hard, long legs run fast, but little weight to carry speed. */
+export const MAXIMILIAN: RiderStats = {
+  id: 'maximilian',
+  name: 'Maximilian',
+  mass: 70,
+  dragArea: 0.115,
+  transitionTime: 0.4,
+  reach: 1.25,
+  runSpeed: 9.4,
+};
+
+/** The all-rounder. */
 export const ADELAIDE: RiderStats = {
+  id: 'adelaide',
   name: 'Adelaide',
   mass: 78,
   dragArea: 0.12,
@@ -35,13 +56,40 @@ export const ADELAIDE: RiderStats = {
   runSpeed: 8.6,
 };
 
+/** Burly: a rocket on the straights, but slow to shift, slow off the start and hard to stop. */
+export const REMO: RiderStats = {
+  id: 'remo',
+  name: 'Remo',
+  mass: 104,
+  dragArea: 0.145,
+  transitionTime: 0.8,
+  reach: 0.9,
+  runSpeed: 7.6,
+};
+
+export const RIDERS: Record<RiderId, RiderStats> = { maximilian: MAXIMILIAN, adelaide: ADELAIDE, remo: REMO };
+
+/** Steel frame, sliding cushion: forgiving. Every rider starts on one. */
 export const TRADITIONAL: TobogganStats = {
+  id: 'traditional',
   name: 'Traditional',
   muForward: 0.005,
   muKnives: 0.045,
   dragForward: 1,
   steerGain: 1,
 };
+
+/** Carbon, flexible, shoulders down when forward: faster, and very sensitive to every movement. */
+export const FLATTOP: TobogganStats = {
+  id: 'flattop',
+  name: 'Flat-top',
+  muForward: 0.0035,
+  muKnives: 0.042,
+  dragForward: 0.74,
+  steerGain: 1.6,
+};
+
+export const TOBOGGANS: Record<TobogganId, TobogganStats> = { traditional: TRADITIONAL, flattop: FLATTOP };
 
 /** Tunable physics constants (exposed in the debug tuning panel). */
 export const PHYSICS = {
