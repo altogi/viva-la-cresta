@@ -108,6 +108,37 @@ export class Sound {
     }
   }
 
+  /** The crowd at the finish: a few seconds of applause and cheering. */
+  applause() {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const duration = 3.2;
+    const rate = ctx.sampleRate;
+    const buffer = ctx.createBuffer(1, Math.ceil(rate * duration), rate);
+    const data = buffer.getChannelData(0);
+    // Hundreds of short claps at random times, swelling then fading.
+    for (let c = 0; c < 420; c++) {
+      const start = Math.floor(Math.random() * (duration - 0.05) * rate);
+      const len = Math.floor(rate * (0.008 + Math.random() * 0.01));
+      const amp = 0.25 + Math.random() * 0.4;
+      for (let i = 0; i < len && start + i < data.length; i++) data[start + i] += (Math.random() * 2 - 1) * amp * (1 - i / len) ** 2;
+    }
+    for (let i = 0; i < data.length; i++) {
+      const t = i / rate;
+      data[i] *= Math.min(1, t / 0.3) * Math.min(1, (duration - t) / 1.2);
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1700;
+    filter.Q.value = 0.6;
+    const g = ctx.createGain();
+    g.gain.value = 0.55;
+    src.connect(filter).connect(g).connect(this.master);
+    src.start();
+  }
+
   /** A crunching stride in the snow. */
   step() {
     this.burst(1400, 0.07, 0.25, 'bandpass');

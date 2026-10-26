@@ -14,6 +14,8 @@ import { PHYSICS, type RiderStats, type TobogganStats } from './rider';
 import type { Track } from './track';
 
 export const SIM_DT = 1 / 240;
+/** The foam cushion's front face, this far before the end of the run-out (m). */
+const CUSHION_DEPTH = 1.6;
 
 export interface RideInput {
   /** Wants to be back on the knives (true) or forward (false). */
@@ -57,6 +59,12 @@ export interface RideState {
   /** Time since crossing the start beam (s), or null before it. */
   time: number | null;
   finishTime: number | null;
+  /** Speed through the finish contacts (m/s). */
+  finishSpeed: number | null;
+  /** Came to rest in the run-out. */
+  stopped: boolean;
+  /** Speed into the foam cushion at the end of the run-out, if reached (m/s). */
+  cushionSpeed: number | null;
   topSpeed: number;
   runSteps: number;
   /** Normal load in g, for effects. */
@@ -101,6 +109,9 @@ export class RideSim {
       posture: options.start === 'lying' ? 0 : 0,
       time: null,
       finishTime: null,
+      finishSpeed: null,
+      stopped: false,
+      cushionSpeed: null,
       topSpeed: 0,
       runSteps: 0,
       load: 1,
@@ -139,7 +150,7 @@ export class RideSim {
 
   private step(dt: number, input: RideInput) {
     const st = this.state;
-    if (st.phase === 'waiting' || st.phase === 'fallen') return;
+    if (st.phase === 'waiting' || st.phase === 'fallen' || st.stopped) return;
     if (st.phase === 'running') this.stepRunning(dt, input);
     else this.stepRiding(dt, input);
     this.updateTiming(dt);
@@ -171,7 +182,7 @@ export class RideSim {
     const finished = st.phase === 'finished';
 
     // Posture slides towards the wanted position at the rider's agility.
-    const target = input.knives || finished ? 1 : 0;
+    const target = input.knives ? 1 : 0;
     const rate = dt / this.rider.transitionTime;
     st.posture = target > st.posture ? Math.min(target, st.posture + rate) : Math.max(target, st.posture - rate);
     const p = st.posture;
@@ -202,8 +213,8 @@ export class RideSim {
     const load = Math.max(0, normal);
     st.load = load / G;
 
-    const rakeL = finished ? 1 : input.rakeLeft;
-    const rakeR = finished ? 1 : input.rakeRight;
+    const rakeL = input.rakeLeft;
+    const rakeR = input.rakeRight;
     const mu = sp.angle > 1.2 ? P.wallFriction : lerp(this.toboggan.muForward, this.toboggan.muKnives, p);
     const dragK = (0.5 * P.airDensity * this.rider.dragArea * lerp(this.toboggan.dragForward, P.dragKnives, p)) / this.rider.mass;
     const rake = (rakeL + rakeR) * lerp(P.rakeForward, P.rakeKnives, p) * Math.min(1.5, load / G);
@@ -232,14 +243,38 @@ export class RideSim {
     st.w = speed * Math.sin(psi) + st.slide;
     st.u += st.w * dt;
     st.s += (st.v / slope / (1 - kappa * sp.y)) * dt;
-    st.topSpeed = Math.max(st.topSpeed, speed);
+    if (!finished) st.topSpeed = Math.max(st.topSpeed, speed);
 
     if (finished) {
-      st.s = Math.min(st.s, TRACK_LENGTH + 30);
-      st.heading *= Math.exp(-dt * 3);
+      this.runOut(section);
       return;
     }
     this.checkFall(section, normal);
+  }
+
+  /** After the finish: no falls, the walls only bump, and the foam cushion stops the rider. */
+  private runOut(section: ReturnType<Track['section']>) {
+    const st = this.state;
+    const side = st.u >= 0 ? 'left' : 'right';
+    const lip = lips(section);
+    st.u = clamp(st.u, lip.right + 0.3, lip.left - 0.3);
+    if (this.againstBankina(section, side)) {
+      st.heading = -st.heading * 0.3;
+      st.slide = 0;
+      const speed = Math.hypot(st.v, st.w);
+      st.v = speed * Math.cos(st.heading);
+      st.w = speed * Math.sin(st.heading);
+    }
+    const cushion = this.track.length - CUSHION_DEPTH;
+    if (st.s >= cushion) {
+      if (st.cushionSpeed === null) st.cushionSpeed = Math.hypot(st.v, st.w);
+      st.s = cushion;
+      st.v = st.w = st.slide = 0;
+    }
+    if (Math.hypot(st.v, st.w) < 0.25 || st.cushionSpeed !== null) {
+      st.v = st.w = st.slide = 0;
+      st.stopped = true;
+    }
   }
 
   private checkFall(section: ReturnType<Track['section']>, normal: number) {
@@ -313,6 +348,7 @@ export class RideSim {
     if (st.s >= TRACK_LENGTH) {
       st.phase = 'finished';
       st.finishTime = st.time;
+      st.finishSpeed = Math.hypot(st.v, st.w - st.slide);
     }
   }
 }

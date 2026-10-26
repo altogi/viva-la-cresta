@@ -93,16 +93,12 @@ export const POLICIES: Record<string, Policy> = {
 
 const inRange = (s: number, ranges: [number, number][]) => ranges.some(([a, b]) => s >= a && s <= b);
 
-export function autopilotInput(track: Track, sim: RideSim, policy: Policy, t: number, lastStride: { t: number }): RideInput {
+/**
+ * Steering that follows the natural bank line through bends (the wall angle where speed and
+ * gravity balance, scaled by `line`) and the middle of the floor elsewhere.
+ */
+export function lineSteer(track: Track, sim: RideSim, line: number): number {
   const st = sim.state;
-  let runTaps = 0;
-  if (st.phase === 'running' && t - lastStride.t >= (policy.stride ?? 0.28)) {
-    runTaps = 1;
-    lastStride.t = t;
-  }
-  const cap = policy.rake.find(([a, b]) => st.s >= a && st.s <= b)?.[2];
-  const rakeAmount = cap === undefined ? 0 : Math.max(0, Math.min(1, (st.v - cap) * 0.8));
-  // Aim for the natural bank line: the wall angle where speed and gravity balance, scaled by `line`.
   const ahead = st.s + 3;
   const section = track.section(ahead);
   let target = 0;
@@ -112,7 +108,7 @@ export function autopilotInput(track: Track, sim: RideSim, policy: Policy, t: nu
     const v = Math.hypot(st.v, st.w);
     const wall = section.outerSide === 'left' ? section.left : section.right;
     const maxAngle = wall.height <= wall.radius ? Math.acos(1 - wall.height / wall.radius) : Math.PI / 2;
-    const angle = Math.min(Math.atan((v * v * Math.abs(kappa)) / 9.81) * policy.line, maxAngle * 0.8);
+    const angle = Math.min(Math.atan((v * v * Math.abs(kappa)) / 9.81) * line, maxAngle * 0.8);
     const lip = lips(section);
     const half = section.floorWidth / 2;
     const u = Math.min(half + wall.radius * angle, (section.outerSide === 'left' ? lip.left : -lip.right) - 0.3);
@@ -122,7 +118,31 @@ export function autopilotInput(track: Track, sim: RideSim, policy: Policy, t: nu
   const speed = Math.hypot(st.v, st.w);
   const limit = Math.min(0.16, 1.6 / Math.max(speed, 1));
   const wantHeading = Math.max(-limit, Math.min(limit, (0.35 * (target - st.u)) / Math.max(1, speed / 8)));
-  const steer = Math.max(-1, Math.min(1, 9 * (wantHeading - st.heading)));
+  return Math.max(-1, Math.min(1, 9 * (wantHeading - st.heading)));
+}
+
+/**
+ * The run-out after the finish, ridden for the player: back on the knives, raking to a speed that
+ * brings the rider round the final hook and gently into the foam cushion.
+ */
+export function runOutInput(track: Track, sim: RideSim): RideInput {
+  const st = sim.state;
+  const remaining = Math.max(0, track.length - 2 - st.s);
+  const target = Math.sqrt(2 * 1.6 * remaining) + 1.2;
+  const rake = Math.max(0, Math.min(1, (Math.hypot(st.v, st.w) - target) * 0.7));
+  return { knives: true, steer: lineSteer(track, sim, 1), rakeLeft: rake, rakeRight: rake, runTaps: 0 };
+}
+
+export function autopilotInput(track: Track, sim: RideSim, policy: Policy, t: number, lastStride: { t: number }): RideInput {
+  const st = sim.state;
+  let runTaps = 0;
+  if (st.phase === 'running' && t - lastStride.t >= (policy.stride ?? 0.28)) {
+    runTaps = 1;
+    lastStride.t = t;
+  }
+  const cap = policy.rake.find(([a, b]) => st.s >= a && st.s <= b)?.[2];
+  const rakeAmount = cap === undefined ? 0 : Math.max(0, Math.min(1, (st.v - cap) * 0.8));
+  const steer = lineSteer(track, sim, policy.line);
   return { knives: inRange(st.s, policy.knives), steer: policy.steers === false ? 0 : steer, rakeLeft: rakeAmount, rakeRight: rakeAmount, runTaps };
 }
 

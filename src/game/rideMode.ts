@@ -7,8 +7,7 @@ import { RideSim, type StartStyle } from '../sim/physics';
 import { ADELAIDE, TRADITIONAL } from '../sim/rider';
 import { surfaceAt } from '../sim/surface';
 import type { Track } from '../sim/track';
-import { SPLITS, autopilotInput, type Policy } from '../sim/autopilot';
-import { TRACK_LENGTH } from '../track/cresta';
+import { SPLITS, autopilotInput, runOutInput, type Policy } from '../sim/autopilot';
 import type { World } from '../render/world';
 import type { Terrain } from '../render/terrain';
 import { RiderModel } from '../render/riderModel';
@@ -25,7 +24,7 @@ export interface RideSetup {
   steps?: number;
 }
 
-type Stage = 'ready' | 'countdown' | 'live' | 'falling' | 'replay' | 'done';
+type Stage = 'ready' | 'countdown' | 'live' | 'runout' | 'celebrate' | 'falling' | 'replay' | 'done';
 
 /** What the replay needs to redraw the rider at a moment of the ride. */
 interface Snapshot {
@@ -168,6 +167,7 @@ export class RideMode {
     this.replayModel?.root.removeFromParent();
     this.replayModel = null;
     this.history = [];
+    this.world.scene.getObjectByName('cushion')?.scale.set(1, 1, 1);
     if (this.model) this.model.root.removeFromParent();
     this.model = new RiderModel();
     this.world.scene.add(this.model.root);
@@ -194,7 +194,7 @@ export class RideMode {
 
   /** Helmet view: hide your own helmet and let the camera get close to the toboggan. */
   private applyCam() {
-    const helmet = this.cam === 'helmet' && (this.stage === 'live' || this.stage === 'done');
+    const helmet = this.cam === 'helmet' && (this.stage === 'live' || this.stage === 'runout');
     if (this.model) this.model.head.visible = !helmet;
     this.world.camera.near = helmet ? 0.03 : 0.1;
     // A moderately wider lens through the visor; much wider stretches a tall phone screen.
@@ -245,7 +245,7 @@ export class RideMode {
       this.applyCam();
       this.controls.setRunning(this.sim.state.phase === 'running');
     }
-    if (this.stage === 'live' || this.stage === 'done') dt = realDt * GAME_SPEED;
+    if (this.stage === 'live' || this.stage === 'runout') dt = realDt * GAME_SPEED;
     if (this.stage === 'falling') dt = realDt * (this.stageTime < 2.4 ? 0.3 : 1);
 
     if (this.stage === 'live') {
@@ -263,9 +263,17 @@ export class RideMode {
       this.record();
       if (st.phase !== 'running') this.controls.setRunning(false);
       if (st.phase === 'fallen') this.startFall();
-      else if (st.phase === 'finished' && this.stageTime > 0 && st.s > TRACK_LENGTH + 8) this.finish();
-    } else if (this.stage === 'done' && this.sim.state.phase === 'finished') {
-      this.sim.update(dt, this.controls.read(dt));
+      else if (st.phase === 'finished') {
+        // Through the finish contacts: ride the run-out up to Celerina for the player.
+        this.stage = 'runout';
+        this.stageTime = 0;
+      }
+    } else if (this.stage === 'runout') {
+      this.sim.update(dt, runOutInput(this.track, this.sim));
+      if (this.sim.state.stopped) this.celebrate();
+    } else if (this.stage === 'celebrate') {
+      this.squashCushion();
+      if (this.stageTime > 2.8) this.finish();
     }
 
     this.debris.update(this.stage === 'falling' ? dt : realDt * REPLAY_SPEED);
@@ -281,11 +289,31 @@ export class RideMode {
     this.updateHud();
     const st = this.sim.state;
     this.sound.update({
-      speed: this.stage === 'falling' ? 0 : st.v,
+      speed: this.stage === 'falling' || st.stopped ? 0 : st.v,
       posture: st.posture,
       rake: (this.sim.input.rakeLeft + this.sim.input.rakeRight) / 2,
       riding: st.phase === 'riding' || st.phase === 'finished',
     });
+  }
+
+  /** Came to rest at Celerina: up on their feet, arms raised, to applause. */
+  private celebrate() {
+    this.stage = 'celebrate';
+    this.stageTime = 0;
+    this.applyCam();
+    this.snap = false;
+    this.sound.applause();
+    navigator.vibrate?.([20, 60, 20]);
+  }
+
+  /** The foam cushion gives a little if the rider reached it with some speed. */
+  private squashCushion() {
+    const cushion = this.world.scene.getObjectByName('cushion');
+    const hit = this.sim.state.cushionSpeed;
+    if (!cushion || hit === null) return;
+    const t = this.stageTime;
+    const squash = Math.min(0.35, hit * 0.09) * Math.exp(-t * 4) * Math.cos(t * 14);
+    cushion.scale.set(1 - squash, 1 + squash * 0.3, 1);
   }
 
   private snapshot(): Snapshot {
@@ -312,12 +340,14 @@ export class RideMode {
   }
 
   private placeRider() {
-    this.placeModel(this.model, this.snapshot());
+    const celebrating = this.stage === 'celebrate' || (this.stage === 'done' && this.sim.state.phase === 'finished');
+    const cheer = celebrating ? Math.min(1, this.stageTime / 0.8) : 0;
+    this.placeModel(this.model, this.snapshot(), { cheer: this.stage === 'done' ? 1 : cheer, cheerTime: performance.now() / 1000 });
   }
 
   /** Pose a rider model from track coordinates; updates riderPos and riderVel. */
-  private placeModel(model: RiderModel, snap: Snapshot) {
-    const s = Math.min(snap.s, TRACK_LENGTH);
+  private placeModel(model: RiderModel, snap: Snapshot, extra: { cheer: number; cheerTime: number } = { cheer: 0, cheerTime: 0 }) {
+    const s = Math.min(snap.s, this.track.length);
     const frame = this.track.frame(s);
     const sp = surfaceAt(this.track.section(s), snap.u);
     toThree(this.track.toWorld(frame, sp.y, sp.z), this.riderPos);
@@ -348,6 +378,8 @@ export class RideMode {
       rakeRight: snap.rakeRight,
       mount: snap.mount,
       runPhase: snap.runPhase,
+      cheer: extra.cheer,
+      cheerTime: extra.cheerTime,
     });
   }
 
@@ -383,7 +415,7 @@ export class RideMode {
     const st = this.sim.state;
     this.fallTime = this.simClock;
     this.fallPoint.copy(this.riderPos);
-    const frame = this.track.frame(Math.min(st.s, TRACK_LENGTH));
+    const frame = this.track.frame(Math.min(st.s, this.track.length));
     const side = st.fall?.side === 'left' ? -1 : 1;
     this.closeUpSide.copy(toThree([frame.left[0] * side, frame.left[1] * side, 0])).normalize();
     this.fallCamPos.copy(this.fallPoint).addScaledVector(this.closeUpSide, 4.5).add(new THREE.Vector3(0, 1.8, 0));
@@ -471,15 +503,21 @@ export class RideMode {
     } catch {
       /* storage unavailable: no personal best */
     }
-    const lines = [`Top speed ${(st.topSpeed * MPH).toFixed(1)} mph`];
-    if (best && time >= best) lines.push(`Best ${best.toFixed(2)}`);
-    else if (best) lines.push(`New best! (was ${best.toFixed(2)})`);
-    this.card(time.toFixed(2), this.setup.label, lines);
+    // "Hello Hello!" only when beating a best that already stood.
+    const beaten = best !== null && time < best;
+    const lines: string[] = [];
+    if (beaten) lines.push(`New best · previous ${best!.toFixed(2)}`);
+    else if (best) lines.push(`Best ${best.toFixed(2)}`);
+    lines.push(`Top speed ${(st.topSpeed * MPH).toFixed(1)} mph`);
+    const speed = ((st.finishSpeed ?? 0) * MPH).toFixed(1);
+    this.card(beaten ? 'Hello Hello!' : 'Made it safely to Celerina!', this.setup.label, lines, `${time.toFixed(2)}<small>s</small> ${speed}<small>mph</small>`);
     $('ride-replay').hidden = true;
   }
 
-  private card(title: string, subtitle: string, lines: string[]) {
+  private card(title: string, subtitle: string, lines: string[], time = '') {
     $('ride-card-title').textContent = title;
+    $('ride-card-time').innerHTML = time;
+    $('ride-card').classList.toggle('message', !!time);
     $('ride-card-subtitle').textContent = subtitle;
     $('ride-card-lines').replaceChildren(...lines.map((l) => Object.assign(document.createElement('div'), { textContent: l })));
     $('ride-card').hidden = false;
@@ -501,6 +539,12 @@ export class RideMode {
       desiredPos.copy(this.fallPoint).add(new THREE.Vector3(Math.cos(angle) * 12, 8.5, Math.sin(angle) * 12));
       const subject = this.replayModel?.root.visible ? this.riderPos : this.ragdoll.focus();
       desiredLook.copy(subject ?? this.fallPoint);
+    } else if (this.stage === 'celebrate' || (this.stage === 'done' && st.phase === 'finished')) {
+      // In front of the rider at Celerina, a little to the side, as they celebrate.
+      const s = Math.min(st.s, this.track.length);
+      const back = this.track.frame(Math.max(0, s - 7));
+      toThree(this.track.toWorld(back, -2.5, 2.2), desiredPos);
+      desiredLook.copy(this.riderPos).add(new THREE.Vector3(0, 0.9, 0));
     } else if (this.stage === 'ready' || this.stage === 'countdown') {
       // The start, seen from a little way down the run looking back up: rider, start and hut.
       const s0 = this.setup.startS;
@@ -510,7 +554,7 @@ export class RideMode {
       toThree(this.track.toWorld(behind, 1.5, 1.6), desiredLook);
       if (s0 < 4) desiredLook.addScaledVector(toThree(this.track.frame(0).forward), -6);
     } else {
-      const s = Math.min(st.s, TRACK_LENGTH);
+      const s = Math.min(st.s, this.track.length);
       const sp = surfaceAt(this.track.section(s), st.u);
       if (this.cam === 'chase') {
         const sBack = Math.max(0, s - 5.5);
@@ -519,7 +563,7 @@ export class RideMode {
         const p = this.track.toWorld(back, spBack.y * 0.7, 1.9 + spBack.z * 0.8);
         const extra = 5.5 - (s - sBack);
         toThree([p[0] - back.forward[0] * extra, p[1] - back.forward[1] * extra, p[2] - back.forward[2] * extra], desiredPos);
-        const ahead = this.track.frame(Math.min(TRACK_LENGTH, s + 4));
+        const ahead = this.track.frame(Math.min(this.track.length, s + 4));
         toThree(this.track.toWorld(ahead, sp.y * 0.8, 0.35 + sp.z), desiredLook);
       } else {
         // Through the visor: at the rider's eyes, half-rolling with them on the banks, looking
@@ -531,7 +575,7 @@ export class RideMode {
         const up = new THREE.Vector3().setFromMatrixColumn(m, 1);
         cam.position.copy(eyes).addScaledVector(fwd, 0.17).addScaledVector(up, 0.04);
         cam.up.set(0, 1, 0).lerp(up, 0.45).normalize();
-        const ahead = this.track.frame(Math.min(TRACK_LENGTH, s + 14));
+        const ahead = this.track.frame(Math.min(this.track.length, s + 14));
         cam.lookAt(toThree(this.track.toWorld(ahead, sp.y * 0.6, sp.z * 0.6 - 0.4)));
         this.camPos.copy(cam.position);
         this.world.followSun(this.riderPos);
@@ -550,7 +594,7 @@ export class RideMode {
 
   private updateHud() {
     const st = this.sim.state;
-    $('ride-zone').textContent = this.track.zoneName(Math.min(st.s, TRACK_LENGTH));
+    $('ride-zone').textContent = this.track.zoneName(Math.min(st.s, this.track.length));
     $('ride-time').textContent = (st.finishTime ?? st.time ?? 0).toFixed(2);
     $('ride-mph').textContent = (st.v * MPH).toFixed(0);
     $('ride-posture').textContent = st.posture > 0.5 ? 'KNIVES' : 'FORWARD';

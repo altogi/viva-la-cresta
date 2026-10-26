@@ -792,3 +792,30 @@ body.in-menu #menu {
 #rotate {
   font-family: var(--serif);
 }
+
+#ride-card.message #ride-card-title {
+  font-size: 30px;
+  letter-spacing: -0.8px;
+}
+
+#ride-card-time {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 44px;
+  letter-spacing: -1.5px;
+  color: var(--charcoal);
+  font-variant-numeric: tabular-nums;
+  margin-top: 6px;
+}
+
+#ride-card-time small {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #6e6e6e;
+  margin-left: 6px;
+}
+
+#ride-card-time:empty {
+  display: none;
+}

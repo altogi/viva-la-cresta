@@ -3,6 +3,7 @@
 // This is only for previewing the run; the real riding physics arrive in Phase 2.
 
 import type { Track } from '../sim/track';
+import { TRACK_LENGTH } from '../track/cresta';
 
 const G = 9.81;
 const MU = 0.012; // runners on ice
@@ -74,7 +75,7 @@ export class Ghost {
   }
 
   get finishTime() {
-    return this.times[this.times.length - 1];
+    return this.times[Math.round(TRACK_LENGTH / this.track.step)];
   }
 
   state(s: number): GhostState {

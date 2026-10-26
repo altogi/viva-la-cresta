@@ -194,7 +194,9 @@ Vite + TS + Three.js scaffold, PWA (manifest, service worker, icons), GitHub Pag
 Digitise the map into `cresta.ts` (Junction to Finish first). Cross-section generator for straights and banks. Track mesh: ice with subtle grooves/specular, curved walls, lips, straw beyond Shuttlecock, padded walls, bridges (Hanis, Road, Railway), snow terrain, trees. Track viewer tool.
 **Done when** you can fly down the run in the viewer and recognise every bank from Junction to the finish. **Your review**: does it look like the Cresta?
 
-### Phase 2 — Riding vertical slice ★ the crux — built, awaiting your playtest
+### Phase 2 — Riding vertical slice ★ the crux ✅
+*Played and tuned over three playtest rounds: the toboggan carves along its heading (no steering means hitting a wall); falls anywhere on bankinas or over a lip; run-and-jump-on start; fall close-up, flyover replay, straw bursts and two bells; helmet view; the uphill run-out to the foam cushion at Celerina, with "Made it safely to Celerina!" or, beating a personal best, "Hello Hello!".*
+
 *Physics in track coordinates (gravity, centrifugal climb, normal-force friction, drag, rakes, steering, grip); falls by flying over a lip, going over a wall, or crashing down one; bot calibration on a traditional from Junction: beginner lying start 80.7 s, solid rider 49.1 s at 66.7 mph, expert 47.1 s, no-brakes bot flies out of Shuttlecock. Debug: `?debug` (tuning panel), `?autopilot=good` (watch a bot ride).*
 
 Physics model in track coordinates. Traditional toboggan. One placeholder rider (Adelaide). Touch zones, lying start and running start, chase camera, fly-out and crash detection with ragdoll + slow-mo replay, finish timing, minimal HUD (time, speed), basic procedural audio (runner hiss, rakes, bell). Tuning page. Bot calibration to the 80 s / 49 s Junction targets and the CSV split shape.

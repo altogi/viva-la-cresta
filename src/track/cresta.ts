@@ -41,7 +41,10 @@ export interface Landmark {
   kind: 'start' | 'timing' | 'finish' | 'bridge' | 'section';
 }
 
+/** The finish contacts. */
 export const TRACK_LENGTH = 1212.25;
+/** End of the uphill run-out at Celerina, where a foam cushion stops the rider. */
+export const RUN_OUT_END = 1403;
 export const JUNCTION_S = 322.05;
 /** Heading at Top start, degrees from east (counter-clockwise): the run leaves Top towards the NNE. */
 export const START_HEADING = 27;
@@ -79,6 +82,12 @@ export const PROFILE: ProfilePoint[] = [
   { s: 1117.8, z: 14.0 },
   { s: 1156.9, z: 6.2 }, // Cresta Leap
   { s: 1212.25, z: 0.0 },
+  // The run-out climbs after the finish to slow riders down.
+  { s: 1245, z: 0.8 },
+  { s: 1290, z: 4.2 },
+  { s: 1340, z: 8.0 },
+  { s: 1375, z: 10.0 },
+  { s: RUN_OUT_END, z: 10.8 },
 ];
 
 /** Straights: a square corner where floor meets wall, so a rider bumps the bankina instead of riding up it. */
@@ -108,6 +117,9 @@ export const BENDS: Bend[] = [
   { name: 'Bulpetts', s0: 862, s1: 905, turn: -14, outer: { radius: 2.0, height: 1.6 }, inner: low },
   { name: 'Scylla', s0: 988, s1: 1040, turn: 23.5, outer: { radius: 2.0, height: 1.7 }, inner: low },
   { name: 'Charybdis', s0: 1068, s1: 1128, turn: -33, outer: { radius: 2.2, height: 1.9 }, inner: low },
+  // Past the finish: a long left bend up the run-out, then a sharp left hook to the cushion.
+  { name: 'Run-out', s0: 1273, s1: 1368, turn: 45, outer: { radius: 3.0, height: 1.8 }, inner: low },
+  { name: 'Finish curve', s0: 1369, s1: 1402, turn: 133, outer: { radius: 3.0, height: 3.2 }, inner: low, floorWidth: 1.8 },
 ];
 
 /** Gentle heading drift along the straights (no change to the walls). */
@@ -115,6 +127,7 @@ export const DRIFTS: { s0: number; s1: number; turn: number }[] = [
   { s0: 60, s1: 146, turn: -4 },
   { s0: 326, s1: 429, turn: -5 },
   { s0: 721, s1: 860, turn: -1 },
+  { s0: 1240, s1: 1272, turn: -4 },
 ];
 
 /** Distance over which cross-sections blend into a bend (m). */
@@ -140,6 +153,7 @@ export const ZONES: { name: string; s0: number }[] = [
   { name: 'Charybdis', s0: 1072 },
   { name: 'Cresta Leap', s0: 1120 },
   { name: 'Finish', s0: TRACK_LENGTH },
+  { name: 'Celerina', s0: TRACK_LENGTH + 15 },
 ];
 
 export const LANDMARKS: Landmark[] = [

@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { Track } from '../sim/track';
 import { BENDS, LANDMARKS, TRACK_LENGTH } from '../track/cresta';
 import { OSM_BUILDINGS, OSM_IDS, OSM_NEAR, OSM_TREES, OSM_WOODS } from '../track/osm';
@@ -31,6 +32,7 @@ export function buildScenery(track: Track, terrain: Terrain): THREE.Group {
   }
   group.add(buildFinish(ctx));
   group.add(buildShuttlecockRunoff(ctx));
+  group.add(buildCushion(ctx));
   return group;
 }
 
@@ -369,5 +371,29 @@ function buildShuttlecockRunoff(ctx: Placer): THREE.Group {
   bales.forEach((mm, i) => straw.setMatrixAt(i, mm));
   pads.castShadow = fences.castShadow = true;
   group.add(pads, fences, straw);
+  return group;
+}
+
+/** The foam cushion closing the end of the run-out at Celerina. Named so the ride can squash it. */
+function buildCushion(ctx: Placer): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'cushion';
+  const s = ctx.track.length - 0.8;
+  const ext = ctx.extent(s);
+  const width = ext.left - ext.right + 1.2;
+  const foam = new THREE.Mesh(
+    new RoundedBoxGeometry(1.6, 1.5, width, 3, 0.25),
+    new THREE.MeshStandardMaterial({ color: '#2d5b9e', roughness: 0.9 }),
+  );
+  foam.position.y = 0.75;
+  const band = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.22, width + 0.02), new THREE.MeshStandardMaterial({ color: '#930303', roughness: 0.8 }));
+  band.position.y = 1.15;
+  group.add(foam, band);
+  group.traverse((o) => {
+    o.castShadow = true;
+    o.receiveShadow = true;
+  });
+  group.position.copy(ctx.local(s, (ext.left + ext.right) / 2, 0));
+  group.rotation.y = ctx.heading(s);
   return group;
 }

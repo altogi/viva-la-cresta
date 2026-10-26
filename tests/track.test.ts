@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CROSS_POINTS, Track } from '../src/sim/track';
-import { BENDS, JUNCTION_S, PROFILE, TRACK_LENGTH } from '../src/track/cresta';
+import { BENDS, JUNCTION_S, PROFILE, RUN_OUT_END, TRACK_LENGTH } from '../src/track/cresta';
 import { dot, length } from '../src/sim/vec';
 
 const track = new Track();
@@ -16,7 +16,8 @@ describe('track profile', () => {
     for (const p of PROFILE) expect(track.elevation(p.s)).toBeCloseTo(p.z, 5);
   });
 
-  it('always runs downhill', () => {
+  it('always runs downhill to the finish, then climbs the run-out', () => {
+    expect(track.elevation(RUN_OUT_END)).toBeGreaterThan(track.elevation(TRACK_LENGTH) + 8);
     for (let s = 0; s <= TRACK_LENGTH; s += 0.5) expect(track.grade(s)).toBeLessThanOrEqual(1e-9);
   });
 
@@ -27,9 +28,9 @@ describe('track profile', () => {
 });
 
 describe('track centreline', () => {
-  it('spans the full length in 0.5 m stations', () => {
+  it('spans the run and its run-out in 0.5 m stations', () => {
     expect(track.stations[0].s).toBe(0);
-    expect(track.stations.at(-1)!.s).toBeCloseTo(TRACK_LENGTH, 6);
+    expect(track.stations.at(-1)!.s).toBeCloseTo(RUN_OUT_END, 6);
   });
 
   it('has orthonormal frames', () => {

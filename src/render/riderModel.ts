@@ -12,6 +12,10 @@ export interface RiderPose {
   /** 0 = running beside the toboggan, 1 = lying on it; in between is the jump on. */
   mount: number;
   runPhase: number; // radians, advances with distance run
+  /** 0 = riding, 1 = standing beside the toboggan, arms up, celebrating. */
+  cheer?: number;
+  /** Seconds into the celebration, for the waving. */
+  cheerTime?: number;
 }
 
 const m = (color: string, roughness = 0.55) => new THREE.MeshStandardMaterial({ color, roughness });
@@ -104,6 +108,14 @@ export class RiderModel {
     const cushion = this.toboggan.getObjectByName('cushion')!;
     this.lyingPose(p);
     cushion.position.x = this.body.position.x * 0.8;
+    if (p.cheer && p.cheer > 0) {
+      const lying = this.capture();
+      this.cheeringPose(p.cheerTime ?? 0);
+      const cheering = this.capture();
+      const t = p.cheer * p.cheer * (3 - 2 * p.cheer);
+      this.apply(lying, cheering, t);
+      return;
+    }
     if (p.mount >= 1) return;
     // Blend from running beside the toboggan to lying on it, with a little spring in between.
     const lying = this.capture();
@@ -124,6 +136,20 @@ export class RiderModel {
     this.head.rotation.set(0, 0, -0.35);
     this.arms.forEach((a) => a.rotation.set(0, 0, -1.05 - pitch));
     this.legs.forEach((leg, i) => leg.rotation.set(0, 0, Math.PI / 2 - pitch + Math.sin(p.runPhase + i * Math.PI) * 0.55));
+  }
+
+  /** Up on their feet beside the toboggan, arms raised and waving. */
+  private cheeringPose(time: number) {
+    const pitch = Math.PI / 2 - 0.08;
+    this.body.position.set(-0.25, 0.97, -0.55);
+    this.body.rotation.set(0, 0, pitch);
+    this.torso.rotation.set(0, 0, 0);
+    this.head.rotation.set(0, 0, -0.15);
+    this.arms.forEach((a, i) => {
+      const side = i === 0 ? -1 : 1;
+      a.rotation.set(0, -side * (0.45 + 0.18 * Math.sin(time * 9 + i)), -0.2);
+    });
+    this.legs.forEach((leg, i) => leg.rotation.set(0, 0, (i === 0 ? 1 : -1) * 0.04));
   }
 
   private lyingPose(p: RiderPose) {

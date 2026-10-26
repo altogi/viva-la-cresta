@@ -11,7 +11,7 @@ import {
   PROFILE,
   START_HEADING,
   STRAIGHT_WALL,
-  TRACK_LENGTH,
+  RUN_OUT_END,
   ZONES,
   type Bend,
   type ProfilePoint,
@@ -164,7 +164,8 @@ function wallPoints(shape: WallShape, halfWidth: number): { y: number; z: number
 
 export class Track {
   readonly step = 0.5;
-  readonly length = TRACK_LENGTH;
+  /** Geometry runs past the finish to the end of the run-out. */
+  readonly length = RUN_OUT_END;
   readonly stations: Station[] = [];
   private readonly profile = new MonotoneCubic(PROFILE);
 
