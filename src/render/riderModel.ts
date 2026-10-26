@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import type { TobogganId } from '../sim/rider';
 import { drawFlag } from '../ui/flags';
+import { buildFace, type FaceRig } from './face';
 import { solveTwoBone } from './ik';
 import { LOOKS, type RiderLook } from './riderLooks';
 
@@ -36,16 +37,33 @@ export interface RiderPose {
 
 const m = (color: string, roughness = 0.55, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
 const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+/** Where the stood-up toboggan's centre is, beside a standing rider (who stands at z = -0.75). */
+const STAND_TOBOGGAN = V(0.08, 0.62, -1.2);
 const smooth = (t: number) => t * t * (3 - 2 * t);
 const window01 = (t: number, a: number, b: number) => THREE.MathUtils.smoothstep(t, a, a + 0.12) * (1 - THREE.MathUtils.smoothstep(t, b - 0.12, b));
 
-/** A limb segment along +X from 0 to `length`, tapering from r0 to r1, with a rounded joint at the start. */
-function segment(length: number, r0: number, r1: number, material: THREE.Material): THREE.Group {
+/**
+ * A limb segment along +X from 0 to `length`, turned to a muscle profile: radii at even steps
+ * along it (smoothly interpolated), with a rounded joint at the start.
+ */
+function segment(length: number, radii: number[], material: THREE.Material): THREE.Group {
   const g = new THREE.Group();
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, length, 14).rotateZ(-Math.PI / 2).translate(length / 2, 0, 0), material);
-  const joint = new THREE.Mesh(new THREE.SphereGeometry(r0 * 1.02, 14, 10), material);
+  const curve = new THREE.SplineCurve(radii.map((r, i) => new THREE.Vector2(r, (i / (radii.length - 1)) * length)));
+  const shaft = new THREE.Mesh(new THREE.LatheGeometry(curve.getPoints(16), 16).rotateZ(-Math.PI / 2), material);
+  const joint = new THREE.Mesh(new THREE.SphereGeometry(radii[0] * 1.0, 14, 10), material);
   g.add(shaft, joint);
   return g;
+}
+
+/** Suit material with a stripe down each side of the leg (the lathe's u = 0 and 0.5 face sideways). */
+function striped(suit: string, stripe: string): THREE.MeshStandardMaterial {
+  const map = canvasTexture(64, 8, (g) => {
+    g.fillStyle = suit;
+    g.fillRect(0, 0, 64, 8);
+    g.fillStyle = stripe;
+    for (const x of [-3, 29, 61]) g.fillRect(x, 0, 6, 8);
+  });
+  return new THREE.MeshStandardMaterial({ map, roughness: 0.5 });
 }
 
 /** A canvas texture for lettering and bibs. */
@@ -80,12 +98,6 @@ interface Targets {
   kneePoles: [THREE.Vector3, THREE.Vector3];
 }
 
-interface Face {
-  eyes: THREE.Group[];
-  mouth: THREE.Group;
-  open: THREE.Mesh;
-}
-
 export class RiderModel {
   readonly root = new THREE.Group();
   readonly toboggan = new THREE.Group();
@@ -100,7 +112,7 @@ export class RiderModel {
   private readonly torso = new THREE.Group();
   private readonly arms: Chain[] = [];
   private readonly legs: Chain[] = [];
-  private readonly face: Face;
+  private readonly face: FaceRig;
   private readonly shoulder: number;
   private readonly shoulderWidth: number;
   private readonly hipWidth: number;
@@ -108,6 +120,7 @@ export class RiderModel {
   private readonly seat: number;
   private readonly handleY: number;
   private readonly look: RiderLook;
+  private standing = false;
 
   constructor(
     look: RiderLook = LOOKS.adelaide,
@@ -130,6 +143,8 @@ export class RiderModel {
     this.buildTorso(look);
     this.face = this.buildHead(look);
     this.helmet.visible = (options.helmet ?? true) && look.helmet !== null;
+    // The bun is tucked away under the helmet.
+    if (this.face.bun) this.face.bun.visible = !this.helmet.visible;
 
     const o = look.outfit;
     const hands = m(o.hands, 0.7);
@@ -141,14 +156,15 @@ export class RiderModel {
       // Arms hang off the shoulders, in the torso's frame.
       const upper = 0.3 * s * look.arms;
       const lower = 0.28 * s * look.arms;
-      const arm = this.chain(upper, lower, limb * 1.05, limb * 0.88, limb * 0.75, m(o.upperArm, 0.5), m(o.forearm, 0.5));
+      // Shoulder, biceps, elbow; forearm muscle near the elbow, thin wrist.
+      const arm = this.chain(upper, lower, [limb * 1.08, limb * 1.06, limb * 1.0, limb * 0.86], [limb * 0.86, limb * 0.92, limb * 0.82, limb * 0.66], m(o.upperArm, 0.5), m(o.forearm, 0.5));
       arm.root.position.set(this.shoulder - 0.02, 0.0, side * this.shoulderWidth);
       const hand = new THREE.Mesh(new THREE.SphereGeometry(limb * 1.15, 10, 8).scale(1.35, 0.75, 1.05), hands);
       hand.position.x = lower + limb * 0.7;
-      const elbow = new THREE.Mesh(new THREE.SphereGeometry(limb * 1.18, 10, 8), pads);
+      const elbow = new THREE.Mesh(new THREE.SphereGeometry(limb * 0.98, 10, 8), pads);
       arm.mid.add(hand, elbow);
       if (o.shoulderPads) {
-        const pad = new THREE.Mesh(new THREE.SphereGeometry(limb * 1.6, 12, 8), pads);
+        const pad = new THREE.Mesh(new THREE.SphereGeometry(limb * 1.3, 12, 8).scale(1, 0.85, 1), pads);
         arm.root.add(pad);
       }
       this.torso.add(arm.root);
@@ -156,9 +172,17 @@ export class RiderModel {
       // Legs from the hips, in the pelvis frame.
       const thigh = 0.44 * s;
       const shin = 0.43 * s;
-      const leg = this.chain(thigh, shin, limb * 1.75, limb * 1.25, limb * 0.95, m(o.thigh, 0.5), m(o.shin, 0.55));
+      // Full thigh narrowing to the knee; calf high on the shin, slim ankle.
+      const leg = this.chain(
+        thigh,
+        shin,
+        [limb * 1.78, limb * 1.8, limb * 1.6, limb * 1.36, limb * 1.2],
+        [limb * 1.2, limb * 1.38, limb * 1.2, limb * 0.95, limb * 0.82],
+        o.legStripe ? striped(o.thigh, o.legStripe) : m(o.thigh, 0.5),
+        o.legStripe ? striped(o.shin, o.legStripe) : m(o.shin, 0.55),
+      );
       leg.root.position.set(-0.03, -0.015, side * this.hipWidth);
-      const knee = new THREE.Mesh(new THREE.SphereGeometry(limb * 1.45, 12, 8).scale(1, 1.15, 1.15), pads);
+      const knee = new THREE.Mesh(new THREE.SphereGeometry(limb * 1.25, 12, 8), pads);
       const boot = new THREE.Mesh(new THREE.BoxGeometry(0.14 * s, 0.11 * s, 0.11 * s), boots);
       boot.position.set(shin + 0.04 * s, 0, 0);
       const toe = new THREE.Mesh(new THREE.BoxGeometry(0.06 * s, 0.13 * s, 0.1 * s), boots);
@@ -166,18 +190,6 @@ export class RiderModel {
       const rake = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.08 * s, 0.1 * s), steel);
       rake.position.set(shin + 0.14 * s, -0.03 * s, 0);
       leg.mid.add(knee, boot, toe, rake);
-      if (o.legStripe) {
-        // A white stripe down both sides of thigh and shin.
-        const stripe = m(o.legStripe, 0.5);
-        for (const z of [-1, 1]) {
-          const a = new THREE.Mesh(new THREE.BoxGeometry(thigh * 0.9, 0.012, 0.006), stripe);
-          a.position.set(thigh * 0.5, 0, z * limb * 1.5);
-          leg.root.add(a);
-          const b = new THREE.Mesh(new THREE.BoxGeometry(shin * 0.85, 0.012, 0.006), stripe);
-          b.position.set(shin * 0.5, 0, z * limb * 1.12);
-          leg.mid.add(b);
-        }
-      }
       if (o.bottle && side > 0) {
         // The beer, tucked into the top of the right sock.
         const bottle = new THREE.Group();
@@ -207,12 +219,12 @@ export class RiderModel {
     this.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0 });
   }
 
-  private chain(upper: number, lower: number, r0: number, r1: number, r2: number, upperMat: THREE.Material, lowerMat: THREE.Material): Chain {
+  private chain(upper: number, lower: number, upperRadii: number[], lowerRadii: number[], upperMat: THREE.Material, lowerMat: THREE.Material): Chain {
     const root = new THREE.Group();
-    root.add(segment(upper, r0, r1, upperMat));
+    root.add(segment(upper, upperRadii, upperMat));
     const mid = new THREE.Group();
     mid.position.x = upper;
-    mid.add(segment(lower, r1, r2, lowerMat));
+    mid.add(segment(lower, lowerRadii, lowerMat));
     root.add(mid);
     return { root, mid, upper, lower };
   }
@@ -249,7 +261,7 @@ export class RiderModel {
     const front = -depth; // belly side (faces the ice when lying)
     const back = depth;
     // Neck, up into the head.
-    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045 * s, 0.052 * s, 0.12 * s, 10).rotateZ(-Math.PI / 2), m(look.skin, 0.6));
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.05 * s, 0.058 * s, 0.12 * s, 14).rotateZ(-Math.PI / 2), m(look.skin, 0.6));
     neck.position.set(L + 0.04 * s, 0, 0);
     this.torso.add(neck);
     if (o.lettering) {
@@ -337,90 +349,13 @@ export class RiderModel {
   }
 
   /** Head and face, hair, beard; the helmet over them. */
-  private buildHead(look: RiderLook): Face {
+  private buildHead(look: RiderLook): FaceRig {
     const s = look.scale;
     this.head.position.set(this.shoulder + 0.17 * s, 0, 0);
     this.head.scale.setScalar(s);
     this.torso.add(this.head);
-    const skin = m(look.skin, 0.6);
-    const skull = new THREE.Mesh(new THREE.SphereGeometry(0.1, 20, 16).scale(1.0, 1.16, 0.88), skin);
-    const jaw = new THREE.Mesh(new THREE.SphereGeometry(0.075, 16, 12).scale(1.05, 0.8, 0.9), skin);
-    jaw.position.set(0.03, -0.055, 0);
-    this.head.add(skull, jaw);
-    for (const side of [-1, 1]) {
-      const ear = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6).scale(0.6, 1.2, 0.5), skin);
-      ear.position.set(-0.005, 0, side * 0.09);
-      this.head.add(ear);
-    }
-    // Eyes (grouped so they can wink), brows, nose.
-    const eyes: THREE.Group[] = [];
-    const iris = m(look.id === 'adelaide' ? '#3b6fb6' : '#4a3226', 0.3);
-    for (const side of [-1, 1]) {
-      const eye = new THREE.Group();
-      eye.position.set(0.087, 0.022, side * 0.036);
-      eye.add(new THREE.Mesh(new THREE.SphereGeometry(0.016, 10, 8), m('#f6f4ef', 0.3)));
-      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.0095, 8, 6), iris);
-      pupil.position.x = 0.011;
-      eye.add(pupil);
-      this.head.add(eye);
-      eyes.push(eye);
-      const brow = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.008, 0.034), m(look.hair.color, 0.8));
-      brow.position.set(0.094, 0.05, side * 0.036);
-      brow.rotation.x = side * 0.22; // inner ends down: a determined look
-      this.head.add(brow);
-    }
-    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.016, 10, 8).scale(1, 1.4, 0.9), skin);
-    nose.position.set(0.102, 0.0, 0);
-    this.head.add(nose);
-    if (look.cheeks) {
-      for (const side of [-1, 1]) {
-        const cheek = new THREE.Mesh(new THREE.SphereGeometry(0.02, 10, 8).scale(0.3, 0.8, 1), m(look.cheeks, 0.7));
-        cheek.position.set(0.085, -0.012, side * 0.052);
-        this.head.add(cheek);
-      }
-    }
-    // Hair.
-    const hair = m(look.hair.color, 0.85);
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.106, 18, 12, 0, Math.PI * 2, 0, look.hair.style === 'shaggy' ? 1.45 : 1.25), hair);
-    cap.position.set(-0.012, 0.008, 0);
-    cap.scale.set(1.05, 1.12, 0.94);
-    cap.rotation.z = 0.25; // hairline set back from the forehead
-    this.head.add(cap);
-    if (look.hair.style === 'slick') {
-      // Slicked back: a smooth crest swept towards the back.
-      const crest = new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 10).scale(1.5, 0.55, 0.95), hair);
-      crest.position.set(-0.01, 0.1, 0);
-      this.head.add(crest);
-    } else if (look.hair.style === 'bun') {
-      const bun = new THREE.Mesh(new THREE.SphereGeometry(0.045, 12, 10), hair);
-      bun.position.set(-0.08, 0.11, 0);
-      this.head.add(bun);
-    } else {
-      for (const [x, y, z] of [[-0.05, 0.09, 0.05], [-0.06, 0.08, -0.05], [0.02, 0.11, 0.04], [-0.09, 0.03, 0]]) {
-        const tuft = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), hair);
-        tuft.position.set(x, y, z);
-        this.head.add(tuft);
-      }
-    }
-    if (look.beard) {
-      const beardMat = m(look.beard, 0.95);
-      const beard = new THREE.Mesh(new THREE.SphereGeometry(0.085, 14, 10).scale(0.95, 1.05, 1.08), beardMat);
-      beard.position.set(0.045, -0.07, 0);
-      const moustache = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 6).scale(0.6, 0.45, 1.6), beardMat);
-      moustache.position.set(0.1, -0.025, 0);
-      this.head.add(beard, moustache);
-    }
-    // Mouth: a grin, which can open (a burp).
-    const mouth = new THREE.Group();
-    mouth.position.set(look.beard ? 0.112 : 0.097, -0.042, 0);
-    const smile = new THREE.Mesh(new THREE.TorusGeometry(0.024, 0.0055, 6, 14, Math.PI).rotateY(Math.PI / 2).rotateX(Math.PI), m('#7a2a2a', 0.5));
-    smile.position.y = 0.012;
-    const teeth = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.008, 0.032), m('#f7f5ee', 0.3));
-    teeth.position.set(0.002, -0.004, 0);
-    const open = new THREE.Mesh(new THREE.SphereGeometry(0.02, 10, 8).scale(0.3, 1, 1.3), m('#3a1414', 0.6));
-    open.scale.y = 0.001;
-    mouth.add(smile, teeth, open);
-    this.head.add(mouth);
+    const face = buildFace(look);
+    this.head.add(face.group);
     // The helmet, worn when riding.
     if (look.helmet) {
       const shell = m(look.helmet.shell, 0.28, 0.15);
@@ -444,17 +379,16 @@ export class RiderModel {
       this.helmet.add(dome, visor, chin, trim);
       this.head.add(this.helmet);
     }
-    return { eyes, mouth, open };
+    return face;
   }
 
   /** Facial expression: a wink of the left eye, an open mouth. */
   private express(wink: number, open: number) {
-    this.face.eyes[0].scale.y = 1 - 0.9 * wink;
-    this.face.open.scale.y = Math.max(0.001, open);
-    this.face.mouth.scale.setScalar(1 + open * 0.4);
+    this.face.express(wink, open);
   }
 
   setPose(p: RiderPose) {
+    this.holdToboggan(!!p.stand);
     let targets: Targets;
     let wink = 0;
     let open = 0;
@@ -472,6 +406,29 @@ export class RiderModel {
     this.express(wink, open);
     const cushion = this.toboggan.getObjectByName('cushion');
     if (cushion) cushion.position.x = THREE.MathUtils.clamp(this.body.position.x * 0.8, -0.25, 0.12);
+  }
+
+  /** Where the rake on a boot (0 left, 1 right) is in the world; call after posing. */
+  rakeWorld(side: number, out: THREE.Vector3): THREE.Vector3 {
+    const leg = this.legs[side];
+    return out.set(leg.lower + 0.14 * this.look.scale, -0.03 * this.look.scale, 0).applyMatrix4(leg.mid.matrixWorld);
+  }
+
+  /** Standing for the camera, the toboggan is stood on its tail at the rider's left side. */
+  private holdToboggan(standing: boolean) {
+    if (standing === this.standing) return;
+    this.standing = standing;
+    this.contactShadow.visible = !standing;
+    if (standing) {
+      this.toboggan.quaternion
+        .setFromEuler(new THREE.Euler(0, Math.PI + 0.55, Math.PI / 2, 'XYZ'))
+        .premultiply(new THREE.Quaternion().setFromAxisAngle(V(1, 0, 0), 0.1));
+      this.toboggan.position.copy(STAND_TOBOGGAN);
+    } else {
+      this.toboggan.quaternion.identity();
+      this.toboggan.position.set(0, 0, 0);
+    }
+    this.toboggan.updateMatrix();
   }
 
   /** Where a hip sits in the toboggan frame, for a pelvis position and pitch/roll. */
@@ -581,9 +538,10 @@ export class RiderModel {
       headYaw: 0,
       headTilt: 0.12,
       headRoll: 0,
-      hands: [hip(-1), hip(1)],
-      feet: [V(pelvis.x + 0.03, 0.06, pelvis.z - 0.19), V(pelvis.x + 0.03, 0.06, pelvis.z + 0.19)],
-      elbowPoles: [V(pelvis.x - 0.2, pelvis.y + 0.3, pelvis.z - 1.2), V(pelvis.x - 0.2, pelvis.y + 0.3, pelvis.z + 1.2)],
+      // Left hand resting on the nose of the stood-up toboggan, right fist on the hip.
+      hands: [V(0.5, 0.11, 0).applyMatrix4(this.toboggan.matrix), hip(1)],
+      feet: [V(pelvis.x + 0.03, 0.06, pelvis.z - 0.17), V(pelvis.x + 0.03, 0.06, pelvis.z + 0.21)],
+      elbowPoles: [V(pelvis.x - 0.4, pelvis.y + 0.1, pelvis.z - 1.2), V(pelvis.x - 0.2, pelvis.y + 0.3, pelvis.z + 1.2)],
       kneePoles: [V(pelvis.x + 1, 0.45, pelvis.z - 0.2), V(pelvis.x + 1, 0.45, pelvis.z + 0.2)],
     };
     let wink = 0;
@@ -593,9 +551,9 @@ export class RiderModel {
       const w = window01(t, 0, 1);
       const u = THREE.MathUtils.smoothstep(t, 0.2, 0.8);
       const a = Math.PI * 0.15 + u * Math.PI * 0.8;
-      const sweep = V(pelvis.x + Math.cos(a) * 0.15 * s, headY + Math.sin(a) * 0.13 * s, pelvis.z + 0.05);
+      const sweep = V(pelvis.x + Math.cos(a) * 0.14 * s, headY + 0.02 + Math.sin(a) * 0.14 * s, pelvis.z + 0.07);
       targets.hands[1] = targets.hands[1].lerp(sweep, w);
-      targets.elbowPoles[1] = V(pelvis.x + 0.2, headY + 0.4, pelvis.z + 1);
+      targets.elbowPoles[1] = V(pelvis.x - 0.15, headY + 0.25, pelvis.z + 1.3); // elbow out to the side, clear of the face
       targets.headTilt += w * 0.15;
     } else if (action === 'flirt') {
       // A wink, a tilt of the head, and a kiss blown at the camera.
@@ -613,8 +571,8 @@ export class RiderModel {
       open = window01(t, 0.25, 0.7);
       targets.headTilt += open * 0.45;
       targets.pelvis.y += open * 0.012;
-      targets.hands[0] = targets.hands[0].lerp(V(pelvis.x + 0.2 * s * this.look.build, pelvis.y + 0.22 * s, pelvis.z - 0.02), w);
-      targets.elbowPoles[0] = V(pelvis.x, pelvis.y, pelvis.z - 1.2);
+      targets.hands[1] = targets.hands[1].lerp(V(pelvis.x + 0.2 * s * this.look.build, pelvis.y + 0.22 * s, pelvis.z + 0.02), w);
+      targets.elbowPoles[1] = V(pelvis.x, pelvis.y, pelvis.z + 1.2);
     }
     return { targets, wink, open };
   }

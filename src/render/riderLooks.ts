@@ -53,7 +53,7 @@ export const LOOKS: Record<RiderId, RiderLook> = {
     build: 0.86,
     arms: 1.1,
     limbs: 0.84,
-    skin: '#e8cbb6',
+    skin: '#e6bea4',
     hair: { style: 'slick', color: '#1d1a19' },
     helmet: { shell: '#1f3d2b', visor: '#11161a', trim: '#2c5a3e' },
     outfit: {
@@ -81,7 +81,7 @@ export const LOOKS: Record<RiderId, RiderLook> = {
     build: 0.92,
     arms: 1,
     limbs: 0.92,
-    skin: '#f2d5c2',
+    skin: '#f0cbb5',
     hair: { style: 'bun', color: '#e2c27a' },
     cheeks: '#ec9a9a',
     helmet: { shell: '#1f47a8', visor: '#c9a13d', trim: '#d8b45a' },

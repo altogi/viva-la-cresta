@@ -852,13 +852,33 @@ body.selecting #select {
   left: 0;
   right: 0;
   bottom: 0;
-  max-height: 64%;
+  max-height: 52%;
   overflow-y: auto;
-  padding: 18px 16px calc(var(--safe-bottom) + 16px);
+  padding: 14px 16px calc(var(--safe-bottom) + 14px);
   background: var(--cream);
   color: var(--charcoal);
   border-radius: 14px 14px 0 0;
   box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.3);
+}
+
+/* Wide screens: the panel runs down the right; the rider stands in the space on the left. */
+@media (min-width: 760px) and (min-aspect-ratio: 1/1) {
+  .select-panel {
+    top: 0;
+    left: auto;
+    width: 400px;
+    max-height: none;
+    border-radius: 0;
+    padding-top: 24px;
+  }
+}
+
+.select-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
 .select-panel h2 {
@@ -867,8 +887,20 @@ body.selecting #select {
   text-transform: uppercase;
   letter-spacing: -0.5px;
   color: var(--accent);
-  margin: 0 0 10px;
-  font-size: 22px;
+  margin: 0;
+  font-size: 20px;
+}
+
+.select-arrow {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(147, 3, 3, 0.25);
+  background: #fff;
+  color: var(--accent);
+  font-size: 24px;
+  line-height: 1;
+  padding: 0 0 3px;
 }
 
 .select-panel h3 {
@@ -880,24 +912,50 @@ body.selecting #select {
   margin: 16px 0 8px;
 }
 
+/* One rider at a time: swipe sideways to the next. */
 #select-riders {
-  display: grid;
-  gap: 8px;
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  margin: 0 -16px;
+}
+
+#select-riders::-webkit-scrollbar {
+  display: none;
 }
 
 .rider-card {
+  flex: 0 0 100%;
+  box-sizing: border-box;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  padding: 0 16px;
   text-align: left;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  padding: 10px 12px;
-  background: #fff;
   color: var(--charcoal);
-  font: inherit;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
-.rider-card.chosen {
-  border-color: var(--accent);
+#select-dots {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+
+#select-dots button {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #d8d2c4;
+}
+
+#select-dots button.chosen {
+  background: var(--accent);
+  width: 22px;
+  border-radius: 4px;
 }
 
 .rider-name {
@@ -915,14 +973,9 @@ body.selecting #select {
 
 .rider-bio {
   font-family: var(--serif);
-  font-size: 13px;
+  font-size: 13.5px;
   color: #555;
-  margin: 4px 0 6px;
-  display: none;
-}
-
-.rider-card.chosen .rider-bio {
-  display: block;
+  margin: 4px 0 8px;
 }
 
 .rider-stats {
@@ -951,10 +1004,6 @@ body.selecting #select {
 .stat b {
   display: block;
   height: 100%;
-  background: var(--gold);
-}
-
-.rider-card.chosen .stat b {
   background: var(--accent);
 }
 
@@ -984,7 +1033,7 @@ body.selecting #select {
 
 #select-toboggan-text {
   font-family: var(--serif);
-  font-size: 14px;
+  font-size: 13px;
   color: #555;
   margin: 8px 0 14px;
 }

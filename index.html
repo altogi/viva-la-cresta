@@ -45,9 +45,13 @@
     <!-- Choosing a rider and toboggan -->
     <section id="select">
       <div class="select-panel">
-        <h2>Choose your rider</h2>
+        <div class="select-head">
+          <button class="select-arrow" data-step="-1" aria-label="Previous rider">‹</button>
+          <h2>Choose your rider</h2>
+          <button class="select-arrow" data-step="1" aria-label="Next rider">›</button>
+        </div>
         <div id="select-riders"></div>
-        <h3>Toboggan</h3>
+        <div id="select-dots"></div>
         <div class="toboggan-switch">
           <button data-toboggan="traditional">Traditional</button>
           <button data-toboggan="flattop">Flat-top</button>

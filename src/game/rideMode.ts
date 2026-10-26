@@ -65,6 +65,8 @@ const FALL_TEXT: Record<string, string> = {
 export class RideMode {
   private sim!: RideSim;
   private model!: RiderModel;
+  private readonly powderDue = [0, 0];
+  private readonly rakePos = new THREE.Vector3();
   private setup!: RideSetup;
   private stage: Stage = 'ready';
   private stageTime = 0;
@@ -281,7 +283,8 @@ export class RideMode {
       if (this.stageTime > 2.8) this.finish();
     }
 
-    this.debris.update(this.stage === 'falling' ? dt : realDt * REPLAY_SPEED);
+    const riding = this.stage === 'live' || this.stage === 'runout';
+    this.debris.update(this.stage === 'falling' || riding ? dt : realDt * REPLAY_SPEED);
     if (this.stage === 'falling') {
       this.ragdoll.update(dt);
       if (this.stageTime > 3.2) this.startReplay();
@@ -289,6 +292,7 @@ export class RideMode {
       this.updateReplay(realDt);
     } else if (!(this.stage === 'done' && this.sim.state.phase === 'fallen')) {
       this.placeRider();
+      if (riding) this.sprayRakes(dt);
     }
     this.updateCamera(realDt);
     this.updateHud();
@@ -298,6 +302,23 @@ export class RideMode {
       posture: st.posture,
       rake: (this.sim.input.rakeLeft + this.sim.input.rakeRight) / 2,
       riding: st.phase === 'riding' || st.phase === 'finished',
+    });
+  }
+
+  /** Raking boots throw up a spray of ice powder, more the harder and faster they bite. */
+  private sprayRakes(dt: number) {
+    const st = this.sim.state;
+    if (st.phase !== 'riding' && st.phase !== 'finished') return;
+    if (st.v < 1.5 || st.stopped) return;
+    const rakes = [this.sim.input.rakeLeft, this.sim.input.rakeRight];
+    if (rakes[0] < 0.05 && rakes[1] < 0.05) return;
+    this.model.root.updateMatrixWorld(true);
+    rakes.forEach((rake, side) => {
+      if (rake < 0.05) return;
+      this.powderDue[side] += rake * Math.min(st.v, 30) * dt * 15;
+      const count = Math.floor(this.powderDue[side]);
+      this.powderDue[side] -= count;
+      if (count > 0) this.debris.spray(this.model.rakeWorld(side, this.rakePos), this.riderVel, count);
     });
   }
 

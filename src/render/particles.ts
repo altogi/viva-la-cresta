@@ -1,4 +1,5 @@
-// Debris kicked up by a fall: straw stalks (beyond Shuttlecock's lip) and puffs of snow.
+// Debris kicked up by a fall: straw stalks (beyond Shuttlecock's lip) and puffs of snow; and the
+// fine ice powder a raking boot throws up.
 // Pooled instanced meshes; each particle flies, tumbles, lands and fades.
 
 import * as THREE from 'three';
@@ -81,6 +82,7 @@ export class FallDebris {
   readonly group = new THREE.Group();
   private readonly straw: Pool;
   private readonly snow: Pool;
+  private readonly powder: Pool;
   private seed = 1;
 
   constructor(private readonly groundAt: (x: number, z: number) => number) {
@@ -96,7 +98,14 @@ export class FallDebris {
       160,
       2.6,
     );
-    this.group.add(this.straw.mesh, this.snow.mesh);
+    this.powder = new Pool(
+      new THREE.IcosahedronGeometry(0.03, 0),
+      new THREE.MeshStandardMaterial({ color: '#f4f8fc', roughness: 1, transparent: true, opacity: 0.75, depthWrite: false }),
+      400,
+      4.5,
+    );
+    this.powder.mesh.castShadow = false;
+    this.group.add(this.straw.mesh, this.snow.mesh, this.powder.mesh);
   }
 
   private rand = () => {
@@ -120,8 +129,18 @@ export class FallDebris {
     }
   }
 
+  /** Ice powder from a raking boot: `count` grains thrown up and out, carried along at `carry`. */
+  spray(at: THREE.Vector3, carry: THREE.Vector3, count: number) {
+    const r = this.rand;
+    for (let i = 0; i < count; i++) {
+      const v = carry.clone().multiplyScalar(0.45 + r() * 0.35).add(new THREE.Vector3((r() - 0.5) * 2.4, 0.8 + r() * 2.2, (r() - 0.5) * 2.4));
+      this.powder.emit(at.clone().add(new THREE.Vector3((r() - 0.5) * 0.08, 0.02, (r() - 0.5) * 0.08)), v, 0.35 + r() * 0.45, 0.5 + r() * 1.1, r);
+    }
+  }
+
   update(dt: number) {
     this.straw.update(dt, this.groundAt);
     this.snow.update(dt, this.groundAt);
+    this.powder.update(dt, this.groundAt);
   }
 }
