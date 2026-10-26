@@ -10,8 +10,8 @@ import { lips } from '../sim/surface';
 import { RiderModel, type Prop, type StandPosture } from './riderModel';
 import { OSM_IDS, OSM_NEAR } from '../track/osm';
 import { HUT_APOTHEM } from './topHut';
+import { TOP_PLATFORM } from './scenery';
 import { LOOKS, type RiderLook } from './riderLooks';
-import { toThree } from './util';
 import { groundHeight } from './ground';
 import { bakeParts } from './bake';
 
@@ -341,12 +341,12 @@ export class Crowd {
     const side = new THREE.Vector3(top.left[0], 0, -top.left[1]).normalize();
     const facing = (dir: THREE.Vector3) => Math.atan2(-dir.z, dir.x);
     const osm = OSM_NEAR.find((b) => b.id === OSM_IDS.topHut)!;
-    const hutBase = this.track.elevation(0) + 1.1;
-    const hut = new THREE.Vector3(osm.c[0], hutBase, -osm.c[1]);
-    // The hut's door faces back up the hill, away from the start.
-    const out = fwd.clone().negate();
-    const door = hut.clone().addScaledVector(out, HUT_APOTHEM + 0.16);
-    const benchAt = hut.clone().addScaledVector(out, HUT_APOTHEM + 1.6).addScaledVector(side, 3.2);
+    const ground = this.track.elevation(0) + TOP_PLATFORM;
+    const hut = new THREE.Vector3(osm.c[0], ground, -osm.c[1]);
+    // Everyone gathers on the side of the hut that faces the start, where the riders go.
+    const out = fwd.clone();
+    const wall = hut.clone().addScaledVector(out, HUT_APOTHEM + 0.16);
+    const benchAt = hut.clone().addScaledVector(out, HUT_APOTHEM + 1.5).addScaledVector(side, 3.6);
     const bench = buildBench();
     bench.position.copy(benchAt);
     bench.rotation.y = facing(out);
@@ -359,28 +359,24 @@ export class Crowd {
       model.root.position.copy(at).add(new THREE.Vector3(0, 0, 0.75).applyAxisAngle(new THREE.Vector3(0, 1, 0), heading));
       this.group.add(model.root);
     };
-    const cast: { look: RiderLook; toboggan: 'traditional' | 'flattop'; posture: StandPosture; prop?: Prop; at: THREE.Vector3; dir: THREE.Vector3; look_?: number }[] = [
+    const towardStart = (at: THREE.Vector3) => new THREE.Vector3(top.pos[0], ground, -top.pos[1]).sub(at).setY(0).normalize();
+    const watchA = hut.clone().addScaledVector(out, HUT_APOTHEM + 3.2).addScaledVector(side, -3.4);
+    const watchB = hut.clone().addScaledVector(out, HUT_APOTHEM + 4.4).addScaledVector(side, -4.6);
+    const cast: { look: RiderLook; toboggan: 'traditional' | 'flattop'; posture: StandPosture; prop?: Prop; at: THREE.Vector3; dir: THREE.Vector3; look_?: number; helmet?: boolean }[] = [
       { look: waitingLook(LOOKS.remo, '#7a1d1d', '#151515'), toboggan: 'traditional', posture: 'sit', prop: 'cigarette', at: benchAt.clone().addScaledVector(side, -0.35), dir: out, look_: -0.3 },
       { look: waitingLook(LOOKS.maximilian, '#1a1a1c', '#c9c9c9'), toboggan: 'flattop', posture: 'sit', at: benchAt.clone().addScaledVector(side, 0.45), dir: out, look_: 0.45 },
-      { look: waitingLook(LOOKS.adelaide, '#e9e4d6', '#9a1c1c'), toboggan: 'traditional', posture: 'lean', prop: 'cola', at: door.clone().addScaledVector(side, -0.4), dir: out, look_: -0.35 },
-      { look: waitingLook(LOOKS.maximilian, '#244f7a', '#244f7a'), toboggan: 'flattop', posture: 'lean', prop: 'cola', at: door.clone().addScaledVector(side, 0.4), dir: out, look_: 0.3 },
+      { look: waitingLook(LOOKS.adelaide, '#e9e4d6', '#9a1c1c'), toboggan: 'traditional', posture: 'lean', prop: 'cola', at: wall.clone().addScaledVector(side, -0.45), dir: out, look_: -0.35 },
+      { look: waitingLook(LOOKS.maximilian, '#244f7a', '#244f7a'), toboggan: 'flattop', posture: 'lean', prop: 'cola', at: wall.clone().addScaledVector(side, 0.45), dir: out, look_: 0.3 },
+      // Two more, toboggans in hand, watching the riders at the start.
+      { look: waitingLook(LOOKS.adelaide, '#5a2a6a', '#d8d2c4'), toboggan: 'traditional', posture: 'stand', at: watchA, dir: towardStart(watchA), look_: 0.3, helmet: true },
+      { look: waitingLook(LOOKS.remo, '#2b5d3a', '#2b5d3a'), toboggan: 'traditional', posture: 'stand', at: watchB, dir: towardStart(watchB), look_: 0.2, helmet: true },
     ];
     for (const c of cast) {
-      const model = new RiderModel(c.look, c.toboggan, { helmet: false });
+      const model = new RiderModel(c.look, c.toboggan, { helmet: !!c.helmet });
       if (c.prop) model.holdProp(c.prop);
       place(model, c.at, c.dir);
       model.bake();
       this.waiting.push({ model, time: Math.random() * 5, posture: c.posture, look: c.look_ ?? 0 });
-    }
-    // Two at the edge of the start, toboggans in hand, watching the riders go.
-    for (const [lateral, s0] of [[-3.4, 7], [-3.6, 8.6]]) {
-      const st = this.track.frame(s0);
-      const at = toThree(this.track.toWorld(st, lateral, 0));
-      const dir = new THREE.Vector3(st.forward[0], 0, -st.forward[1]).addScaledVector(new THREE.Vector3(st.left[0], 0, -st.left[1]), 0.8).normalize();
-      const model = new RiderModel(waitingLook(s0 > 8 ? LOOKS.remo : LOOKS.adelaide, s0 > 8 ? '#2b5d3a' : '#5a2a6a', s0 > 8 ? '#2b5d3a' : '#d8d2c4'), 'traditional');
-      place(model, at, dir);
-      model.bake();
-      this.waiting.push({ model, time: Math.random() * 5, posture: 'stand', look: 0.5 });
     }
   }
 

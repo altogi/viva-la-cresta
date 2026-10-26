@@ -33,24 +33,35 @@ const FIRST_RIDE: Step[] = [
 ];
 
 export class Coach {
-  private index = 0;
+  private index: number;
   private held = 0;
   private shown = 0;
+  /** The last step shown: where the guide picks up again if the rider falls. */
+  lastShown: number;
   /** Time runs at this rate (slow while a lesson waits for the rider). */
   timeScale = 1;
 
   constructor(
     private readonly bubble: HTMLElement,
     private readonly steps: Step[] = FIRST_RIDE,
-  ) {}
+    startAt = 0,
+  ) {
+    this.index = Math.min(startAt, steps.length - 1);
+    this.lastShown = this.index;
+  }
 
-  static firstRide(bubble: HTMLElement) {
-    return new Coach(bubble, FIRST_RIDE);
+  /** The first ride's guide, from the start or from where a fall interrupted it. */
+  static firstRide(bubble: HTMLElement, startAt = 0) {
+    return new Coach(bubble, FIRST_RIDE, startAt);
   }
 
   /** Before the bell. */
   ready() {
-    this.show('Your first ride on the Cresta: a <b>lying start</b> from Junction. <b>Tap</b> to let the toboggan go.');
+    this.show(
+      this.index === 0
+        ? 'Your first ride on the Cresta: a <b>lying start</b> from Junction. <b>Tap</b> to let the toboggan go.'
+        : 'Back on the toboggan: we carry on from where you fell. <b>Tap</b> to let go.',
+    );
   }
 
   update(v: CoachView, dt: number) {
@@ -64,6 +75,7 @@ export class Coach {
     if (step.at !== undefined && v.s < step.at) return this.hide();
     if (step.until !== undefined && v.s > step.until) return this.advance();
     this.show(step.text);
+    this.lastShown = this.index;
     this.shown += dt;
     if (step.done) {
       this.timeScale = 0.25;

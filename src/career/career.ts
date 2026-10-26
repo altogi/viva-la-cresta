@@ -60,8 +60,10 @@ export interface Career {
   /** Day of the season, 0 = Friday 26 December. */
   day: number;
   ridesToday: number;
-  /** Rides taken in the first stage (first ride plus practice) before joining. */
+  /** Clean finishes in the beginner stage (first ride and practice), which move the rider on. */
   practiceRides: number;
+  /** Where the first-ride guide picks up again after a fall (the step it had reached). */
+  tutorialStep: number;
   member: boolean;
   flattop: 'locked' | 'converting' | 'yes';
   top: 'locked' | 'converting' | 'yes';
@@ -79,10 +81,13 @@ export interface Career {
   gnWon: boolean;
 }
 
-export const RIDES_PER_DAY = 3;
+export const RIDES_PER_DAY = 5;
 export const SEASON_DAYS = 66; // 26 December to 1 March
-/** Practice rides after the first ride before membership is certain. */
-export const PRACTICE_RIDES = 5;
+/** The club takes a rider on after this many finishes under MEMBER_TIME. */
+export const MEMBER_RIDES = 5;
+export const MEMBER_TIME = 50;
+/** Clean lying starts before the running start comes in. */
+export const LYING_RIDES = 3;
 /** Running-start conversion: steps allowed on each converting ride, then a full running start. */
 export const CONVERSION_STEPS = [2, 4, 7];
 export const FULL_STEPS = 7;
@@ -98,6 +103,7 @@ export function newCareer(id: string, name: string, rider: RiderId, now = Date.n
     day: 0,
     ridesToday: 0,
     practiceRides: 0,
+    tutorialStep: 0,
     member: false,
     flattop: 'locked',
     top: 'locked',
@@ -131,11 +137,12 @@ export type Setup = { start: Start; toboggan: TobogganId; style: Style; steps: n
 /** What the next practice ride is: the first ride, beginner lying starts, a conversion step, or free. */
 export function nextPractice(c: Career): Setup {
   if (!c.member) {
-    // First ride and beginner practice: lying starts, then the running start comes in step by step.
+    // First ride and beginner practice: clean lying starts, then the running start comes in step by
+    // step (a fall never moves a rider on), then full running starts until the club takes them on.
     const n = c.practiceRides;
     if (n === 0) return { start: 'junction', toboggan: 'traditional', style: 'lying', steps: 0, first: true };
-    if (n < 3) return { start: 'junction', toboggan: 'traditional', style: 'lying', steps: 0 };
-    const steps = CONVERSION_STEPS[Math.min(n - 3, CONVERSION_STEPS.length - 1)];
+    if (n < LYING_RIDES) return { start: 'junction', toboggan: 'traditional', style: 'lying', steps: 0 };
+    const steps = CONVERSION_STEPS[Math.min(n - LYING_RIDES, CONVERSION_STEPS.length - 1)];
     return { start: 'junction', toboggan: 'traditional', style: 'running', steps };
   }
   if (c.conversion) {
@@ -157,7 +164,12 @@ export function threeOfFive(c: Career, filter: (r: RideRecord) => boolean, limit
 
 /** The progression goal shown in the hub, with how far along the rider is. */
 export function goal(c: Career): string {
-  if (!c.member) return `Practice: ride ${Math.min(c.practiceRides + 1, PRACTICE_RIDES + 1)} of ${PRACTICE_RIDES + 1}. Ride well and the club may notice.`;
+  if (!c.member) {
+    const n = c.practiceRides;
+    if (n < LYING_RIDES) return `Beginner: clean lying starts, ${n} of ${LYING_RIDES}. A fall doesn't count.`;
+    if (n < LYING_RIDES + CONVERSION_STEPS.length - 1) return `Running start: ${CONVERSION_STEPS[n - LYING_RIDES]} steps this time. Finish clean to take more.`;
+    return `For the club: ${memberRides(c)} of ${MEMBER_RIDES} rides under ${MEMBER_TIME} s. Ride well and the club will notice.`;
+  }
   if (c.choicePending) return 'The Tower is impressed. Choose your next step.';
   if (c.conversion) {
     const conv = c.conversion;
@@ -191,7 +203,7 @@ export interface RideOutcome {
 }
 
 /** Record a practice ride and apply the progression rules. */
-export function recordPractice(c: Career, setup: Setup, time: number | null, fall: string | null, speed: number, rand = Math.random): RideOutcome {
+export function recordPractice(c: Career, setup: Setup, time: number | null, fall: string | null, speed: number): RideOutcome {
   const out: RideOutcome = { joined: false, choice: false, unlocked: null, newBest: false };
   c.rides.push({ day: c.day, season: c.season, start: setup.start, toboggan: setup.toboggan, style: setup.style, time, fall, speed });
   if (c.rides.length > 300) c.rides.splice(0, c.rides.length - 300);
@@ -199,10 +211,10 @@ export function recordPractice(c: Career, setup: Setup, time: number | null, fal
   c.lastPlayed = Date.now();
   if (time !== null) out.newBest = noteBest(c, setup.start, setup.toboggan, time);
   if (!c.member) {
-    c.practiceRides++;
-    // The President takes a liking to you: some time after the third practice ride, surely by the fifth.
-    const practice = c.practiceRides - 1;
-    if (practice >= PRACTICE_RIDES || (practice >= 3 && rand() < 0.4)) {
+    // Only a clean finish moves a beginner on.
+    if (time !== null) c.practiceRides++;
+    // The President takes a liking to you once you have five rides under 50 s.
+    if (memberRides(c) >= MEMBER_RIDES) {
       c.member = true;
       out.joined = true;
     }
@@ -236,6 +248,11 @@ export function recordPractice(c: Career, setup: Setup, time: number | null, fal
     }
   }
   return out;
+}
+
+/** Finishes under the membership time. */
+export function memberRides(c: Career): number {
+  return c.rides.filter((r) => r.time !== null && r.time < MEMBER_TIME).length;
 }
 
 export function noteBest(c: Career, start: Start, toboggan: TobogganId, time: number): boolean {

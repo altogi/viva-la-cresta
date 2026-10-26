@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { goal, handicap, newCareer, nextDay, nextPractice, recordPractice, startConversion, SEASON_DAYS, type Career } from '../src/career/career';
 import { RACES, cannotEnter, npcField, raceOn, standings } from '../src/career/races';
 
-const ride = (c: Career, time: number | null, rand = () => 0.99) => recordPractice(c, nextPractice(c), time, time === null ? 'Shuttlecock' : null, 60, rand);
+const ride = (c: Career, time: number | null) => recordPractice(c, nextPractice(c), time, time === null ? 'Shuttlecock' : null, 60);
 
 describe('career progression', () => {
   it('starts with a lying first ride at Junction on a traditional', () => {
@@ -13,22 +13,34 @@ describe('career progression', () => {
   it('practises lying starts, then converts to a running start step by step', () => {
     const c = newCareer('x', 'Game 1', 'adelaide');
     const styles: string[] = [];
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 7; i++) {
       const s = nextPractice(c);
       styles.push(s.style === 'lying' ? 'L' : `R${s.steps}`);
       ride(c, 80);
     }
-    expect(styles).toEqual(['L', 'L', 'L', 'R2', 'R4', 'R7']);
+    expect(styles).toEqual(['L', 'L', 'L', 'R2', 'R4', 'R7', 'R7']);
   });
 
-  it('makes the rider a member at random after practice, and always after five practice rides', () => {
-    const lucky = newCareer('x', 'G', 'remo');
-    for (let i = 0; i < 4; i++) ride(lucky, 70, () => 0);
-    expect(lucky.member).toBe(true);
-    const unlucky = newCareer('y', 'G', 'remo');
-    for (let i = 0; i < 5; i++) ride(unlucky, 70);
-    expect(unlucky.member).toBe(false);
-    expect(ride(unlucky, 70).joined).toBe(true);
+  it('never moves a rider on after a fall: the first ride and lying starts repeat', () => {
+    const c = newCareer('x', 'Game 1', 'adelaide');
+    ride(c, null);
+    expect(nextPractice(c).first).toBe(true);
+    ride(c, 80);
+    ride(c, 80);
+    ride(c, null);
+    expect(nextPractice(c).style).toBe('lying');
+    ride(c, 80);
+    expect(nextPractice(c)).toMatchObject({ style: 'running', steps: 2 });
+  });
+
+  it('makes the rider a member after five finishes under 50 s, not before', () => {
+    const c = newCareer('x', 'G', 'remo');
+    for (let i = 0; i < 6; i++) ride(c, 70);
+    expect(c.member).toBe(false);
+    for (let i = 0; i < 4; i++) ride(c, 49.5);
+    ride(c, 51);
+    expect(c.member).toBe(false);
+    expect(ride(c, 49.9).joined).toBe(true);
   });
 
   it('offers flat-top or Top after three of five Junction rides under 48 s', () => {

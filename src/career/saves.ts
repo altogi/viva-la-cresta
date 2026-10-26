@@ -7,7 +7,8 @@ const KEY = 'vlc-careers';
 export function loadSaves(): Career[] {
   try {
     const list = JSON.parse(localStorage.getItem(KEY) ?? '[]') as Career[];
-    return Array.isArray(list) ? list.sort((a, b) => b.lastPlayed - a.lastPlayed) : [];
+    // Saves from before a field existed get its starting value.
+    return Array.isArray(list) ? list.map((c) => ({ ...c, tutorialStep: c.tutorialStep ?? 0 })).sort((a, b) => b.lastPlayed - a.lastPlayed) : [];
   } catch {
     return [];
   }

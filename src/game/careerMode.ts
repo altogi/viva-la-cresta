@@ -222,21 +222,25 @@ export class CareerMode {
     const c = this.career!;
     if (c.ridesToday >= RIDES_PER_DAY) return this.hub();
     const setup = nextPractice(c);
-    const coach = setup.first ? Coach.firstRide($('coach')) : undefined;
+    const coach = setup.first ? Coach.firstRide($('coach'), c.tutorialStep) : undefined;
     this.rideWith(setup, setup.first ? 'Beginner Day · your first ride' : `Practice · ${describe(setup)}`, coach, (result) => {
       if (!result) return this.hub();
       const fallZone = result.fall?.zone ?? null;
       const outcome = recordPractice(c, setup, result.time, fallZone, result.speed);
+      // A fall on the first ride: the guide picks up again at the message it had reached.
+      if (setup.first && coach) c.tutorialStep = result.fall ? coach.lastShown : 0;
       if (result.fall) c.seenFallHelp = true;
       this.save();
       const moments: (() => void)[] = [];
       if (setup.first && result.time !== null)
-        moments.push(() => this.modal('Your first ride!', `Down in ${result.time!.toFixed(2)} s. Five more practice rides: lying starts first, then the running start, a few steps at a time.`, [{ label: 'Carry on', primary: true, run: next }]));
+        moments.push(() => this.modal('Your first ride!', `Down in ${result.time!.toFixed(2)} s. Two more clean lying starts, then the running start, a few steps at a time. Five rides under 50 s and the club will take you on.`, [{ label: 'Carry on', primary: true, run: next }]));
+      if (setup.first && result.fall)
+        moments.push(() => this.modal('Back to Junction', 'Every Cresta rider has been where you are now. Your first ride starts again, and the guide picks up where you fell.', [{ label: 'Try again', primary: true, run: next }]));
       if (outcome.joined)
         moments.push(() =>
           this.modal(
             'Welcome to the club',
-            'The President took a liking to you. You are now a member of the St Moritz Tobogganing Club: off the Supplementary List, and free to race. The Curzon Cup awaits.',
+            'Five rides under 50 seconds, and the President took a liking to you. You are now a member of the St Moritz Tobogganing Club: off the Supplementary List, and free to race. The Curzon Cup awaits.',
             [{ label: 'Splendid', primary: true, run: next }],
           ),
         );

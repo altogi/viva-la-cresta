@@ -236,20 +236,23 @@ function signTexture(text: string, bg: string, fg: string, width = 512, height =
 
 /** The ornate wooden pavilion at Top, behind the start, on the run's left. */
 /** The Top: the octagonal pavilion behind the start, a level snow platform, the start's back wall and timing box. */
+/** Height of the snow platform round the Top start and hut, relative to the start's ice. */
+export const TOP_PLATFORM = -0.1;
+
 function buildTopArea(ctx: Placer): THREE.Group {
   const group = new THREE.Group();
   const z0 = ctx.track.elevation(0);
   const st = ctx.track.frame(0);
   const heading = ctx.heading(0);
-  // The pavilion mapped in OSM, 16 m behind the start, raised on the snow bank beside the run.
+  // The pavilion mapped in OSM, 16 m behind the start, standing on the start platform.
   const osm = OSM_NEAR.find((b) => b.id === OSM_IDS.topHut)!;
   const hut = buildTopHut();
-  hut.position.set(osm.c[0], z0 + 1.1, -osm.c[1]);
+  hut.position.set(osm.c[0], z0 + TOP_PLATFORM, -osm.c[1]);
   hut.rotation.y = heading;
   group.add(hut);
   // A broad, level snow platform for the start area and the riders waiting their turn.
   const platform = new THREE.Mesh(new THREE.CylinderGeometry(15, 19, 3, 16), mat(colors.snow, { flatShading: false, roughness: 0.95 }));
-  platform.position.set(-st.forward[0] * 12, z0 - 1.6, st.forward[1] * 12); // top just below the ice
+  platform.position.set(-st.forward[0] * 12, z0 + TOP_PLATFORM - 1.5, st.forward[1] * 12); // top just below the ice
   platform.receiveShadow = true;
   group.add(platform);
   // Snow wall closing the run behind the start.
