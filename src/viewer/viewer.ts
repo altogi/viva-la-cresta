@@ -34,6 +34,8 @@ export class Viewer {
   private readonly camLook = new THREE.Vector3();
   private readonly riderPos = new THREE.Vector3();
   private snapCamera = true;
+  /** Background mode behind the title menu: a slow, endless descent from Junction. */
+  attract = false;
   private readonly profileCanvas = $<HTMLCanvasElement>('profile');
   private readonly sectionCanvas = $<HTMLCanvasElement>('section');
 
@@ -127,10 +129,20 @@ export class Viewer {
     this.rider.matrixWorldNeedsUpdate = true;
   }
 
+  /** Start or stop the background descent shown behind the menu. */
+  setAttract(on: boolean) {
+    this.attract = on;
+    if (on) {
+      this.setMode('chase');
+      this.startFrom(JUNCTION_S, true);
+    }
+  }
+
   update(dt: number) {
+    if (this.attract && (this.s >= TRACK_LENGTH - 0.01 || !this.playing)) this.startFrom(JUNCTION_S, true);
     if (this.playing) {
       const speed = this.ghost.state(this.s).speed;
-      this.s = Math.min(TRACK_LENGTH, this.s + speed * dt * SPEEDS[this.speedIndex]);
+      this.s = Math.min(TRACK_LENGTH, this.s + speed * dt * (this.attract ? 0.6 : SPEEDS[this.speedIndex]));
       if (this.s >= TRACK_LENGTH) this.playing = false;
     }
     this.placeRider();

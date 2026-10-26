@@ -194,7 +194,9 @@ Vite + TS + Three.js scaffold, PWA (manifest, service worker, icons), GitHub Pag
 Digitise the map into `cresta.ts` (Junction to Finish first). Cross-section generator for straights and banks. Track mesh: ice with subtle grooves/specular, curved walls, lips, straw beyond Shuttlecock, padded walls, bridges (Hanis, Road, Railway), snow terrain, trees. Track viewer tool.
 **Done when** you can fly down the run in the viewer and recognise every bank from Junction to the finish. **Your review**: does it look like the Cresta?
 
-### Phase 2 — Riding vertical slice ★ the crux
+### Phase 2 — Riding vertical slice ★ the crux — built, awaiting your playtest
+*Physics in track coordinates (gravity, centrifugal climb, normal-force friction, drag, rakes, steering, grip); falls by flying over a lip, going over a wall, or crashing down one; bot calibration on a traditional from Junction: beginner lying start 80.7 s, solid rider 49.1 s at 66.7 mph, expert 47.1 s, no-brakes bot flies out of Shuttlecock. Debug: `?debug` (tuning panel), `?autopilot=good` (watch a bot ride).*
+
 Physics model in track coordinates. Traditional toboggan. One placeholder rider (Adelaide). Touch zones, lying start and running start, chase camera, fly-out and crash detection with ragdoll + slow-mo replay, finish timing, minimal HUD (time, speed), basic procedural audio (runner hiss, rakes, bell). Tuning page. Bot calibration to the 80 s / 49 s Junction targets and the CSV split shape.
 **Done when** a full Junction ride is playable on a phone and Shuttlecock is a real decision. **Your playtest**: as an actual rider, does it feel like the Cresta? Expect a few rounds of tuning here.
 
@@ -216,6 +218,31 @@ Weather generator and friction model, snow (visual snowfall + physics), wind, ha
 
 ### Visual upgrade (runs alongside Phases 2–4)
 Move the Phase 1 scene to the semi-realistic target: textured pine LODs, PBR ice/snow, sky lighting, and accurate landmark models.
+
+### Accurate surroundings (alongside the visual upgrade)
+Goal: the buildings and slopes around the run look like the real ones.
+
+**Sources.** Street View is reference only: Google's terms don't allow extracting its imagery into another product.
+- **Building shapes:** swisstopo *swissBUILDINGS3D 3.0*, free Swiss open data. It has every building as a 3D model with real heights and roof shapes, which is far better than OSM footprints.
+- **Terrain:** *swissALTI3D* elevation at 0.5–2 m resolution replaces the noise hillside. It also lets us check the run's elevation profile against the real ground.
+- **Roofs and ground:** *SWISSIMAGE* aerial photos at 10 cm, also free.
+- **Facades:** our own photos taken on site in season, which is the best source, plus *Mapillary* street photos (CC BY-SA, with attribution) where they exist.
+
+**Pipeline.** An offline build script would:
+1. Download the swisstopo tiles around the run.
+2. Clip them to about 400 m from the run, simplify them and convert them to compressed models with compressed textures, plus a terrain heightmap.
+3. Generate a manifest the game loads at runtime.
+
+Nothing is fetched while playing, and everything is cached offline by the app.
+
+**Facades in three tiers:**
+1. *Hero buildings*, hand-modelled with photo textures: the clubhouse and Tower, the Top hut, the Kulm, the churches and the hotels that face the run.
+2. *Buildings within ~60 m of the ice*: the swisstopo shape plus facade textures from our photos or Mapillary, projected onto each wall.
+3. *Everything else*: the swisstopo shape plus a procedural facade (colour, window grid, shutters, sgraffito bands), with per-building settings filled in by a review pass over reference photos.
+
+**Performance:** levels of detail by distance, merged meshes and one texture atlas per tier.
+
+**Licences:** OSM (ODbL) and swisstopo (open data with attribution) are credited in the app.
 
 ### Phase 7 — Polish & release
 Menus and scenes (SMTC clubhouse, Sunny Bar at the Kulm for results), SMTC branding, performance pass on a mid-range phone (target a steady 60 fps, with a quality fallback), offline check, settings (sound, haptics, hint zones, left-handed mirror), first public release.

@@ -216,3 +216,346 @@ body.debug #loading {
   font: 11px system-ui, sans-serif;
   opacity: 0.6;
 }
+
+/* ---------- Screens ---------- */
+#menu,
+#ride,
+#viewer {
+  display: none;
+}
+
+body.in-menu #menu,
+body.riding #ride,
+body.viewing #viewer {
+  display: block;
+}
+
+/* ---------- Title menu ---------- */
+#menu {
+  position: fixed;
+  inset: 0;
+  padding: calc(var(--safe-top) + 48px) 24px calc(var(--safe-bottom) + 24px);
+  background: linear-gradient(rgba(14, 26, 42, 0.15), rgba(14, 26, 42, 0.72));
+  text-align: center;
+  overflow-y: auto;
+}
+
+#menu .logo {
+  width: 72px;
+  filter: invert(1);
+  opacity: 0.95;
+}
+
+#menu h1 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 38px;
+  margin: 10px 0 2px;
+  letter-spacing: 0.02em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+#menu .tagline {
+  margin: 0 0 32px;
+  opacity: 0.85;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+#menu .choices {
+  display: grid;
+  gap: 10px;
+  max-width: 340px;
+  margin: 0 auto;
+}
+
+#menu button,
+#ride-card button {
+  min-height: 52px;
+  border: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+#menu button.primary,
+#ride-card button.primary {
+  background: var(--accent);
+}
+
+#menu button.quiet {
+  background: transparent;
+  font-weight: 500;
+  opacity: 0.85;
+}
+
+#menu button small {
+  font-weight: 400;
+  opacity: 0.7;
+  margin-left: 4px;
+}
+
+#menu .how {
+  max-width: 340px;
+  margin: 22px auto 0;
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.45;
+  background: rgba(10, 20, 34, 0.45);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+
+#menu .how summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+#menu .how .keys {
+  opacity: 0.7;
+  font-size: 12px;
+}
+
+/* ---------- Riding ---------- */
+#ride-hud {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: calc(var(--safe-top) + 10px) 16px 20px;
+  background: linear-gradient(rgba(10, 20, 34, 0.55), rgba(10, 20, 34, 0));
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  z-index: 3;
+}
+
+#ride-zone {
+  font-family: Georgia, serif;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ride-numbers {
+  display: flex;
+  gap: 16px;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+}
+
+.ride-numbers b {
+  font-size: 26px;
+}
+
+.ride-numbers small {
+  font-size: 12px;
+  margin-left: 3px;
+  opacity: 0.85;
+}
+
+#ride-posture {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+#ride-posture.on-knives {
+  background: var(--accent);
+}
+
+.ride-buttons {
+  position: absolute;
+  right: 12px;
+  top: calc(var(--safe-top) + 10px);
+  display: flex;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.ride-buttons button {
+  min-width: 44px;
+  min-height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(16, 28, 44, 0.5);
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+}
+
+#zones {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 34% 38% 28%;
+  grid-template-areas:
+    'front front front'
+    'left . right'
+    'rl rb rr';
+  z-index: 2;
+  touch-action: none;
+}
+
+.zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed rgba(255, 255, 255, 0.0);
+  transition: background 0.08s;
+}
+
+#zones.active .zone {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.zone span {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.zone.held {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.zone.front {
+  grid-area: front;
+  padding-top: 90px;
+}
+
+.zone.left {
+  grid-area: left;
+}
+
+.zone.right {
+  grid-area: right;
+}
+
+.zone.rake-left {
+  grid-area: rl;
+}
+
+.zone.rake-both {
+  grid-area: rb;
+}
+
+.zone.rake-right {
+  grid-area: rr;
+}
+
+#zones.knives .zone.front span {
+  color: rgba(255, 210, 190, 0.9);
+}
+
+.run {
+  display: none;
+  grid-area: rb;
+  align-self: center;
+  justify-self: center;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  border: 0;
+  background: var(--accent);
+  color: #fff;
+  font: 700 22px system-ui, sans-serif;
+  letter-spacing: 0.08em;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+}
+
+.run.held {
+  transform: scale(0.94);
+}
+
+#zones.running .run {
+  display: block;
+}
+
+#zones.running .zone.rake-both {
+  visibility: hidden;
+}
+
+#ride-banner {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  background: rgba(10, 20, 34, 0.25);
+}
+
+#ride-banner[hidden],
+#ride-card[hidden] {
+  display: none;
+}
+
+#ride-banner-title {
+  font-family: Georgia, serif;
+  font-size: 30px;
+  font-weight: 700;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+#ride-banner-hint {
+  margin-top: 8px;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+#ride-card {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(var(--safe-bottom) + 24px);
+  z-index: 5;
+  padding: 20px;
+  border-radius: 16px;
+  background: rgba(14, 24, 38, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  text-align: center;
+}
+
+#ride-card-title {
+  font-family: Georgia, serif;
+  font-size: 40px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#ride-card-subtitle {
+  margin: 4px 0 10px;
+  opacity: 0.9;
+}
+
+#ride-card-lines {
+  font-size: 14px;
+  opacity: 0.85;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+#ride-card .row {
+  display: flex;
+  gap: 10px;
+}
+
+#ride-card .row button {
+  flex: 1;
+}

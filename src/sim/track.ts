@@ -4,6 +4,7 @@
 import {
   BENDS,
   BEND_BLEND,
+  BEND_EXIT_BLEND,
   DRIFTS,
   FLOOR_WIDTH,
   LIP_WIDTH,
@@ -239,7 +240,7 @@ export class Track {
     let runoffLeft: 'snow' | 'straw' = 'snow';
     let runoffRight: 'snow' | 'straw' = 'snow';
     for (const b of BENDS) {
-      const w = smoothstep(b.s0 - BEND_BLEND, b.s0, s) * (1 - smoothstep(b.s1, b.s1 + BEND_BLEND, s));
+      const w = smoothstep(b.s0 - BEND_BLEND, b.s0, s) * (1 - smoothstep(b.s1, b.s1 + BEND_EXIT_BLEND, s));
       if (w <= 0) continue;
       const outerLeft = b.turn < 0; // turning right pushes the rider up the left wall
       left = lerpWall(left, outerLeft ? b.outer : b.inner, w);

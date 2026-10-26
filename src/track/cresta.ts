@@ -99,25 +99,27 @@ export const BENDS: Bend[] = [
     s1: 632,
     turn: 89.5,
     outer: { radius: 6.0, height: 1.9 },
-    inner: { radius: 0.4, height: 0.5 },
+    inner: { radius: 0.5, height: 0.8 },
     floorWidth: 1.8,
     runoff: 'straw',
   },
   { name: 'Stream', s0: 641, s1: 689, turn: -41, outer: { radius: 3.0, height: 4.5 }, inner: low },
-  { name: 'Bulpetts', s0: 868, s1: 900, turn: -14, outer: { radius: 2.0, height: 1.2 }, inner: low },
-  { name: 'Scylla', s0: 996, s1: 1027, turn: 23.5, outer: { radius: 2.0, height: 1.2 }, inner: low },
-  { name: 'Charybdis', s0: 1080, s1: 1120, turn: -33, outer: { radius: 2.2, height: 1.4 }, inner: low },
+  { name: 'Bulpetts', s0: 862, s1: 905, turn: -14, outer: { radius: 2.0, height: 1.6 }, inner: low },
+  { name: 'Scylla', s0: 988, s1: 1040, turn: 23.5, outer: { radius: 2.0, height: 1.7 }, inner: low },
+  { name: 'Charybdis', s0: 1068, s1: 1128, turn: -33, outer: { radius: 2.2, height: 1.9 }, inner: low },
 ];
 
 /** Gentle heading drift along the straights (no change to the walls). */
 export const DRIFTS: { s0: number; s1: number; turn: number }[] = [
   { s0: 60, s1: 146, turn: -4 },
   { s0: 326, s1: 429, turn: -5 },
-  { s0: 721, s1: 867, turn: -1 },
+  { s0: 721, s1: 860, turn: -1 },
 ];
 
-/** Distance over which cross-sections blend into and out of a bend (m). */
+/** Distance over which cross-sections blend into a bend (m). */
 export const BEND_BLEND = 10;
+/** Walls taper off more slowly after a bend: riders are still coming down them. */
+export const BEND_EXIT_BLEND = 22;
 
 /** Named parts of the run, each starting at `s0` and lasting until the next. */
 export const ZONES: { name: string; s0: number }[] = [

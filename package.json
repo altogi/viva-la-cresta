@@ -11,6 +11,7 @@
     "icons": "pwa-assets-generator"
   },
   "dependencies": {
+    "lil-gui": "0.21.0",
     "three": "0.186.0"
   },
   "devDependencies": {

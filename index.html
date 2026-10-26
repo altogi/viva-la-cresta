@@ -15,35 +15,96 @@
   <body>
     <canvas id="scene"></canvas>
 
-    <header id="hud">
-      <div id="zone">Junction</div>
-      <div class="stats">
-        <span id="distance">0 m</span>
-        <span id="elevation">0 m</span>
-        <span id="gradient">flat</span>
+    <!-- Title menu -->
+    <section id="menu">
+      <img src="/smtc-logo.svg" alt="" class="logo" />
+      <h1>Viva la Cresta</h1>
+      <p class="tagline">St. Moritz Tobogganing Club</p>
+      <div class="choices">
+        <button data-ride="junction-lying">Junction · lying start</button>
+        <button data-ride="junction-running" class="primary">Junction · running start</button>
+        <button data-ride="top-running">Top · running start <small>preview</small></button>
+        <button id="open-viewer" class="quiet">Track viewer</button>
       </div>
-      <div class="speed"><span id="mph">0</span><small>mph</small><span id="clock">0.00</span><small>s</small></div>
-    </header>
-
-    <section id="inspector">
-      <canvas id="section"></canvas>
-      <canvas id="profile"></canvas>
+      <details class="how">
+        <summary>How to ride</summary>
+        <p><b>Tap ahead of the rider</b> to slide back onto the knives, or forward again.</p>
+        <p><b>Hold left or right</b> to steer: arms on the knives, a turn of the head when forward.</p>
+        <p><b>Hold the bottom</b> to rake: left foot, both, or right foot. Rakes bite hardest on the knives.</p>
+        <p><b>Running start:</b> tap RUN quickly after the bell.</p>
+        <p class="keys">Keyboard: ↑ knives · ← → steer · Z X C rake · Space run</p>
+      </details>
     </section>
 
-    <footer id="controls">
-      <input id="scrub" type="range" min="0" step="0.5" value="322" aria-label="Position on the run" />
-      <div class="row">
-        <button id="play" aria-label="Play or pause">▶</button>
-        <button id="from-top">Top</button>
-        <button id="from-junction">Junction</button>
-        <select id="jump" aria-label="Jump to a bank"><option value="">Bank…</option></select>
+    <!-- Riding -->
+    <section id="ride">
+      <header id="ride-hud">
+        <div id="ride-zone">Junction</div>
+        <div class="ride-numbers">
+          <span><b id="ride-time">0.00</b><small>s</small></span>
+          <span><b id="ride-mph">0</b><small>mph</small></span>
+        </div>
+        <div id="ride-posture">FORWARD</div>
+        <div class="ride-buttons">
+          <button id="ride-cam">Chase</button>
+          <button id="ride-quit" aria-label="Back to menu">✕</button>
+        </div>
+      </header>
+      <div id="zones">
+        <div data-zone="front" class="zone front"><span>knives / forward</span></div>
+        <div data-zone="left" class="zone left"><span>steer</span></div>
+        <div data-zone="right" class="zone right"><span>steer</span></div>
+        <div data-zone="rakeLeft" class="zone rake rake-left"><span>rake L</span></div>
+        <div data-zone="rakeBoth" class="zone rake rake-both"><span>rake</span></div>
+        <div data-zone="rakeRight" class="zone rake rake-right"><span>rake R</span></div>
+        <button data-zone="run" class="run">RUN</button>
       </div>
-      <div class="row">
-        <button id="camera">Chase</button>
-        <button id="speed">1×</button>
-        <button id="inspect">Profile</button>
+      <div id="ride-banner" hidden>
+        <div id="ride-banner-title"></div>
+        <div id="ride-banner-hint"></div>
       </div>
-    </footer>
+      <div id="ride-card" hidden>
+        <div id="ride-card-title"></div>
+        <div id="ride-card-subtitle"></div>
+        <div id="ride-card-lines"></div>
+        <div class="row">
+          <button id="ride-again" class="primary">Ride again</button>
+          <button id="ride-menu">Menu</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Track viewer -->
+    <section id="viewer">
+      <header id="hud">
+        <div id="zone">Junction</div>
+        <div class="stats">
+          <span id="distance">0 m</span>
+          <span id="elevation">0 m</span>
+          <span id="gradient">flat</span>
+        </div>
+        <div class="speed"><span id="mph">0</span><small>mph</small><span id="clock">0.00</span><small>s</small></div>
+      </header>
+      <section id="inspector">
+        <canvas id="section"></canvas>
+        <canvas id="profile"></canvas>
+      </section>
+      <footer id="controls">
+        <input id="scrub" type="range" min="0" step="0.5" value="322" aria-label="Position on the run" />
+        <div class="row">
+          <button id="play" aria-label="Play or pause">▶</button>
+          <button id="from-top">Top</button>
+          <button id="from-junction">Junction</button>
+          <select id="jump" aria-label="Jump to a bank"><option value="">Bank…</option></select>
+        </div>
+        <div class="row">
+          <button id="camera">Chase</button>
+          <button id="speed">1×</button>
+          <button id="inspect">Profile</button>
+          <button id="viewer-close">Menu</button>
+        </div>
+      </footer>
+    </section>
 
     <div id="loading">
       <img src="/smtc-logo.svg" alt="" />
