@@ -10,6 +10,8 @@ const SIDES = 8;
 const RADIUS = 3.6; // to the corners, matching the OSM footprint
 const PLINTH = 0.45;
 const WALL = 3.7;
+/** Centre to the middle of a wall (the door's distance from the hut's centre). */
+export const HUT_APOTHEM = RADIUS * Math.cos(Math.PI / SIDES);
 
 const BROWN = '#5a4840';
 const YELLOW = '#e2b043';

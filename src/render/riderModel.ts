@@ -15,9 +15,12 @@ import type { TobogganId } from '../sim/rider';
 import { drawFlag } from '../ui/flags';
 import { buildFace, type FaceRig } from './face';
 import { solveTwoBone } from './ik';
+import { bakeParts } from './bake';
 import { LOOKS, type RiderLook } from './riderLooks';
 
 export type IdleAction = 'comb' | 'flirt' | 'burp';
+export type StandPosture = 'stand' | 'sit' | 'lean';
+export type Prop = 'cigarette' | 'cola';
 
 export interface RiderPose {
   posture: number; // 0 forward … 1 knives
@@ -32,7 +35,15 @@ export interface RiderPose {
   /** Seconds into the celebration, for the waving. */
   cheerTime?: number;
   /** Standing for the camera (rider selection): breathing, with an occasional gesture. */
-  stand?: { time: number; action: IdleAction | null; t: number };
+  stand?: {
+    time: number;
+    action: IdleAction | null;
+    t: number;
+    /** Standing with the toboggan (default), sitting on a bench, leaning back on a wall, or watching. */
+    posture?: StandPosture;
+    /** Head turned this far to the left (radians), to look at something. */
+    look?: number;
+  };
 }
 
 const m = (color: string, roughness = 0.55, metalness = 0) => new THREE.MeshStandardMaterial({ color, roughness, metalness });
@@ -121,6 +132,8 @@ export class RiderModel {
   private readonly handleY: number;
   private readonly look: RiderLook;
   private standing = false;
+  private tip: THREE.Object3D | null = null;
+  private readonly smoke: THREE.Mesh[] = [];
 
   constructor(
     look: RiderLook = LOOKS.adelaide,
@@ -385,11 +398,17 @@ export class RiderModel {
 
   setPose(p: RiderPose) {
     this.holdToboggan(!!p.stand);
+    // Sitting or leaning, the toboggan is left elsewhere.
+    this.toboggan.visible = !p.stand || (p.stand.posture ?? 'stand') === 'stand';
     let targets: Targets;
     let wink = 0;
     let open = 0;
     if (p.stand) {
-      ({ targets, wink, open } = this.standingTargets(p.stand.time, p.stand.action, p.stand.t));
+      const posture = p.stand.posture ?? 'stand';
+      if (posture === 'sit') targets = this.sittingTargets(p.stand.time);
+      else if (posture === 'lean') targets = this.leaningTargets(p.stand.time);
+      else ({ targets, wink, open } = this.standingTargets(p.stand.time, p.stand.action, p.stand.t));
+      targets.headYaw += p.stand.look ?? 0;
     } else {
       targets = this.ridingTargets(p);
       if (p.cheer && p.cheer > 0) targets = blendTargets(targets, this.cheeringTargets(p.cheerTime ?? 0), smooth(p.cheer));
@@ -400,8 +419,69 @@ export class RiderModel {
     }
     this.apply(targets);
     this.express(wink, open);
+    if (this.smoke.length && p.stand) this.puff(p.stand.time);
     const cushion = this.toboggan.getObjectByName('cushion');
     if (cushion) cushion.position.x = THREE.MathUtils.clamp(this.body.position.x * 0.8, -0.25, 0.12);
+  }
+
+  /**
+   * For background riders: merge the plain parts into one mesh per moving part. The face stops
+   * winking and burping (its lids and jaw are fixed as they are).
+   */
+  bake() {
+    const parts = [this.toboggan, this.body, this.torso, this.head, ...this.arms.flatMap((c) => [c.root, c.mid]), ...this.legs.flatMap((c) => [c.root, c.mid])];
+    bakeParts(this.root, parts);
+  }
+
+  /** Give the rider something to hold in the right hand: a cigarette (smoking), or a cola. */
+  holdProp(prop: Prop) {
+    const arm = this.arms[1];
+    const s = this.look.scale;
+    const at = arm.lower + 0.055 * s * this.look.limbs * 0.9;
+    const group = new THREE.Group();
+    group.position.set(at, 0, 0);
+    if (prop === 'cigarette') {
+      // Between the fingers, sticking out sideways; a glowing tip and a curl of smoke.
+      const paper = new THREE.Mesh(new THREE.CylinderGeometry(0.0045, 0.0045, 0.075, 6).rotateX(Math.PI / 2), m('#f4f1ea', 0.7));
+      paper.position.z = 0.05;
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(0.006, 6, 4), new THREE.MeshStandardMaterial({ color: '#ff6a1a', emissive: '#ff4a10', emissiveIntensity: 1.5 }));
+      tip.position.z = 0.088;
+      tip.name = 'tip';
+      group.add(paper, tip);
+      this.tip = tip;
+      for (let i = 0; i < 8; i++) {
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshBasicMaterial({ color: '#e8e8e8', transparent: true, opacity: 0.3, depthWrite: false }));
+        this.root.add(puff);
+        this.smoke.push(puff);
+      }
+    } else {
+      // A glass bottle of cola: dark glass, a red label, a cap.
+      const profile = [[0, 0], [0.032, 0], [0.034, 0.02], [0.028, 0.07], [0.033, 0.11], [0.026, 0.15], [0.013, 0.19], [0.012, 0.215], [0, 0.215]].map(([r, y]) => new THREE.Vector2(r, y - 0.09));
+      const bottle = new THREE.Mesh(new THREE.LatheGeometry(profile, 14), new THREE.MeshStandardMaterial({ color: '#2a1408', roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.92 }));
+      const label = new THREE.Mesh(new THREE.CylinderGeometry(0.0335, 0.0335, 0.045, 14, 1, true), m('#c8102e', 0.5));
+      label.position.y = 0.0;
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.0135, 0.0135, 0.01, 10), m('#c8102e', 0.4, 0.5));
+      cap.position.y = 0.13;
+      const neck = new THREE.Group();
+      neck.add(bottle, label, cap);
+      neck.rotation.x = Math.PI / 2; // held upright in the fist
+      group.add(neck);
+    }
+    group.traverse((o) => (o.castShadow = true));
+    arm.mid.add(group);
+  }
+
+  /** Smoke curls up from the cigarette's tip, each puff rising, spreading and fading. */
+  private puff(time: number) {
+    if (!this.tip) return;
+    this.root.updateMatrixWorld(true);
+    const tip = this.root.worldToLocal(this.tip.getWorldPosition(new THREE.Vector3()));
+    this.smoke.forEach((puff, i) => {
+      const k = (time * 0.4 + i / this.smoke.length) % 1;
+      puff.position.set(tip.x + Math.sin(i * 2.1 + time) * 0.06 * k, tip.y + k * 0.6, tip.z + Math.cos(i * 1.3 + time * 0.7) * 0.06 * k);
+      puff.scale.set(0.25 + k * 1.3, 0.5 + k * 2, 0.25 + k * 1.3);
+      (puff.material as THREE.MeshBasicMaterial).opacity = 0.22 * (1 - k) * Math.min(1, k * 6);
+    });
   }
 
   /** Where the rake on a boot (0 left, 1 right) is in the world; call after posing. */
@@ -572,6 +652,64 @@ export class RiderModel {
       targets.elbowPoles[1] = V(pelvis.x, pelvis.y, pelvis.z + 1.2);
     }
     return { targets, wink, open };
+  }
+
+  /** Sitting on a bench (seat 0.46 m), leaning back a touch, hands on the thighs; a smoke now and then. */
+  private sittingTargets(time: number): Targets {
+    const s = this.look.scale;
+    const breath = Math.sin((time * Math.PI * 2) / 3.2);
+    const pelvis = V(0, 0.46 + 0.09 * s, -0.75);
+    const shoulderY = pelvis.y + this.shoulder;
+    const thigh = (side: number) => V(pelvis.x + 0.3 * s, pelvis.y + 0.07, pelvis.z + side * 0.13);
+    const targets: Targets = {
+      pelvis,
+      pitch: Math.PI / 2 + 0.1 + breath * 0.02,
+      roll: 0,
+      headYaw: 0,
+      headTilt: 0.05,
+      headRoll: 0,
+      hands: [thigh(-1), thigh(1)],
+      feet: [V(pelvis.x + 0.48 * s, 0.06, pelvis.z - 0.18), V(pelvis.x + 0.52 * s, 0.06, pelvis.z + 0.2)],
+      elbowPoles: [V(pelvis.x - 0.3, pelvis.y + 0.2, pelvis.z - 1.2), V(pelvis.x - 0.3, pelvis.y + 0.2, pelvis.z + 1.2)],
+      kneePoles: [V(pelvis.x + 1, pelvis.y + 0.8, pelvis.z - 0.2), V(pelvis.x + 1, pelvis.y + 0.8, pelvis.z + 0.2)],
+    };
+    if (this.tip) {
+      // Every few seconds the cigarette goes to the lips.
+      const k = (time % 7) / 7;
+      const w = window01(k, 0.1, 0.4);
+      const lips = V(pelvis.x + 0.13 * s, shoulderY + 0.13 * s, pelvis.z + 0.02);
+      targets.hands[1] = targets.hands[1].lerp(lips, w);
+      targets.elbowPoles[1] = V(pelvis.x + 0.1, pelvis.y, pelvis.z + 1.2);
+    }
+    return targets;
+  }
+
+  /** Leaning back against a wall, ankles crossed, a drink in hand and a swig every so often. */
+  private leaningTargets(time: number): Targets {
+    const s = this.look.scale;
+    const breath = Math.sin((time * Math.PI * 2) / 3.4);
+    const pelvis = V(0.16, 0.86 * s + breath * 0.008, -0.75);
+    const shoulderY = pelvis.y + this.shoulder;
+    const hip = V(pelvis.x - 0.02, pelvis.y + 0.04, pelvis.z - (this.hipWidth + 0.13 * this.look.build));
+    const targets: Targets = {
+      pelvis,
+      pitch: Math.PI / 2 + 0.24,
+      roll: 0,
+      headYaw: 0,
+      headTilt: -0.12,
+      headRoll: 0,
+      hands: [hip, V(pelvis.x + 0.22 * s, pelvis.y + 0.25 * s, pelvis.z + 0.16)],
+      feet: [V(pelvis.x + 0.42 * s, 0.06, pelvis.z - 0.12), V(pelvis.x + 0.5 * s, 0.06, pelvis.z - 0.02)],
+      elbowPoles: [V(pelvis.x - 0.3, pelvis.y + 0.1, pelvis.z - 1.2), V(pelvis.x - 0.2, pelvis.y - 0.2, pelvis.z + 1)],
+      kneePoles: [V(pelvis.x + 1, 0.5, pelvis.z - 0.2), V(pelvis.x + 1, 0.5, pelvis.z + 0.3)],
+    };
+    // A swig: bottle to the lips, head back.
+    const k = ((time + 2.3) % 6) / 6;
+    const w = window01(k, 0.1, 0.38);
+    targets.hands[1] = targets.hands[1].lerp(V(pelvis.x + 0.08 * s, shoulderY + 0.12 * s, pelvis.z + 0.04), w);
+    targets.headTilt += w * 0.4;
+    targets.elbowPoles[1] = V(pelvis.x + 0.3, pelvis.y, pelvis.z + 1.2);
+    return targets;
   }
 
   private apply(t: Targets) {

@@ -7,10 +7,13 @@ import * as THREE from 'three';
 import type { Track } from '../sim/track';
 import type { Terrain } from './terrain';
 import { lips } from '../sim/surface';
-import { RiderModel } from './riderModel';
+import { RiderModel, type Prop, type StandPosture } from './riderModel';
+import { OSM_IDS, OSM_NEAR } from '../track/osm';
+import { HUT_APOTHEM } from './topHut';
 import { LOOKS, type RiderLook } from './riderLooks';
 import { toThree } from './util';
 import { groundHeight } from './ground';
+import { bakeParts } from './bake';
 
 type Kind = 'man' | 'mother' | 'child' | 'oldLady' | 'furGirl' | 'dog';
 
@@ -49,6 +52,12 @@ const mat = (color: string, roughness = 0.8) => {
   if (!m) mats.set(key, (m = new THREE.MeshStandardMaterial({ color, roughness })));
   return m;
 };
+
+/** One mesh per moving part (body, legs, arms): a handful of draw calls per visitor. */
+function bake(body: Body): Body {
+  bakeParts(body.group, [...body.legs, ...body.arms]);
+  return body;
+}
 
 const RUN_SPEED: Record<Kind, number> = { man: 4.6, mother: 3.8, child: 3.4, oldLady: 1.4, furGirl: 3.2, dog: 6.5 };
 
@@ -201,6 +210,10 @@ const pick = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];
 const SKINS = ['#f1cdb5', '#e6bea4', '#d9a384', '#c68e6b', '#8d5a3c'];
 
 function makeBody(kind: Kind): Body {
+  return bake(buildBody(kind));
+}
+
+function buildBody(kind: Kind): Body {
   switch (kind) {
     case 'man':
       return person({ height: 1.8, coat: pick(['#2d3a4f', '#5a2a24', '#3b3f2e', '#1d1d20']), trousers: '#2a2a30', boots: '#3a2a1c', skin: pick(SKINS), hair: pick(['#3a2a1e', '#1a1716', '#8a6a48']), hat: pick(['#8a1c1c', '#20304e', '#d9d2c2']), coatLength: 0.1, scarf: pick(['#c9a13d', '#7c1b1b', '#e8e2d4']) });
@@ -217,6 +230,34 @@ function makeBody(kind: Kind): Body {
   }
 }
 
+/** A wooden park bench, seat 0.46 m high, facing +X. */
+function buildBench(): THREE.Group {
+  const g = new THREE.Group();
+  const wood = mat('#6b4a2e', 0.8);
+  const iron = mat('#2a2a2a', 0.5);
+  for (let i = 0; i < 3; i++) {
+    const slat = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.035, 1.7), wood);
+    slat.position.set(-0.05 + i * 0.13, 0.45, 0);
+    g.add(slat);
+  }
+  for (let i = 0; i < 2; i++) {
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 1.7), wood);
+    back.position.set(-0.17, 0.6 + i * 0.16, 0);
+    back.rotation.z = -0.15;
+    g.add(back);
+  }
+  for (const z of [-0.75, 0.75]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.45, 0.05), iron);
+    leg.position.set(0.02, 0.22, z);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.4, 0.05), iron);
+    post.position.set(-0.18, 0.62, z);
+    post.rotation.z = -0.15;
+    g.add(leg, post);
+  }
+  g.traverse((o) => (o.castShadow = o.receiveShadow = true));
+  return g;
+}
+
 /** Riders waiting their turn at Top, in their own colours, on a walkway kit of the three builds. */
 function waitingLook(base: RiderLook, suit: string, helmet: string): RiderLook {
   return {
@@ -231,7 +272,7 @@ export class Crowd {
   readonly group = new THREE.Group();
   private agents: Agent[] = [];
   private leads: { line: THREE.Line; from: Agent; to: Agent }[] = [];
-  private readonly waiting: { model: RiderModel; time: number }[] = [];
+  private readonly waiting: { model: RiderModel; time: number; posture: StandPosture; look: number }[] = [];
   /** This ride's visitors are all fur coats (one ride in ten). */
   furDay = false;
 
@@ -290,25 +331,57 @@ export class Crowd {
     return mesh;
   }
 
+  /**
+   * The scene at the Top hut: two riders on a bench by the hut (one smoking), a couple leaning on
+   * the hut's door with a cola each, and two more at the start with their toboggans, watching.
+   */
   private buildWaitingRiders() {
     const top = this.track.frame(0);
     const fwd = new THREE.Vector3(top.forward[0], 0, -top.forward[1]).normalize();
-    const kit: [RiderLook, string, string][] = [
-      [LOOKS.maximilian, '#7a1d1d', '#151515'],
-      [LOOKS.adelaide, '#1a1a1c', '#c9c9c9'],
-      [LOOKS.remo, '#e9e4d6', '#9a1c1c'],
-      [LOOKS.maximilian, '#244f7a', '#244f7a'],
-    ];
-    kit.forEach(([base, suit, helmet], i) => {
-      const model = new RiderModel(waitingLook(base, suit, helmet), i % 2 ? 'flattop' : 'traditional');
-      // On the snow platform beside the start, behind where the chosen rider poses.
-      const spot = toThree(this.track.toWorld(top, 5.2 + (i % 2) * 1.4, 0)).addScaledVector(fwd, -5.5 - i * 1.5);
-      model.root.position.copy(spot);
-      // Facing the start, waiting for the bell.
-      model.root.rotation.y = Math.atan2(-fwd.z, fwd.x) + 0.9 + i * 0.25;
+    const side = new THREE.Vector3(top.left[0], 0, -top.left[1]).normalize();
+    const facing = (dir: THREE.Vector3) => Math.atan2(-dir.z, dir.x);
+    const osm = OSM_NEAR.find((b) => b.id === OSM_IDS.topHut)!;
+    const hutBase = this.track.elevation(0) + 1.1;
+    const hut = new THREE.Vector3(osm.c[0], hutBase, -osm.c[1]);
+    // The hut's door faces back up the hill, away from the start.
+    const out = fwd.clone().negate();
+    const door = hut.clone().addScaledVector(out, HUT_APOTHEM + 0.16);
+    const benchAt = hut.clone().addScaledVector(out, HUT_APOTHEM + 1.6).addScaledVector(side, 3.2);
+    const bench = buildBench();
+    bench.position.copy(benchAt);
+    bench.rotation.y = facing(out);
+    this.group.add(bench);
+
+    // A rider's body stands 0.75 m to the left of the model's origin: put the body itself at `at`.
+    const place = (model: RiderModel, at: THREE.Vector3, dir: THREE.Vector3) => {
+      const heading = facing(dir);
+      model.root.rotation.y = heading;
+      model.root.position.copy(at).add(new THREE.Vector3(0, 0, 0.75).applyAxisAngle(new THREE.Vector3(0, 1, 0), heading));
       this.group.add(model.root);
-      this.waiting.push({ model, time: i * 1.3 });
-    });
+    };
+    const cast: { look: RiderLook; toboggan: 'traditional' | 'flattop'; posture: StandPosture; prop?: Prop; at: THREE.Vector3; dir: THREE.Vector3; look_?: number }[] = [
+      { look: waitingLook(LOOKS.remo, '#7a1d1d', '#151515'), toboggan: 'traditional', posture: 'sit', prop: 'cigarette', at: benchAt.clone().addScaledVector(side, -0.35), dir: out, look_: -0.3 },
+      { look: waitingLook(LOOKS.maximilian, '#1a1a1c', '#c9c9c9'), toboggan: 'flattop', posture: 'sit', at: benchAt.clone().addScaledVector(side, 0.45), dir: out, look_: 0.45 },
+      { look: waitingLook(LOOKS.adelaide, '#e9e4d6', '#9a1c1c'), toboggan: 'traditional', posture: 'lean', prop: 'cola', at: door.clone().addScaledVector(side, -0.4), dir: out, look_: -0.35 },
+      { look: waitingLook(LOOKS.maximilian, '#244f7a', '#244f7a'), toboggan: 'flattop', posture: 'lean', prop: 'cola', at: door.clone().addScaledVector(side, 0.4), dir: out, look_: 0.3 },
+    ];
+    for (const c of cast) {
+      const model = new RiderModel(c.look, c.toboggan, { helmet: false });
+      if (c.prop) model.holdProp(c.prop);
+      place(model, c.at, c.dir);
+      model.bake();
+      this.waiting.push({ model, time: Math.random() * 5, posture: c.posture, look: c.look_ ?? 0 });
+    }
+    // Two at the edge of the start, toboggans in hand, watching the riders go.
+    for (const [lateral, s0] of [[-3.4, 7], [-3.6, 8.6]]) {
+      const st = this.track.frame(s0);
+      const at = toThree(this.track.toWorld(st, lateral, 0));
+      const dir = new THREE.Vector3(st.forward[0], 0, -st.forward[1]).addScaledVector(new THREE.Vector3(st.left[0], 0, -st.left[1]), 0.8).normalize();
+      const model = new RiderModel(waitingLook(s0 > 8 ? LOOKS.remo : LOOKS.adelaide, s0 > 8 ? '#2b5d3a' : '#5a2a6a', s0 > 8 ? '#2b5d3a' : '#d8d2c4'), 'traditional');
+      place(model, at, dir);
+      model.bake();
+      this.waiting.push({ model, time: Math.random() * 5, posture: 'stand', look: 0.5 });
+    }
   }
 
   /** New visitors for a ride: a party every so often along the path. */
@@ -321,11 +394,11 @@ export class Crowd {
     // Along the path, a party every so often; and always a gathering behind Shuttlecock's straw,
     // just beyond the padding, where the fallers land.
     const spots: [number, number][] = [];
-    for (let s = 345; s < this.track.length - 30; s += 38 + Math.random() * 55) {
+    for (let s = 345; s < this.track.length - 30; s += 18 + Math.random() * 28) {
       if (Math.random() < 0.25) continue;
       spots.push([s, this.pathU(s) + (Math.random() - 0.5) * 0.8]);
     }
-    for (const s of [588, 597, 606]) spots.push([s + Math.random() * 3, lips(this.track.section(s)).right - 10.5 - Math.random() * 1.5]);
+    for (const s of [584, 589, 594, 599, 604, 609]) spots.push([s + Math.random() * 3, lips(this.track.section(s)).right - 10.5 - Math.random() * 1.5]);
     for (const [s, u] of spots) {
       const add = (kind: Kind, ds: number, du: number, leader?: Agent) => this.addAgent(kind, s + ds, u + du, leader);
       if (this.furDay) {
@@ -396,7 +469,7 @@ export class Crowd {
   update(dt: number, rider: THREE.Vector3 | null) {
     for (const w of this.waiting) {
       w.time += dt;
-      w.model.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, stand: { time: w.time, action: null, t: 0 } });
+      w.model.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, stand: { time: w.time, action: null, t: 0, posture: w.posture, look: w.look + Math.sin(w.time * 0.3) * 0.15 } });
     }
     for (const a of this.agents) this.step(a, dt, rider);
     for (const l of this.leads) {
