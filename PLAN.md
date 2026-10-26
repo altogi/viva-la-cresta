@@ -8,7 +8,7 @@ A mobile 3D game about riding the Cresta Run, from first lying start on Beginner
 |---|---|
 | Stack | TypeScript + Three.js (WebGL), built with Vite — the Battle Drones stack |
 | Delivery | PWA on GitHub Pages (installable, offline). Capacitor wrap for app stores is possible later |
-| Repo | `altogi/viva-la-cresta`, public. Reference photos and `my-times.csv` stay local (git-ignored) |
+| Repo | `altogi/viva-la-cresta`, public. Reference photos and `sample_data/` (times, results sheets) stay local (git-ignored) |
 | Art | Stylized low-poly, all geometry generated in TypeScript (no external model files) |
 | Physics | Calibrated simulation: real track profile; times must land in real ranges |
 | Screen | Portrait, chase camera behind and above the rider |
@@ -16,7 +16,8 @@ A mobile 3D game about riding the Cresta Run, from first lying start on Beginner
 | Falls | Rider separates from toboggan → simple ragdoll into straw/snow → slow-mo replay → DQ |
 | Audio | Procedural, Web Audio API, no audio files |
 | Language | English only |
-| Branding | Real names (SMTC, Kulm, Sunny Bar, Cresta Run) and the SMTC logo |
+| Branding | Real names (SMTC, Kulm, Sunny Bar, Cresta Run) and the SMTC logo (`public/smtc-logo.svg`) |
+| NPC riders | Fictional: initials and surnames shuffled from real results sheets, never a real combination (`src/data/npcNames.ts`, 186 names with nationality) |
 | Deferred | Budget/economy, kit with performance effects, shop (America toboggan, suits), real-date races, on-screen splits |
 
 ## Calibration targets
@@ -34,7 +35,15 @@ From the brief:
 
 Records on the map serve as the ceiling of what a perfect ride can do: 40.94 s from Junction and 49.92 s from Top.
 
-From `my-times.csv` (traditional, a solid Junction ride of about 48 s): Rise ≈ 12.7 s, Stream ≈ 28 s, Bulpetts ≈ 34.5 s, Finish ≈ 48 s, finish speed ≈ 62–65. From Top (about 68 s): Junction split ≈ 25–26 s. The game won't show splits yet. The simulation still records them internally, so its speed profile along the run can be compared with real riding, not just the total time. The CSV also shows a typical learning curve: about 80–100 s rides in the first sessions, then 55–65 s, then the 48–50 s plateau. Bot riders can use that shape to check the progression pacing.
+From `my-times.csv` (traditional, a solid Junction ride of about 48 s): Rise ≈ 12.7 s, Stream ≈ 28 s, Bulpetts ≈ 34.5 s, Finish ≈ 48 s, finish speed ≈ 62–65 mph. From Top (about 68 s): Junction split ≈ 25–26 s. The game won't show splits yet. The simulation still records them internally, so its speed profile along the run can be compared with real riding, not just the total time. The CSV also shows a typical learning curve: about 80–100 s rides in the first sessions, then 55–65 s, then the 48–50 s plateau. Bot riders can use that shape to check the progression pacing.
+
+From the results sheets (`sample_data/`), which set the strength of NPC fields:
+- **Curzon Cup field** (Junction, scratch): 42.3–47 s per run, finish speeds 66–74 mph. Elite splits: Rise ≈ 11.6 s, Stream ≈ 24.6 s, Bulpetts ≈ 30.4 s, Finish ≈ 42.3 s.
+- **Minor Junction field**: 45–51 s. Supplementary List riders: 47–65 s.
+- **Top handicap field** (Badrutt Trophy): 54–72 s per run, handicaps from Scr to 13.0 s. The fastest Grand National course quoted is 52.21 s.
+- **Falls** are frequent and mostly at Shuttlecock: 10 of 58 starters in the handicap race fell, 9 at Shuttlecock (`Fall(S)`) and 1 at Thoma (`Fall(TH)`).
+
+Winning a scratch major means beating these fields. The physics must therefore let an excellent player approach the records (about 42 s from Junction and 52 s from Top on a flat-top), well past the "good rider" targets above.
 
 ## Track model
 
@@ -109,15 +118,26 @@ Each rider has a clear identity. Maximilian is forgiving in Shuttlecock but has 
 
 ## Progression rules
 
-1. Beginner Day: 3 rides, lying start, traditional, from Junction. Tutorial overlays.
+1. Beginner Day: 3 rides, lying start, traditional, from Junction. Tutorial overlays. The rider appears on sheets as **SL** (Supplementary List: non-members, who can't race).
 2. Junction Practice: 3 rides, running-start conversion. The number of allowed steps grows ride by ride until it's a full running start.
-3. Joins the SMTC ("the President took a liking to you") → can enter races. Practice rides allowed between races.
+3. Joins the SMTC ("the President took a liking to you"), skipping the usual years on the Supplementary List → the SL tag goes and the rider can enter races. Practice rides allowed between races.
 4. **Unlock**: 3 of the last 5 Junction rides under 48 s on a traditional → choose: flat-top or Top.
 5. Switching to a flat-top: 3 lying starts from Junction, then running conversion; 3 of the last 5 under 47 s → Top.
 6. First Top ride: lying start, rake hard. Then running conversion from Top.
-7. Races: 3 runs, aggregate time minus handicap; any fall = DQ. Handicap comes from "the Tower", a deliberately opaque formula based on recent times. It starts generous (the CSV shows ~19 s for a beginner and 4–5 s at the 48 s level) and shrinks as the rider improves.
-8. Career ladder: a few Junction club races → **Curzon Cup → Brabazon Trophy → Morgan Cup → Grand National**. Winning the Grand National is the ending (then free play).
-9. Each race has a field of ~10–20 NPC riders with their own time distributions, handicaps and fall risk, so results boards feel real.
+7. **Minor races are handicap races** (from Junction or Top), each 3 courses in one day. The handicap is **per course**: net total = sum of 3 times − 3 × handicap (verified against the Badrutt sheet). Any fall = DQ. The Tower sets handicaps with a deliberately opaque formula based on recent times, in steps of 0.1 s, from Scr up to about 13 s. Slower riders get a generous allowance; it shrinks as they improve. The real sheets show slow riders with big handicaps often winning on net time.
+8. **Major races are scratch** (raw aggregate time, no handicap):
+
+   | Race | Start | Format |
+   |---|---|---|
+   | Curzon Cup | Junction | 2 days × 3 courses |
+   | Brabazon Trophy | Top | 2 days × 3 courses |
+   | Morgan Cup | Top | 1 day × 3 courses |
+   | Grand National | Top | 2 days × 3 courses |
+
+   A fall on any course of a multi-day race disqualifies the rider from the whole race. Each day rolls its own weather. A rider can enter a major once qualified for its start: the Curzon right after joining, the Top majors only after unlocking Top.
+9. **Career shape**: early wins come from handicap races. The majors are entered as soon as the rider qualifies, but at first they're about finishing and climbing the scratch board. **Winning the Grand National on scratch** is the ending (then free play).
+10. Every race has a field of NPC riders: about 20 in a major and 30–60 in a handicap race. Their time distributions and fall rates come from the sheets above, and each has a handicap.
+11. **Results sheets** are styled after the Tower's printouts: header, race and start, date, per-course times, total/net, `Fall(S)`/`Fall(TH)` markers, Fastest Time and Fastest Speed of the Day, Pilot Course, plus the next day's programme.
 
 ## Conditions
 
@@ -185,7 +205,7 @@ Digitise Top → Junction: Church Leap's near free fall, Curzon, Brabazon, Thoma
 **Done when** a Top ride is playable and the Junction Straight braking decision matters.
 
 ### Phase 5 — Career
-Rider select, save slots, Beginner Day tutorial, Junction Practice, progression engine (rules above), unlock choice screens, club-membership moment, race flow (3 runs, Tower handicap, NPC field, results board, DQ), practice between races, the named-races ladder through to the Grand National and an ending.
+Rider select, save slots, Beginner Day tutorial, Junction Practice, progression engine (rules above), unlock choice screens, club-membership moment. Race flow: handicap races (3 courses, Tower handicap) and the scratch majors (1–2 days), NPC fields, Tower-style results sheets, DQ. Practice between races, the majors through to the Grand National, and an ending.
 **Done when** you can play a full career from Beginner Day to winning the Grand National.
 
 ### Phase 6 — Conditions & drama
@@ -207,7 +227,7 @@ Budget and economy, kit with performance effects, shop (America toboggan, suits,
 
 ## Open questions (non-blocking)
 
-1. Which start is each named race ridden from (Curzon Cup, Brabazon Trophy, Morgan Cup, Grand National)? Default: Junction for Curzon and Brabazon, Top for the Morgan Cup and the Grand National.
-2. Where are the Rise, Stream and Bulpetts timing eyes, and is the CSV `Speed` the finish speed trap in mph? Default: mph at the finish; eye positions inferred from the split timings.
-3. A clean SMTC logo file (SVG or high-res PNG). Otherwise I'll redraw it from the clubhouse photo.
-4. NPC names: fictional, or in-jokes you'd like to include?
+1. Where are the Rise, Stream and Bulpetts timing eyes? Default: positions inferred from the split timings.
+2. Is a two-day major 3 courses per day (6 in total)? Default: yes, matching the Curzon sheet's "Total First Day" after 3 courses.
+
+Later idea from the sheets: the Badrutt team competition (team names and aggregate times) would make a fun extra.

@@ -4,4 +4,5 @@ dist/
 
 # Personal reference material, kept local
 images/
+sample_data/
 my-times.csv
