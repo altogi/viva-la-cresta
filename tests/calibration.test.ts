@@ -26,12 +26,12 @@ describe('bot calibration (Junction, traditional, Adelaide)', () => {
     expect(r.time!).toBeLessThan(54);
   });
 
-  it('a solid traditional rider rides about 49 s, finishing at 62-67 mph', () => {
+  it('a solid traditional rider rides about 49 s, finishing at 58-67 mph (as in the season results)', () => {
     const r = ride('good');
     expect(r.fall).toBeNull();
     expect(r.time!).toBeGreaterThan(47.5);
     expect(r.time!).toBeLessThan(50.5);
-    expect(r.finishSpeedMph).toBeGreaterThan(60);
+    expect(r.finishSpeedMph).toBeGreaterThan(58);
     expect(r.finishSpeedMph).toBeLessThan(67);
   });
 

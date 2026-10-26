@@ -116,7 +116,8 @@ export const BENDS: Bend[] = [
   { name: 'Stream', s0: 641, s1: 689, turn: -41, outer: { radius: 4.6, height: 4.5 }, inner: low },
   { name: 'Bulpetts', s0: 862, s1: 905, turn: -14, outer: { radius: 2.0, height: 1.6 }, inner: low },
   { name: 'Scylla', s0: 988, s1: 1040, turn: 23.5, outer: { radius: 2.0, height: 1.7 }, inner: low },
-  { name: 'Charybdis', s0: 1068, s1: 1128, turn: -33, outer: { radius: 2.2, height: 1.9 }, inner: low },
+  // Sharp and high: a rider has to take it up the bank, not slide through.
+  { name: 'Charybdis', s0: 1071, s1: 1121, turn: -33, outer: { radius: 2.8, height: 2.7 }, inner: low },
   // Past the finish: a long left bend up the run-out, then a sharp left hook to the cushion.
   { name: 'Run-out', s0: 1273, s1: 1368, turn: 45, outer: { radius: 3.0, height: 1.8 }, inner: low },
   { name: 'Finish curve', s0: 1369, s1: 1402, turn: 133, outer: { radius: 3.0, height: 3.2 }, inner: low, floorWidth: 1.8 },

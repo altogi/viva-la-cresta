@@ -57,7 +57,7 @@ function start() {
   const bot = params.get('autopilot');
   if (bot && POLICIES[bot]) ride.autopilot = POLICIES[bot];
 
-  const select = new SelectMode(world, track, chosen, sound);
+  const select = new SelectMode(world, track, chosen);
   if (debug) Object.assign(window, { select });
   const showChoice = (sel: Selection) => {
     document.getElementById('menu-rider')!.textContent = `${RIDERS[sel.rider].name} · ${TOBOGGANS[sel.toboggan].name}`;

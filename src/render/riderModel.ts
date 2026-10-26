@@ -526,17 +526,18 @@ export class RiderModel {
    */
   private standingTargets(time: number, action: IdleAction | null, t: number): { targets: Targets; wink: number; open: number } {
     const s = this.look.scale;
-    const breath = Math.sin((time * Math.PI * 2) / 3.4);
-    const pelvis = V(0, 0.93 * s + breath * 0.006, -0.75);
+    // Big, slow video-game breathing: the whole body rises and sinks, knees giving a little.
+    const breath = Math.sin((time * Math.PI * 2) / 2.6);
+    const pelvis = V(0, 0.9 * s + breath * 0.026, -0.75);
     const shoulderY = pelvis.y + this.shoulder;
     const headY = shoulderY + 0.2 * s;
     const hip = (side: number) => V(pelvis.x - 0.02, pelvis.y + 0.04, pelvis.z + side * (this.hipWidth + 0.13 * this.look.build));
     const targets: Targets = {
       pelvis,
-      pitch: Math.PI / 2 + 0.04 + breath * 0.008,
+      pitch: Math.PI / 2 + 0.03 - breath * 0.035, // chest swells back on the in-breath
       roll: 0,
       headYaw: 0,
-      headTilt: 0.12,
+      headTilt: 0.12 + breath * 0.03,
       headRoll: 0,
       // Left hand resting on the nose of the stood-up toboggan, right fist on the hip.
       hands: [V(0.5, 0.11, 0).applyMatrix4(this.toboggan.matrix), hip(1)],

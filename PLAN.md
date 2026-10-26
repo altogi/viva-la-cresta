@@ -212,6 +212,14 @@ Semi-realistic rigged models for Maximilian, Adelaide and Remo (proportions, hai
 Digitise Top → Junction: Church Leap's near free fall, Curzon, Brabazon, Thoma (first possible fly-out). Top hut scene with waiting riders and the St Moritz panorama. Calibration to the 80 s / 60 s / 55 s Top targets.
 **Done when** a Top ride is playable and the Junction Straight braking decision matters.
 
+### Target game flow (from playtesting, to build in Phase 5)
+1. **Intro.** "VIVA LA CRESTA" centred under the SMTC Cresta Run badge (`public/cresta-run-badge.png`), a flyover of the run behind, and TAP TO START underneath.
+2. **Main menu.** Saved games, or a new game. Each save shows its name ("Game 1"), the best time, the chosen rider and the date last played.
+3. **New game → rider selection.** No toboggan choice here (everyone starts on a traditional), so the screen gives far more room to the rider: a bigger, richer description and the stats.
+4. **First ride: lying start from Junction on a traditional, with the full guide to the controls.** Steering and raking are taught at the start. The first fall explains falls and how to avoid them.
+5. **Practice.** Five more practice rides, then the rider is made a member (the moment comes at random).
+6. **Progression.** From then on the career's choices open up: convert to the flat-top, or move up to riding from Top.
+
 ### Phase 5 — Career
 Rider select, save slots, Beginner Day tutorial, Junction Practice, progression engine (rules above), unlock choice screens, club-membership moment. Race flow: handicap races (3 courses, Tower handicap) and the scratch majors (1–2 days), NPC fields, Tower-style results sheets, DQ. Practice between races, the majors through to the Grand National, and an ending.
 **Done when** you can play a full career from Beginner Day to winning the Grand National.

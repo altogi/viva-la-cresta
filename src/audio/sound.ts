@@ -139,36 +139,6 @@ export class Sound {
     src.start();
   }
 
-  /** Remo's burp: a low, gurgling rasp. */
-  burp() {
-    const ctx = this.ctx;
-    if (!ctx) return;
-    const t = ctx.currentTime;
-    const osc = ctx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(95, t);
-    osc.frequency.exponentialRampToValueAtTime(62, t + 0.55);
-    // A wobble in pitch for the gurgle.
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 23;
-    const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 9;
-    lfo.connect(lfoGain).connect(osc.frequency);
-    const formant = ctx.createBiquadFilter();
-    formant.type = 'bandpass';
-    formant.frequency.value = 420;
-    formant.Q.value = 2.2;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.5, t + 0.05);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.62);
-    osc.connect(formant).connect(g).connect(this.master);
-    osc.start(t);
-    lfo.start(t);
-    osc.stop(t + 0.65);
-    lfo.stop(t + 0.65);
-  }
-
   /** A crunching stride in the snow. */
   step() {
     this.burst(1400, 0.07, 0.25, 'bandpass');
