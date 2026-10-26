@@ -37,14 +37,15 @@ export function createWorld(canvas: HTMLCanvasElement): World {
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   const sc = sun.shadow.camera;
-  sc.left = -45;
-  sc.right = 45;
-  sc.top = 45;
-  sc.bottom = -45;
+  sc.left = -30;
+  sc.right = 30;
+  sc.top = 30;
+  sc.bottom = -30;
   sc.near = 1;
   sc.far = 400;
-  sun.shadow.bias = -0.0012;
-  sun.shadow.normalBias = 0.3;
+  // Small biases keep the rider's thin shadow; the track itself doesn't cast, so no acne to hide.
+  sun.shadow.bias = -0.0005;
+  sun.shadow.normalBias = 0.03;
   scene.add(sun, sun.target);
 
   const followSun = (target: THREE.Vector3) => {

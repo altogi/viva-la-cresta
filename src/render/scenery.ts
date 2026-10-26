@@ -5,9 +5,10 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Track } from '../sim/track';
 import { BENDS, LANDMARKS, TRACK_LENGTH } from '../track/cresta';
-import { OSM_IDS, OSM_NEAR, OSM_TREES, OSM_WOODS } from '../track/osm';
+import { OSM_BUILDINGS, OSM_IDS, OSM_NEAR, OSM_TREES, OSM_WOODS } from '../track/osm';
 import { buildTownBuildings } from './buildings';
 import { buildClubhouse } from './clubhouse';
+import { buildTopHut } from './topHut';
 import type { Terrain } from './terrain';
 import { colors, mulberry32, toThree } from './util';
 
@@ -19,9 +20,9 @@ export function buildScenery(track: Track, terrain: Terrain): THREE.Group {
   group.name = 'scenery';
   const ctx = new Placer(track, terrain);
   group.add(buildMountains(terrain));
-  group.add(buildTrees(terrain));
+  group.add(buildTrees(track, terrain));
   group.add(buildTownBuildings(terrain));
-  group.add(buildTopHut(ctx));
+  group.add(buildTopArea(ctx));
   group.add(buildClubhouse(track, terrain));
   for (const lm of LANDMARKS) {
     // The Junction walkway is part of the clubhouse model.
@@ -108,15 +109,25 @@ function buildMountains(terrain: Terrain): THREE.Group {
   return group;
 }
 
+/** A spruce: six drooping tiers tapering to a spire, the Engadin's commonest conifer. */
 function pineGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
-  const tiers = [
-    { r: 2.4, h: 4.2, y: 2.8 },
-    { r: 1.8, h: 3.6, y: 5.0 },
-    { r: 1.1, h: 3.0, y: 7.0 },
-  ];
-  for (const t of tiers) parts.push(new THREE.ConeGeometry(t.r, t.h, 7).translate(0, t.y, 0).toNonIndexed());
-  return mergeGeometries(parts);
+  const tiers = 6;
+  for (let i = 0; i < tiers; i++) {
+    const t = i / (tiers - 1);
+    const radius = 2.5 * (1 - t) + 0.45;
+    const height = 2.6 - t * 0.9;
+    const y = 1.6 + t * 8.2;
+    const cone = new THREE.ConeGeometry(radius, height, 9, 1, true).translate(0, y + height / 2, 0);
+    // Pull the rim down a little so each tier droops like spruce boughs.
+    const pos = cone.attributes.position as THREE.BufferAttribute;
+    for (let k = 0; k < pos.count; k++) if (pos.getY(k) < y + 0.01) pos.setY(k, pos.getY(k) - 0.35);
+    parts.push(cone.toNonIndexed());
+  }
+  parts.push(new THREE.ConeGeometry(0.3, 1.6, 6).translate(0, 11.2, 0).toNonIndexed());
+  const geo = mergeGeometries(parts);
+  geo.computeVertexNormals();
+  return geo;
 }
 
 function insidePolygon(x: number, y: number, poly: [number, number][]) {
@@ -130,7 +141,7 @@ function insidePolygon(x: number, y: number, poly: [number, number][]) {
 }
 
 /** Pines inside the woods mapped in OSM, the individually mapped trees, and a few strays on the meadows. */
-function buildTrees(terrain: Terrain): THREE.Group {
+function buildTrees(track: Track, terrain: Terrain): THREE.Group {
   const group = new THREE.Group();
   const rng = mulberry32(1884);
   const { minX, maxX, minY, maxY } = terrain.bounds;
@@ -158,6 +169,19 @@ function buildTrees(terrain: Terrain): THREE.Group {
     }
   }
   for (const [x, y] of OSM_TREES) consider(x, y, 1);
+  // Spruces lining the run wherever there's no building, thicker on the upper part of the run.
+  const buildings = [...OSM_BUILDINGS.map((b) => [b[0], b[1]]), ...OSM_NEAR.map((b) => b.c)];
+  const clearOfBuildings = (x: number, y: number) => buildings.every(([bx, by]) => Math.hypot(bx - x, by - y) > 16);
+  for (let s = 0; s < TRACK_LENGTH; s += 5) {
+    for (const side of [-1, 1]) {
+      if (rng() > (s < 330 ? 0.75 : 0.45)) continue;
+      const st = track.frame(s);
+      const lateral = side * (15 + rng() * 30);
+      const x = st.pos[0] + st.left[0] * lateral;
+      const y = st.pos[1] + st.left[1] * lateral;
+      if (clearOfBuildings(x, y)) consider(x, y, 1);
+    }
+  }
   for (let i = 0; i < 2500; i++) {
     const x = minX + rng() * (maxX - minX);
     const y = minY + rng() * (maxY - minY);
@@ -165,13 +189,14 @@ function buildTrees(terrain: Terrain): THREE.Group {
   }
 
   const detailed = pineGeometry();
-  const simple = new THREE.ConeGeometry(2.2, 8.5, 6).translate(0, 4.6, 0);
-  const trunk = new THREE.CylinderGeometry(0.25, 0.35, 1.6, 6).translate(0, 0.8, 0);
+  const simple = new THREE.ConeGeometry(2.3, 10.5, 7).translate(0, 5.8, 0);
+  const trunk = new THREE.CylinderGeometry(0.2, 0.32, 2.2, 6).translate(0, 1.1, 0);
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
   const build = (geo: THREE.BufferGeometry, list: typeof spots, withTrunks: boolean) => {
-    const leaves = new THREE.InstancedMesh(geo, mat('#ffffff'), list.length);
+    // Spruce tiers are open cones: draw both sides so they don't look hollow from below.
+    const leaves = new THREE.InstancedMesh(geo, mat('#ffffff', { side: THREE.DoubleSide }), list.length);
     const trunks = withTrunks ? new THREE.InstancedMesh(trunk, mat(colors.trunk), list.length) : null;
     list.forEach((t, i) => {
       q.setFromAxisAngle(up, rng() * Math.PI * 2);
@@ -207,41 +232,39 @@ function signTexture(text: string, bg: string, fg: string, width = 512, height =
 }
 
 /** The ornate wooden pavilion at Top, behind the start, on the run's left. */
-function buildTopHut(ctx: Placer): THREE.Group {
-  const hut = new THREE.Group();
-  const wood = mat(colors.wood);
-  const dark = mat(colors.woodDark);
-  const glass = mat('#2d3e52', { roughness: 0.2, metalness: 0.3 });
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.4, 1.2, 8), dark);
-  base.position.y = 0.6;
-  const walls = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 3.6, 8), wood);
-  walls.position.y = 3;
-  const windows = new THREE.Mesh(new THREE.CylinderGeometry(4.05, 4.05, 1.8, 8, 1, true), glass);
-  windows.position.y = 3.3;
-  const eaves = new THREE.Mesh(new THREE.CylinderGeometry(5.4, 5.4, 0.3, 8), dark);
-  eaves.position.y = 4.9;
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(5.2, 3.2, 8), mat('#3f4a5a'));
-  roof.position.y = 6.6;
-  const snowCap = new THREE.Mesh(new THREE.ConeGeometry(4.2, 2.2, 8), mat(colors.snow));
-  snowCap.position.y = 7.1;
-  const finial = new THREE.Mesh(new THREE.ConeGeometry(0.25, 1.6, 6), dark);
-  finial.position.y = 8.8;
-  for (const part of [base, walls, windows, eaves, roof, snowCap, finial]) {
-    part.castShadow = true;
-    hut.add(part);
-  }
-  // The octagonal pavilion mapped in OSM, 16 m behind the start.
+/** The Top: the octagonal pavilion behind the start, a level snow platform, the start's back wall and timing box. */
+function buildTopArea(ctx: Placer): THREE.Group {
+  const group = new THREE.Group();
+  const z0 = ctx.track.elevation(0);
+  const st = ctx.track.frame(0);
+  const heading = ctx.heading(0);
+  // The pavilion mapped in OSM, 16 m behind the start, raised on the snow bank beside the run.
   const osm = OSM_NEAR.find((b) => b.id === OSM_IDS.topHut)!;
-  const radius = Math.max(...osm.p.map(([x, y]) => Math.hypot(x, y)));
-  hut.position.set(osm.c[0], ctx.track.elevation(0) + 0.2, -osm.c[1]);
-  hut.scale.set(radius / 4, 1, radius / 4);
-  hut.rotation.y = ctx.heading(0);
-  // A level snow platform for the start area and the waiting riders.
-  const platform = new THREE.Mesh(new THREE.CylinderGeometry(16, 18, 3, 12), mat(colors.snow, { flatShading: false }));
-  platform.position.set(0, -1.6, -4);
+  const hut = buildTopHut();
+  hut.position.set(osm.c[0], z0 + 1.1, -osm.c[1]);
+  hut.rotation.y = heading;
+  group.add(hut);
+  // A broad, level snow platform for the start area and the riders waiting their turn.
+  const platform = new THREE.Mesh(new THREE.CylinderGeometry(15, 19, 3, 16), mat(colors.snow, { flatShading: false, roughness: 0.95 }));
+  platform.position.set(-st.forward[0] * 12, z0 - 1.6, st.forward[1] * 12); // top just below the ice
   platform.receiveShadow = true;
-  hut.add(platform);
-  return hut;
+  group.add(platform);
+  // Snow wall closing the run behind the start.
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.4, 5), mat(colors.snow, { flatShading: false }));
+  wall.position.set(-st.forward[0] * 1.2, z0 + 0.5, st.forward[1] * 1.2);
+  wall.rotation.y = heading;
+  wall.castShadow = wall.receiveShadow = true;
+  group.add(wall);
+  // The grey timing box on its post above the start, as in the photographs.
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 3.2, 8), mat('#5b5f66'));
+  const box = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.55, 0.55), mat('#c9ccd1', { roughness: 0.5 }));
+  const at = ctx.local(3, -1.3, 0);
+  post.position.copy(at).add(new THREE.Vector3(0, 1.6, 0));
+  box.position.copy(at).add(new THREE.Vector3(0, 3.4, 0));
+  box.rotation.y = heading;
+  post.castShadow = box.castShadow = true;
+  group.add(post, box);
+  return group;
 }
 
 function buildBridge(ctx: Placer, s: number, name: string): THREE.Group {

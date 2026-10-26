@@ -1,9 +1,11 @@
 // Riding physics, in track coordinates: distance along the run s, arc length across the ice u.
 //
-// Per unit mass, the rider feels gravity, the centrifugal pull of the bend (which climbs them
-// up the outer wall when they're too fast for their line), the normal force of the ice (which
-// sets runner and rake friction), air drag, the rakes, and their own steering. Runners resist
-// sliding sideways, more so on the knives. Over a lip means a fall; so does slamming down a wall.
+// The toboggan has a heading relative to the run and its runners carve: it goes where it points.
+// If the rider doesn't steer, it keeps going straight while the run turns away underneath, and
+// rides up the outer wall; gravity on the bank turns it back down (that's how a bank works).
+// Per unit mass the rider feels gravity, the normal force of the ice (which sets runner and rake
+// friction), air drag, the rakes and their own steering. Falls: flying over a lip, or hitting a
+// near-vertical wall too squarely, anywhere on the run.
 // Deterministic: a fixed 240 Hz step, no randomness.
 
 import { TRACK_LENGTH } from '../track/cresta';
@@ -29,7 +31,7 @@ export const NO_INPUT: RideInput = { knives: false, steer: 0, rakeLeft: 0, rakeR
 
 export type StartStyle = 'lying' | 'running';
 export type Phase = 'waiting' | 'running' | 'riding' | 'finished' | 'fallen';
-export type FallKind = 'fly-out' | 'over-wall' | 'crash';
+export type FallKind = 'fly-out' | 'over-wall' | 'crash' | 'wall';
 
 export interface Fall {
   kind: FallKind;
@@ -43,9 +45,13 @@ export interface RideState {
   phase: Phase;
   s: number;
   u: number;
-  /** Speed along the run and across the ice (m/s). */
+  /** Speed along the run and across the ice (m/s), from speed and heading. */
   v: number;
   w: number;
+  /** Heading of the toboggan relative to the run (rad, + towards the left). */
+  heading: number;
+  /** Sideways skid across the ice when the runners can't hold (m/s, + towards +u). */
+  slide: number;
   /** 0 = lying forward, 1 = back on the knives. */
   posture: number;
   /** Time since crossing the start beam (s), or null before it. */
@@ -75,7 +81,6 @@ export class RideSim {
   /** Last input, so the renderer can pose the rider. */
   input: RideInput = { ...NO_INPUT };
   private sinceTap = 0;
-  private wasOnWall = false;
   private readonly beamS: number;
 
   constructor(
@@ -91,6 +96,8 @@ export class RideSim {
       u: 0,
       v: 0,
       w: 0,
+      heading: 0,
+      slide: 0,
       posture: options.start === 'lying' ? 0 : 0,
       time: null,
       finishTime: null,
@@ -152,7 +159,7 @@ export class RideSim {
     if (st.runSteps >= this.stepsAllowed) {
       // Dive onto the toboggan, lying forward.
       st.phase = 'riding';
-      st.v += 0.3;
+      st.v += PHYSICS.diveBoost;
       st.posture = 0;
     }
   }
@@ -179,16 +186,19 @@ export class RideSim {
     const kEff = kappa / (1 - kappa * sp.y);
     const kVert = (this.track.grade(st.s + 0.5) - this.track.grade(st.s - 0.5)) / slope ** 3;
 
-    const v = st.v;
-    const w = st.w;
-    const speed = Math.hypot(v, w) + 1e-6;
+    let speed = Math.hypot(st.v, st.w - st.slide);
+    let psi = st.heading;
+    const cos = Math.cos(psi);
+    const sin = Math.sin(psi);
+    const vAlong = speed * cos;
+    const vAcross = speed * sin;
 
     // Gravity along the run, across the ice and into it.
     const gAlong = -G * fwdZ;
     const gAcross = -G * upZ * sp.tz;
     const gInto = -G * upZ * sp.nz;
     // Normal force: what keeps the rider on a curved surface, plus the share of gravity into the ice.
-    const normal = w * w * sp.curvature + v * v * kEff * sp.ny + v * v * kVert * sp.nz - gInto;
+    const normal = vAcross * vAcross * sp.curvature + vAlong * vAlong * (kEff * sp.ny + kVert * sp.nz) - gInto;
     const load = Math.max(0, normal);
     st.load = load / G;
 
@@ -199,48 +209,70 @@ export class RideSim {
     const rake = (rakeL + rakeR) * lerp(P.rakeForward, P.rakeKnives, p) * Math.min(1.5, load / G);
     const resist = mu * load + dragK * speed * speed + rake;
 
-    const steerAuthority =
-      lerp(P.steerForward * v * v, P.steerKnives * this.rider.reach, p) * this.toboggan.steerGain;
-    const steer = clamp(input.steer, -1, 1) * steerAuthority + (rakeL - rakeR) * P.rakeSteer * v;
-    const grip = lerp(P.gripForward, P.gripKnives, p);
+    // Steering: arms on the knives, a turn of the head into the wind when forward, a single raking foot.
+    const steerAuthority = lerp(P.steerForward * speed * speed, P.steerKnives * this.rider.reach, p) * this.toboggan.steerGain;
+    const steer = clamp(input.steer, -1, 1) * steerAuthority + (rakeL - rakeR) * P.rakeSteer * speed;
 
-    const aAlong = gAlong - (resist * v) / speed;
-    const aAcross = gAcross - v * v * kEff * sp.ty + steer - grip * w - (resist * w) / speed;
+    // Along the direction of travel: gravity minus everything that slows the rider.
+    const aPar = gAlong * cos + gAcross * sin - resist;
+    // Across it: gravity on a banked wall turns the carving toboggan, up to what the runners can
+    // hold; beyond that grip they skid sideways down the wall.
+    const aPerpWanted = -gAlong * sin + gAcross * cos;
+    const hold = lerp(P.gripForward, P.gripKnives, p) * load;
+    const aPerp = clamp(aPerpWanted, -hold, hold);
+    st.slide += ((aPerpWanted - aPerp) * Math.cos(psi) - st.slide * P.skidDamping) * dt;
+    const dsdt = vAlong / slope / (1 - kappa * sp.y);
+    // The run turning under a toboggan that holds its line shows up as a heading change.
+    const turn = aPerp / Math.max(speed, 2) + steer / Math.max(speed, 4) - kappa * dsdt;
 
-    st.v = Math.max(0, v + aAlong * dt);
-    st.w = w + aAcross * dt;
+    speed = Math.max(0, speed + aPar * dt);
+    psi = clamp(psi + turn * dt, -1.45, 1.45);
+    st.heading = psi;
+    st.v = speed * Math.cos(psi);
+    st.w = speed * Math.sin(psi) + st.slide;
     st.u += st.w * dt;
     st.s += (st.v / slope / (1 - kappa * sp.y)) * dt;
-    st.topSpeed = Math.max(st.topSpeed, st.v);
+    st.topSpeed = Math.max(st.topSpeed, speed);
 
     if (finished) {
       st.s = Math.min(st.s, TRACK_LENGTH + 30);
+      st.heading *= Math.exp(-dt * 3);
       return;
     }
-    this.checkFall(section, sp.angle, normal);
+    this.checkFall(section, normal);
   }
 
-  private checkFall(section: ReturnType<Track['section']>, angle: number, normal: number) {
+  private checkFall(section: ReturnType<Track['section']>, normal: number) {
     const st = this.state;
     const lip = lips(section);
-    const half = section.floorWidth / 2;
     const side = st.u >= 0 ? 'left' : 'right';
     const outer = section.outerSide;
     const beyond = st.u > lip.left || st.u < lip.right;
     const outward = side === 'left' ? st.w > 0.3 : st.w < -0.3;
+    const sp = surfaceAt(section, st.u);
     if (beyond && outward) {
       this.fall(outer === side ? 'fly-out' : 'over-wall', side);
     } else if (beyond) {
       // The wall tapered away under a rider who wasn't moving outward: they slide down with it.
       st.u = side === 'left' ? lip.left - 0.02 : lip.right + 0.02;
-    } else if (normal < -1 && angle > 0.5) {
+    } else if (normal < -1 && sp.angle > 0.5) {
       // Thrown off the wall: the bend demands more than the ice can hold.
       this.fall('fly-out', side);
-    } else if (this.wasOnWall && Math.abs(st.u) <= half && Math.abs(st.w) > PHYSICS.crashSpeed) {
-      // Came down the wall too hard and lost the toboggan on the floor.
-      this.fall('crash', side);
+    } else if (sp.angle > PHYSICS.wallAngle && (side === 'left' ? st.w > 0 : st.w < 0)) {
+      // Into a near-vertical wall (a bankina): glance off it, or hit it too squarely and fall.
+      // Too squarely (angle) and with some force (sideways speed): the toboggan is gone.
+      const impact = Math.abs(st.w);
+      if (Math.abs(st.heading) > PHYSICS.impactAngle && impact > PHYSICS.impactSpeed) {
+        this.fall('wall', side);
+      } else {
+        const speed = Math.hypot(st.v, st.w - st.slide);
+        const loss = 1 - PHYSICS.glanceLoss * Math.abs(Math.sin(st.heading));
+        st.heading = -st.heading * 0.35;
+        st.slide = -st.slide * 0.2;
+        st.v = speed * loss * Math.cos(st.heading);
+        st.w = speed * loss * Math.sin(st.heading) + st.slide;
+      }
     }
-    this.wasOnWall = angle > 0.6;
   }
 
   private fall(kind: FallKind, side: 'left' | 'right') {

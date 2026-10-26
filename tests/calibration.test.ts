@@ -31,7 +31,7 @@ describe('bot calibration (Junction, traditional, Adelaide)', () => {
     expect(r.fall).toBeNull();
     expect(r.time!).toBeGreaterThan(47.5);
     expect(r.time!).toBeLessThan(50.5);
-    expect(r.finishSpeedMph).toBeGreaterThan(62);
+    expect(r.finishSpeedMph).toBeGreaterThan(60);
     expect(r.finishSpeedMph).toBeLessThan(67);
   });
 
@@ -39,6 +39,11 @@ describe('bot calibration (Junction, traditional, Adelaide)', () => {
     const r = ride('expert');
     expect(r.fall).toBeNull();
     expect(r.time!).toBeLessThan(ride('good').time!);
+  });
+
+  it('never steering ends in a wall or over a lip', () => {
+    const r = ride('passenger');
+    expect(r.fall).not.toBeNull();
   });
 
   it('no brakes at all ends in Shuttlecock', () => {

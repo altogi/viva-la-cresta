@@ -8,11 +8,12 @@ import { TERRAIN_BASE } from './trackMesh';
 import { colors, valueNoise } from './util';
 
 const CELL = 6;
+const slopeTint = new THREE.Color('#c9d5e2');
 const MARGIN = 450;
 /** Terrain vertices closer than this to the centreline are cut out (m). */
 const CORRIDOR = 6;
 const BLEND_START = 16;
-const BLEND_END = 70;
+const BLEND_END = 140;
 
 /** Spatial hash for nearest-centreline queries in the horizontal plane (reach ~70 m). */
 export class TrackIndex {
@@ -99,7 +100,7 @@ export class Terrain {
     const base = a + b * x + c * y;
     // The valley flank: ground climbs towards St Moritz on the run's left, falls away on its right.
     const side = (x - this.centre[0]) * this.leftDir[0] + (y - this.centre[1]) * this.leftDir[1];
-    const flank = side > 0 ? 0.16 * side : 0.07 * side;
+    const flank = side > 0 ? 0.09 * side : 0.05 * side;
     return base + flank + 14 * this.noise(x / 160, y / 160) + 3 * this.detail(x / 35, y / 35);
   }
 
@@ -159,6 +160,15 @@ export class Terrain {
     geometry.setAttribute('color', new THREE.BufferAttribute(vertexColors, 3));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
+    // Slopes take a cooler, greyer tint than flat snow, so the ground has some shape to it.
+    const normals = geometry.attributes.normal as THREE.BufferAttribute;
+    for (let k = 0; k < nx * ny; k++) {
+      const steep = Math.min(1, (1 - normals.getY(k)) * 3.5);
+      c.setRGB(vertexColors[k * 3], vertexColors[k * 3 + 1], vertexColors[k * 3 + 2]).lerp(slopeTint, steep * 0.55);
+      vertexColors[k * 3] = c.r;
+      vertexColors[k * 3 + 1] = c.g;
+      vertexColors[k * 3 + 2] = c.b;
+    }
     const mesh = new THREE.Mesh(
       geometry,
       new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, metalness: 0 }),

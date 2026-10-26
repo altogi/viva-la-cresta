@@ -32,7 +32,7 @@ export const ADELAIDE: RiderStats = {
   dragArea: 0.12,
   transitionTime: 0.55,
   reach: 1,
-  runSpeed: 6.2,
+  runSpeed: 8.6,
 };
 
 export const TRADITIONAL: TobogganStats = {
@@ -54,16 +54,26 @@ export const PHYSICS = {
   /** Rake deceleration per foot when lying forward (feet can't dig in as hard). */
   rakeForward: 0.6,
   /** Arm steering on the knives (m/s² lateral at full input). */
-  steerKnives: 4.2,
+  steerKnives: 6.5,
   /** Head-turn steering lying forward, per (m/s)² of speed. */
-  steerForward: 0.0035,
+  steerForward: 0.009,
   /** Extra lateral pull from a single raking foot, per m/s of speed. */
   rakeSteer: 0.09,
-  /** Lateral grip of the runners: damping of sideways sliding (1/s). */
-  gripForward: 0.9,
-  gripKnives: 2.6,
-  /** Lateral speed into the floor that flips the toboggan (m/s). */
-  crashSpeed: 6.5,
+  /** Sideways grip of the runners, as a share of the load on the ice. */
+  gripForward: 0.45,
+  gripKnives: 0.8,
+  /** How quickly a sideways skid dies away (1/s). */
+  skidDamping: 3,
+  /** Walls steeper than this (rad) are bankinas: you glance off them or fall. */
+  wallAngle: 1.2,
+  /** Hitting a bankina at more than this angle to the run (rad) ends the ride… */
+  impactAngle: 0.21,
+  /** …provided the sideways speed is at least this (m/s). */
+  impactSpeed: 2.2,
+  /** Share of speed lost glancing off a wall, at a 90° impact. */
+  glanceLoss: 0.6,
+  /** Speed added diving onto the toboggan after a running start (m/s). */
+  diveBoost: 0.8,
   /** Friction when sliding on the near-vertical part of a wall. */
   wallFriction: 0.25,
 };

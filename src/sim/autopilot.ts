@@ -16,10 +16,12 @@ export interface Policy {
   knives: [number, number][];
   /** Raking with both feet to hold a speed, as [s0, s1, target m/s]. */
   rake: [number, number, number][];
-  /** How far up the outer wall to aim in bends (0 = floor, 1 = lip). */
+  /** Line through the bends, as a share of the natural bank angle for the current speed. */
   line: number;
   /** Seconds between running-start strides. */
   stride?: number;
+  /** Set false for a rider who never steers. */
+  steers?: boolean;
 }
 
 export const SPLITS = [
@@ -39,7 +41,7 @@ export const POLICIES: Record<string, Policy> = {
       [560, 650, 8],
       [650, 1300, 16],
     ],
-    line: 0.25,
+    line: 0.85,
   },
   /** A solid running start on a traditional: forward to Rise, rake to Shuttlecock, forward after Stream. */
   novice: {
@@ -48,7 +50,7 @@ export const POLICIES: Record<string, Policy> = {
     steps: 7,
     knives: [[430, 645]],
     rake: [[440, 640, 13.5]],
-    line: 0.45,
+    line: 0.9,
   },
   /** A solid traditional rider (the 49 s target): later transition, lighter rake, higher line. */
   good: {
@@ -57,7 +59,7 @@ export const POLICIES: Record<string, Policy> = {
     steps: 7,
     knives: [[485, 640]],
     rake: [[490, 640, 14.8]],
-    line: 0.55,
+    line: 0.95,
   },
   /** Pushing hard: knives late, minimal raking, a high line through Shuttlecock. */
   expert: {
@@ -66,7 +68,17 @@ export const POLICIES: Record<string, Policy> = {
     steps: 7,
     knives: [[530, 636]],
     rake: [[535, 636, 16.2]],
-    line: 0.62,
+    line: 1,
+  },
+  /** Brakes like the solid rider but never steers: should hit a wall somewhere. */
+  passenger: {
+    name: 'passenger',
+    start: 'running',
+    steps: 7,
+    knives: [[485, 640]],
+    rake: [[490, 640, 14.8]],
+    line: 1,
+    steers: false,
   },
   /** No brakes at all: should fly out of Shuttlecock. */
   reckless: {
@@ -90,17 +102,28 @@ export function autopilotInput(track: Track, sim: RideSim, policy: Policy, t: nu
   }
   const cap = policy.rake.find(([a, b]) => st.s >= a && st.s <= b)?.[2];
   const rakeAmount = cap === undefined ? 0 : Math.max(0, Math.min(1, (st.v - cap) * 0.8));
-  // Aim part-way up the outer wall in bends, the middle of the floor elsewhere.
-  const section = track.section(st.s + 4);
+  // Aim for the natural bank line: the wall angle where speed and gravity balance, scaled by `line`.
+  const ahead = st.s + 3;
+  const section = track.section(ahead);
   let target = 0;
-  const bend = BENDS.find((b) => st.s + 4 >= b.s0 && st.s + 4 <= b.s1);
-  if (bend && section.outerSide) {
+  const kappa = track.curvature(ahead);
+  const bend = BENDS.find((b) => ahead >= b.s0 - 2 && ahead <= b.s1 + 6);
+  if (bend && section.outerSide && Math.abs(kappa) > 1e-4) {
+    const v = Math.hypot(st.v, st.w);
+    const wall = section.outerSide === 'left' ? section.left : section.right;
+    const maxAngle = wall.height <= wall.radius ? Math.acos(1 - wall.height / wall.radius) : Math.PI / 2;
+    const angle = Math.min(Math.atan((v * v * Math.abs(kappa)) / 9.81) * policy.line, maxAngle * 0.8);
     const lip = lips(section);
     const half = section.floorWidth / 2;
-    target = section.outerSide === 'left' ? half + (lip.left - half) * policy.line : -(half + (-lip.right - half) * policy.line);
+    const u = Math.min(half + wall.radius * angle, (section.outerSide === 'left' ? lip.left : -lip.right) - 0.3);
+    target = section.outerSide === 'left' ? u : -u;
   }
-  const steer = Math.max(-1, Math.min(1, 0.9 * (target - st.u) - 1.6 * st.w));
-  return { knives: inRange(st.s, policy.knives), steer, rakeLeft: rakeAmount, rakeRight: rakeAmount, runTaps };
+  // Point the toboggan back towards the target line (gently at speed), then steer to hold that heading.
+  const speed = Math.hypot(st.v, st.w);
+  const limit = Math.min(0.16, 1.6 / Math.max(speed, 1));
+  const wantHeading = Math.max(-limit, Math.min(limit, (0.35 * (target - st.u)) / Math.max(1, speed / 8)));
+  const steer = Math.max(-1, Math.min(1, 9 * (wantHeading - st.heading)));
+  return { knives: inRange(st.s, policy.knives), steer: policy.steers === false ? 0 : steer, rakeLeft: rakeAmount, rakeRight: rakeAmount, runTaps };
 }
 
 export interface BotResult {

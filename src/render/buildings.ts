@@ -108,10 +108,10 @@ function specFromBox(b: BoxBuilding): Spec {
   const area = length * width;
   let levels = levelsTag > 0 ? levelsTag : 0;
   if (!levels) {
-    if (kind === 'apartments' || kind === 'residential') levels = area > 450 ? 5 : 4;
+    if (kind === 'apartments' || kind === 'residential') levels = area > 450 ? 4 : 3;
     else if (kind === 'hotel') levels = area > 2000 ? 6 : 5;
     else if (['garage', 'garages', 'shed', 'roof'].includes(kind)) levels = 1;
-    else levels = area < 50 ? 1 : area < 160 ? 2 : area < 400 ? 3 : 4;
+    else levels = area < 50 ? 1 : area < 220 ? 2 : 3;
   }
   let roof: Spec['roof'] = 'gabled';
   if (kind === 'roof') roof = 'canopy';

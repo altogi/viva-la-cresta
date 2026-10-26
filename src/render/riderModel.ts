@@ -9,8 +9,9 @@ export interface RiderPose {
   steer: number; // -1 right … +1 left
   rakeLeft: number;
   rakeRight: number;
-  running: boolean;
-  runPhase: number; // radians, advances with strides
+  /** 0 = running beside the toboggan, 1 = lying on it; in between is the jump on. */
+  mount: number;
+  runPhase: number; // radians, advances with distance run
 }
 
 const m = (color: string, roughness = 0.55) => new THREE.MeshStandardMaterial({ color, roughness });
@@ -23,6 +24,8 @@ export class RiderModel {
   private readonly head = new THREE.Group();
   private readonly arms: THREE.Group[] = [];
   private readonly legs: THREE.Group[] = [];
+  /** Soft contact shadow on the ice under the toboggan. */
+  readonly contactShadow: THREE.Mesh;
 
   constructor() {
     const suit = m('#2f6fd6');
@@ -86,29 +89,47 @@ export class RiderModel {
       this.legs.push(leg);
     }
     this.root.traverse((o) => (o.castShadow = true));
-    this.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, running: false, runPhase: 0 });
+    this.contactShadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.9, 0.9).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, opacity: 0.55 }),
+    );
+    this.contactShadow.position.set(-0.15, 0.015, 0);
+    this.contactShadow.renderOrder = 1;
+    this.root.add(this.contactShadow);
+    this.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0 });
   }
 
   setPose(p: RiderPose) {
     const cushion = this.toboggan.getObjectByName('cushion')!;
-    if (p.running) {
-      // Bent over beside the toboggan, pushing it by the handles. Body pitch 0.5 rad; limbs are
-      // set in world angles relative to that pitch (legs straight down is π/2 from the -X axis).
-      const pitch = 0.5;
-      this.body.position.set(-0.55, 0.92, -0.32);
-      this.body.rotation.set(0, 0, pitch);
-      this.torso.rotation.set(0, 0, 0);
-      this.head.rotation.set(0, 0, -0.35);
-      this.arms.forEach((a) => a.rotation.set(0, 0, -1.05 - pitch));
-      this.legs.forEach((leg, i) => leg.rotation.set(0, 0, Math.PI / 2 - pitch + Math.sin(p.runPhase + i * Math.PI) * 0.55));
-      cushion.position.x = 0;
-      return;
-    }
+    this.lyingPose(p);
+    cushion.position.x = this.body.position.x * 0.8;
+    if (p.mount >= 1) return;
+    // Blend from running beside the toboggan to lying on it, with a little spring in between.
+    const lying = this.capture();
+    this.runningPose(p);
+    const running = this.capture();
+    const t = p.mount * p.mount * (3 - 2 * p.mount);
+    this.apply(running, lying, t);
+    this.body.position.y += Math.sin(Math.PI * p.mount) * 0.32;
+  }
+
+  /** Bent over beside the toboggan, pushing it by the handles; legs move with the distance run. */
+  private runningPose(p: RiderPose) {
+    // Limbs are set relative to the body's pitch (legs straight down is π/2 from the -X axis).
+    const pitch = 0.5;
+    this.body.position.set(-0.55, 0.92, -0.32);
+    this.body.rotation.set(0, 0, pitch);
+    this.torso.rotation.set(0, 0, 0);
+    this.head.rotation.set(0, 0, -0.35);
+    this.arms.forEach((a) => a.rotation.set(0, 0, -1.05 - pitch));
+    this.legs.forEach((leg, i) => leg.rotation.set(0, 0, Math.PI / 2 - pitch + Math.sin(p.runPhase + i * Math.PI) * 0.55));
+  }
+
+  private lyingPose(p: RiderPose) {
     // Weight forward on the smooth runners, or slid back with the knives cutting in.
     const slide = 0.12 - p.posture * 0.32;
     this.body.position.set(slide, 0.3, 0);
     this.body.rotation.set(0, 0, 0.04 + p.posture * 0.12);
-    cushion.position.x = slide * 0.8;
     // Arm steering on the knives rolls the shoulders; forward, the head turns into the wind.
     const steerKnives = p.steer * p.posture;
     const steerHead = p.steer * (1 - p.posture);
@@ -126,4 +147,38 @@ export class RiderModel {
       leg.rotation.set(0, 0, -0.12 + rake * 0.42);
     });
   }
+
+  private parts() {
+    return [this.body, this.torso, this.head, ...this.arms, ...this.legs];
+  }
+
+  private capture() {
+    return this.parts().map((o) => ({ p: o.position.clone(), r: new THREE.Vector3(o.rotation.x, o.rotation.y, o.rotation.z) }));
+  }
+
+  private apply(from: ReturnType<RiderModel['capture']>, to: ReturnType<RiderModel['capture']>, t: number) {
+    this.parts().forEach((o, i) => {
+      o.position.lerpVectors(from[i].p, to[i].p, t);
+      const r = from[i].r.clone().lerp(to[i].r, t);
+      o.rotation.set(r.x, r.y, r.z);
+    });
+  }
+}
+
+let blob: THREE.CanvasTexture | null = null;
+
+/** Radial falloff used for the contact shadow. */
+function blobTexture(): THREE.CanvasTexture {
+  if (blob) return blob;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 128;
+  const g = canvas.getContext('2d')!;
+  const grad = g.createRadialGradient(64, 64, 4, 64, 64, 62);
+  grad.addColorStop(0, 'rgba(20,30,45,0.9)');
+  grad.addColorStop(0.55, 'rgba(20,30,45,0.45)');
+  grad.addColorStop(1, 'rgba(20,30,45,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  blob = new THREE.CanvasTexture(canvas);
+  return blob;
 }

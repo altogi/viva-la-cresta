@@ -10,8 +10,15 @@ interface Body {
   radius: number;
 }
 
+interface Frame {
+  t: number;
+  poses: { p: THREE.Vector3; q: THREE.Quaternion }[];
+}
+
 export class Ragdoll {
   private bodies: Body[] = [];
+  private frames: Frame[] = [];
+  private time = 0;
   active = false;
 
   constructor(
@@ -33,10 +40,37 @@ export class Ragdoll {
       return { object, velocity: v, spin: new THREE.Vector3(rand() * 8, rand() * 5, rand() * 8), radius };
     });
     this.active = true;
+    this.time = 0;
+    this.frames = [];
+    this.record();
+  }
+
+  private record() {
+    this.frames.push({ t: this.time, poses: this.bodies.map((b) => ({ p: b.object.position.clone(), q: b.object.quaternion.clone() })) });
+  }
+
+  /** Seconds of tumbling recorded so far. */
+  get duration() {
+    return this.time;
+  }
+
+  /** Put the parts where they were t seconds into the fall (for the replay). */
+  showAt(t: number) {
+    const f = this.frames.find((fr) => fr.t >= t) ?? this.frames[this.frames.length - 1];
+    if (!f) return;
+    this.bodies.forEach((b, i) => {
+      b.object.position.copy(f.poses[i].p);
+      b.object.quaternion.copy(f.poses[i].q);
+    });
+  }
+
+  setVisible(visible: boolean) {
+    for (const b of this.bodies) b.object.visible = visible;
   }
 
   update(dt: number) {
     if (!this.active) return;
+    this.time += dt;
     const q = new THREE.Quaternion();
     for (const b of this.bodies) {
       b.velocity.y -= 9.81 * dt;
@@ -57,6 +91,7 @@ export class Ragdoll {
         b.object.quaternion.premultiply(q);
       }
     }
+    this.record();
   }
 
   /** Centre of the tumbling rider, for the camera. */

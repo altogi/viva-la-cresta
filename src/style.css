@@ -559,3 +559,26 @@ body.viewing #viewer {
 #ride-card .row button {
   flex: 1;
 }
+
+#ride-banner.replay {
+  inset: auto 0 auto 0;
+  top: calc(var(--safe-top) + 96px);
+  background: none;
+  pointer-events: auto;
+}
+
+#ride-banner.replay #ride-banner-title {
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: var(--accent);
+  justify-self: center;
+}
+
+#ride-card button[hidden] {
+  display: none;
+}

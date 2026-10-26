@@ -103,7 +103,7 @@ export const BENDS: Bend[] = [
     floorWidth: 1.8,
     runoff: 'straw',
   },
-  { name: 'Stream', s0: 641, s1: 689, turn: -41, outer: { radius: 3.0, height: 4.5 }, inner: low },
+  { name: 'Stream', s0: 641, s1: 689, turn: -41, outer: { radius: 4.6, height: 4.5 }, inner: low },
   { name: 'Bulpetts', s0: 862, s1: 905, turn: -14, outer: { radius: 2.0, height: 1.6 }, inner: low },
   { name: 'Scylla', s0: 988, s1: 1040, turn: 23.5, outer: { radius: 2.0, height: 1.7 }, inner: low },
   { name: 'Charybdis', s0: 1068, s1: 1128, turn: -33, outer: { radius: 2.2, height: 1.9 }, inner: low },
