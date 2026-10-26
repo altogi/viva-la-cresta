@@ -162,11 +162,21 @@ export class RiderModel {
     const steerHead = p.steer * (1 - p.posture);
     this.torso.rotation.set(-steerKnives * 0.25, 0, 0);
     this.head.rotation.set(0, steerHead * 0.6, 0);
+    // Forward: arms tucked back along the body. On the knives (as in the photographs): the right
+    // arm stretched forward to the right front handle, the left hand gripping the toboggan's left
+    // edge beside the hip. Steering shifts the reach a little.
+    const pitch = this.body.rotation.z;
     this.arms.forEach((a, i) => {
-      const side = i === 0 ? -1 : 1;
-      // Knives: reaching down to the front handles, pushing on the outside arm. Forward: tucked back.
-      const reach = -0.35 - p.posture * 0.2 + (side * steerKnives > 0 ? -0.25 : 0) * Math.abs(steerKnives);
-      a.rotation.set(0, (1 - p.posture) * side * 2.6, reach * p.posture + (1 - p.posture) * 0.2);
+      const side = i === 0 ? -1 : 1; // arms[0] is the left (-Z)
+      const tucked = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, side * 2.6, 0.2));
+      const reach =
+        side > 0
+          ? new THREE.Vector3(0.55, -0.38, 0.06 - p.steer * 0.08) // right: to the front handle
+          : new THREE.Vector3(-0.49, -0.23, -0.06 + p.steer * 0.06); // left: down beside the hip
+      // Into the torso's frame, which is pitched with the body.
+      reach.applyAxisAngle(new THREE.Vector3(0, 0, 1), -pitch).normalize();
+      const knives = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), reach);
+      a.quaternion.slerpQuaternions(tucked, knives, p.posture);
     });
     // Feet up, or a boot driven down onto the ice.
     this.legs.forEach((leg, i) => {

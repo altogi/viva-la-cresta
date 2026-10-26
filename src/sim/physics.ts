@@ -14,8 +14,11 @@ import { PHYSICS, type RiderStats, type TobogganStats } from './rider';
 import type { Track } from './track';
 
 export const SIM_DT = 1 / 240;
-/** The foam cushion's front face, this far before the end of the run-out (m). */
-const CUSHION_DEPTH = 1.6;
+/** The yellow mat at the end of the run-out: it stops the toboggan; the rider slides on across it. */
+export const MAT_LENGTH = 6;
+const MAT_END_GAP = 0.4;
+/** How hard the mat slows a sliding rider (m/s²). */
+const MAT_DECEL = 4.5;
 
 export interface RideInput {
   /** Wants to be back on the knives (true) or forward (false). */
@@ -63,8 +66,10 @@ export interface RideState {
   finishSpeed: number | null;
   /** Came to rest in the run-out. */
   stopped: boolean;
-  /** Speed into the foam cushion at the end of the run-out, if reached (m/s). */
-  cushionSpeed: number | null;
+  /** Speed onto the finish mat at the end of the run-out, if reached (m/s). */
+  matSpeed: number | null;
+  /** Where the toboggan stopped against the mat; the rider slides on from here. */
+  tobogganS: number | null;
   topSpeed: number;
   runSteps: number;
   /** Normal load in g, for effects. */
@@ -111,7 +116,8 @@ export class RideSim {
       finishTime: null,
       finishSpeed: null,
       stopped: false,
-      cushionSpeed: null,
+      matSpeed: null,
+      tobogganS: null,
       topSpeed: 0,
       runSteps: 0,
       load: 1,
@@ -180,6 +186,10 @@ export class RideSim {
     const P = PHYSICS;
     const G = P.gravity;
     const finished = st.phase === 'finished';
+    if (finished && st.tobogganS !== null) {
+      this.slideOnMat(dt);
+      return;
+    }
 
     // Posture slides towards the wanted position at the rider's agility.
     const target = input.knives ? 1 : 0;
@@ -265,14 +275,30 @@ export class RideSim {
       st.v = speed * Math.cos(st.heading);
       st.w = speed * Math.sin(st.heading);
     }
-    const cushion = this.track.length - CUSHION_DEPTH;
-    if (st.s >= cushion) {
-      if (st.cushionSpeed === null) st.cushionSpeed = Math.hypot(st.v, st.w);
-      st.s = cushion;
+    const matStart = this.track.length - MAT_END_GAP - MAT_LENGTH;
+    if (st.s >= matStart) {
+      // The toboggan stops dead at the mat's edge; the rider carries on across it.
+      st.matSpeed = Math.hypot(st.v, st.w);
+      st.tobogganS = matStart;
+      st.s = matStart;
+      st.w = st.slide = 0;
+      st.v = st.matSpeed;
+    } else if (Math.hypot(st.v, st.w) < 0.25) {
       st.v = st.w = st.slide = 0;
+      st.stopped = true;
     }
-    if (Math.hypot(st.v, st.w) < 0.25 || st.cushionSpeed !== null) {
-      st.v = st.w = st.slide = 0;
+  }
+
+  /** The rider sliding across the mat, off the toboggan, to a stop. */
+  private slideOnMat(dt: number) {
+    const st = this.state;
+    const speed = Math.max(0, st.v - MAT_DECEL * dt);
+    st.heading *= Math.exp(-dt * 3);
+    st.u *= Math.exp(-dt * 2);
+    st.v = speed;
+    st.s = Math.min(st.s + speed * dt, this.track.length - MAT_END_GAP);
+    if (speed < 0.2 || st.s >= this.track.length - MAT_END_GAP) {
+      st.v = 0;
       st.stopped = true;
     }
   }

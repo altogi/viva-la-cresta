@@ -39,6 +39,8 @@ interface Snapshot {
   rakeRight: number;
   mount: number;
   runPhase: number;
+  /** How far the rider has slid past the toboggan on the finish mat (m). */
+  slidOff: number;
 }
 
 /** The ride plays a little quicker than real time, for fun; displayed times stay real. */
@@ -167,7 +169,6 @@ export class RideMode {
     this.replayModel?.root.removeFromParent();
     this.replayModel = null;
     this.history = [];
-    this.world.scene.getObjectByName('cushion')?.scale.set(1, 1, 1);
     if (this.model) this.model.root.removeFromParent();
     this.model = new RiderModel();
     this.world.scene.add(this.model.root);
@@ -272,7 +273,6 @@ export class RideMode {
       this.sim.update(dt, runOutInput(this.track, this.sim));
       if (this.sim.state.stopped) this.celebrate();
     } else if (this.stage === 'celebrate') {
-      this.squashCushion();
       if (this.stageTime > 2.8) this.finish();
     }
 
@@ -306,16 +306,6 @@ export class RideMode {
     navigator.vibrate?.([20, 60, 20]);
   }
 
-  /** The foam cushion gives a little if the rider reached it with some speed. */
-  private squashCushion() {
-    const cushion = this.world.scene.getObjectByName('cushion');
-    const hit = this.sim.state.cushionSpeed;
-    if (!cushion || hit === null) return;
-    const t = this.stageTime;
-    const squash = Math.min(0.35, hit * 0.09) * Math.exp(-t * 4) * Math.cos(t * 14);
-    cushion.scale.set(1 - squash, 1 + squash * 0.3, 1);
-  }
-
   private snapshot(): Snapshot {
     const st = this.sim.state;
     const input = this.sim.input;
@@ -331,6 +321,7 @@ export class RideMode {
       rakeRight: input.rakeRight,
       mount: this.mountFor(st.phase),
       runPhase: this.runPhase,
+      slidOff: st.tobogganS === null ? 0 : st.s - st.tobogganS,
     };
   }
 
@@ -371,6 +362,8 @@ export class RideMode {
     root.matrixAutoUpdate = false;
     root.matrix.makeBasis(heading, up, right).setPosition(this.riderPos);
     root.matrixWorldNeedsUpdate = true;
+    // On the finish mat the toboggan has stopped; the rider has slid on ahead of it.
+    model.toboggan.position.x = -snap.slidOff;
     model.setPose({
       posture: snap.posture,
       steer: snap.steer,
@@ -476,6 +469,7 @@ export class RideMode {
       rakeRight: mix(a.rakeRight, b.rakeRight),
       mount: mix(a.mount, b.mount),
       runPhase: mix(a.runPhase, b.runPhase),
+      slidOff: mix(a.slidOff, b.slidOff),
     };
   }
 

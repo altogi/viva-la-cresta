@@ -258,6 +258,16 @@ Nothing is fetched while playing, and everything is cached offline by the app.
 
 **Licences:** OSM (ODbL) and swisstopo (open data with attribution) are credited in the app.
 
+### Music (with Phase 6–7)
+Music that follows the game, generated in code with the Web Audio API like the rest of the sound, as Battle Drones does:
+- **Menu and clubhouse:** a relaxed alpine theme.
+- **Waiting at the start:** tension builds until the bell.
+- **The ride:** sparse and driving, rising with speed and dropping to almost nothing through Shuttlecock so the runners and rakes carry it.
+- **Finish:** a short fanfare at Celerina, bigger for "Hello Hello!".
+- **Falls:** the music cuts out.
+
+A music volume control and mute go next to the sound settings. If a composed soundtrack is preferred, it can be streamed and cached offline as audio files instead.
+
 ### Phase 7 — Polish & release
 Menus and scenes (SMTC clubhouse, Sunny Bar at the Kulm for results), SMTC branding, performance pass on a mid-range phone (target a steady 60 fps, with a quality fallback), offline check, settings (sound, haptics, hint zones, left-handed mirror), first public release.
 

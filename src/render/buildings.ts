@@ -167,6 +167,7 @@ export function buildTownBuildings(terrain: Terrain): THREE.Group {
     const spec = specFromBox(box);
     const { minX, maxX, minY, maxY } = terrain.bounds;
     if (spec.x < minX || spec.x > maxX || spec.y < minY || spec.y > maxY) continue;
+    if (overlapsRun(spec, terrain)) continue;
     if (spec.kind === 'church') {
       addChurch(walls, roofs, spec, terrain, snow);
       continue;
@@ -178,6 +179,20 @@ export function buildTownBuildings(terrain: Terrain): THREE.Group {
   group.add(walls.build(new THREE.MeshStandardMaterial({ map: facade, vertexColors: true, roughness: 0.9 })));
   group.add(roofs.build(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 })));
   return group;
+}
+
+/** Keep off the ice and its walls: the mapped line and our fitted one differ by a few metres in places. */
+const RUN_CLEARANCE = 12;
+
+function overlapsRun(spec: Spec, terrain: Terrain): boolean {
+  const c = corners(spec);
+  const samples: [number, number][] = [[spec.x, spec.y], ...c];
+  for (let i = 0; i < 4; i++) {
+    const [ax, ay] = c[i];
+    const [bx, by] = c[(i + 1) % 4];
+    samples.push([(ax + bx) / 2, (ay + by) / 2]);
+  }
+  return samples.some(([x, y]) => terrain.distanceToTrack(x, y).distance < RUN_CLEARANCE);
 }
 
 /** Corners of a footprint, counter-clockwise, in world (x, y). */

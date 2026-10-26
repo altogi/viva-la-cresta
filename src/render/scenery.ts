@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { MAT_LENGTH } from '../sim/physics';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { Track } from '../sim/track';
 import { BENDS, LANDMARKS, TRACK_LENGTH } from '../track/cresta';
@@ -32,7 +33,7 @@ export function buildScenery(track: Track, terrain: Terrain): THREE.Group {
   }
   group.add(buildFinish(ctx));
   group.add(buildShuttlecockRunoff(ctx));
-  group.add(buildCushion(ctx));
+  group.add(buildFinishMat(ctx), buildRunOutBank(ctx));
   return group;
 }
 
@@ -374,26 +375,56 @@ function buildShuttlecockRunoff(ctx: Placer): THREE.Group {
   return group;
 }
 
-/** The foam cushion closing the end of the run-out at Celerina. Named so the ride can squash it. */
-function buildCushion(ctx: Placer): THREE.Group {
-  const group = new THREE.Group();
-  group.name = 'cushion';
-  const s = ctx.track.length - 0.8;
-  const ext = ctx.extent(s);
-  const width = ext.left - ext.right + 1.2;
-  const foam = new THREE.Mesh(
-    new RoundedBoxGeometry(1.6, 1.5, width, 3, 0.25),
-    new THREE.MeshStandardMaterial({ color: '#2d5b9e', roughness: 0.9 }),
-  );
-  foam.position.y = 0.75;
-  const band = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.22, width + 0.02), new THREE.MeshStandardMaterial({ color: '#930303', roughness: 0.8 }));
-  band.position.y = 1.15;
-  group.add(foam, band);
-  group.traverse((o) => {
-    o.castShadow = true;
-    o.receiveShadow = true;
-  });
-  group.position.copy(ctx.local(s, (ext.left + ext.right) / 2, 0));
-  group.rotation.y = ctx.heading(s);
-  return group;
+/** The yellow mat across the end of the run-out at Celerina: it stops the toboggan, the rider slides on. */
+function buildFinishMat(ctx: Placer): THREE.Mesh {
+  const track = ctx.track;
+  const end = track.length - 0.4;
+  const start = end - MAT_LENGTH;
+  const thick = 0.14;
+  const positions: number[] = [];
+  const v = new THREE.Vector3();
+  const rows: THREE.Vector3[][] = [];
+  for (let s = start; s <= end + 1e-6; s += 0.5) {
+    const st = track.frame(s);
+    const half = track.section(s).floorWidth / 2 + 0.1;
+    // Bottom-right, top-right, top-left, bottom-left.
+    rows.push(
+      [
+        [-half, 0],
+        [-half, thick],
+        [half, thick],
+        [half, 0],
+      ].map(([y, z]) => toThree(track.toWorld(st, y, z), v.clone())),
+    );
+  }
+  const quad = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3, d: THREE.Vector3) =>
+    positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, a.x, a.y, a.z, c.x, c.y, c.z, d.x, d.y, d.z);
+  for (let i = 0; i < rows.length - 1; i++) {
+    const [r0, r1] = [rows[i], rows[i + 1]];
+    quad(r0[1], r1[1], r1[2], r0[2]); // top
+    quad(r0[0], r1[0], r1[1], r0[1]); // right side
+    quad(r0[2], r1[2], r1[3], r0[3]); // left side
+  }
+  const first = rows[0];
+  const last = rows[rows.length - 1];
+  quad(first[0], first[1], first[2], first[3]);
+  quad(last[3], last[2], last[1], last[0]);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.computeVertexNormals();
+  const mat = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#f2c12e', roughness: 0.85, side: THREE.DoubleSide }));
+  mat.name = 'finish-mat';
+  mat.castShadow = mat.receiveShadow = true;
+  return mat;
+}
+
+/** A snow bank closing the end of the run-out, beyond the mat (and covering the cut in the ground). */
+function buildRunOutBank(ctx: Placer): THREE.Mesh {
+  const s = ctx.track.length;
+  const st = ctx.track.frame(s);
+  const bank = new THREE.Mesh(new RoundedBoxGeometry(9, 2.2, 34, 4, 1.0), mat(colors.snow, { flatShading: false, roughness: 0.95 }));
+  bank.position.copy(ctx.local(s, 0, 0)).add(new THREE.Vector3(st.forward[0] * 4.2, 0.3, -st.forward[1] * 4.2));
+  bank.rotation.y = ctx.heading(s);
+  bank.castShadow = bank.receiveShadow = true;
+  return bank;
 }

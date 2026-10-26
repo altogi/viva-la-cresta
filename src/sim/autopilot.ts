@@ -2,7 +2,7 @@
 // (when to go back on the knives, where and how hard to rake, how high to ride the banks).
 
 import { BENDS, JUNCTION_S, TRACK_LENGTH } from '../track/cresta';
-import { RideSim, type RideInput, type StartStyle } from './physics';
+import { MAT_LENGTH, RideSim, type RideInput, type StartStyle } from './physics';
 import { lips } from './surface';
 import type { RiderStats, TobogganStats } from './rider';
 import type { Track } from './track';
@@ -123,13 +123,14 @@ export function lineSteer(track: Track, sim: RideSim, line: number): number {
 
 /**
  * The run-out after the finish, ridden for the player: back on the knives, raking to a speed that
- * brings the rider round the final hook and gently into the foam cushion.
+ * brings the rider round the final hook and onto the finish mat at a gentle pace.
  */
 export function runOutInput(track: Track, sim: RideSim): RideInput {
   const st = sim.state;
-  const remaining = Math.max(0, track.length - 2 - st.s);
-  const target = Math.sqrt(2 * 1.6 * remaining) + 1.2;
-  const rake = Math.max(0, Math.min(1, (Math.hypot(st.v, st.w) - target) * 0.7));
+  // Arrive at the mat at a few metres per second, enough to slide a little way across it.
+  const remaining = Math.max(0, track.length - 0.4 - MAT_LENGTH - st.s);
+  const target = Math.sqrt(2 * 1.4 * remaining) + 2.4;
+  const rake = Math.max(0, Math.min(1, (Math.hypot(st.v, st.w) - target) * 1.2));
   return { knives: true, steer: lineSteer(track, sim, 1), rakeLeft: rake, rakeRight: rake, runTaps: 0 };
 }
 

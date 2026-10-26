@@ -20,7 +20,7 @@ function rideToRest(policyName: string) {
   const st = sim.state;
   console.info(
     `${policyName}: finish ${(st.finishSpeed! * 2.237).toFixed(1)} mph, rests at s=${st.s.toFixed(0)} ` +
-      `(${(st.s - TRACK_LENGTH).toFixed(0)} m past the finish), cushion ${st.cushionSpeed?.toFixed(1) ?? '—'} m/s`,
+      `(${(st.s - TRACK_LENGTH).toFixed(0)} m past the finish), onto the mat at ${st.matSpeed?.toFixed(1) ?? '—'} m/s`,
   );
   return st;
 }
@@ -32,7 +32,7 @@ describe('run-out at Celerina', () => {
       expect(st.phase).toBe('finished');
       expect(st.stopped).toBe(true);
       expect(st.s).toBeGreaterThan(TRACK_LENGTH + 30);
-      if (st.cushionSpeed !== null) expect(st.cushionSpeed).toBeLessThan(4);
+      if (st.matSpeed !== null) expect(st.matSpeed).toBeLessThan(5);
     });
   }
 });
