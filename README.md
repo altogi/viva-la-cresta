@@ -13,7 +13,9 @@ npm test
 npm run build
 ```
 
-Built with TypeScript, Three.js and Vite. Everything is generated in code: the track comes from `src/track/cresta.ts`, digitised from the 1906 plan and profile.
+Built with TypeScript, Three.js and Vite. Everything is generated in code: the track's elevation profile comes from the 1906 plan and profile (`src/track/cresta.ts`); its alignment, the buildings and the woods come from OpenStreetMap (`src/track/osm.ts`).
+
+Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the Open Database License. Clubhouse reference photo: Dennis G. Jarvis, [CC BY-SA 2.0](https://commons.wikimedia.org/wiki/File:Switzerland-01555_-_Cresta_Run_(22108784018).jpg).
 
 ## Layout
 

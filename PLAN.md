@@ -9,7 +9,7 @@ A mobile 3D game about riding the Cresta Run, from first lying start on Beginner
 | Stack | TypeScript + Three.js (WebGL), built with Vite — the Battle Drones stack |
 | Delivery | PWA on GitHub Pages (installable, offline). Capacitor wrap for app stores is possible later |
 | Repo | `altogi/viva-la-cresta`, public. Reference photos and `sample_data/` (times, results sheets) stay local (git-ignored) |
-| Art | Stylized low-poly, all geometry generated in TypeScript (no external model files) |
+| Art | **Semi-realistic** (revised after Phase 1): believable proportions and materials, not cartoon low-poly. Rigged, skinned riders; textured pines; PBR ice and snow with procedural normal maps; image-based sky lighting. Landmarks (clubhouse and Tower, Top hut, bridges) modelled from photos, and everything laid out from satellite imagery. Geometry stays code-generated where it can; rider and tree assets may be imported glTF/textures under permissive licences |
 | Physics | Calibrated simulation: real track profile; times must land in real ranges |
 | Screen | Portrait, chase camera behind and above the rider |
 | Controls | Hold-for-intensity touch zones; multi-touch (steer + rake at once) |
@@ -165,7 +165,7 @@ src/
   render/
     trackMesh.ts          ice, walls, lips, straw, padding, snow terrain
     scenery.ts            Top hut, Junction hut, clubhouse, trees, bridges, St Moritz backdrop
-    riderModel.ts         low-poly riders + poses (forward, knives, steer, rake, run, jump-on)
+    riderModel.ts         rigged, skinned riders + poses (forward, knives, steer, rake, run, jump-on)
     toboggans.ts          traditional, flat-top
     camera.ts             chase cam, start cam, fall replay cam
   input/touchZones.ts     hold-for-intensity zones, run button
@@ -189,7 +189,7 @@ Vite + TS + Three.js scaffold, PWA (manifest, service worker, icons), GitHub Pag
 **Done when** an empty 3D scene installs to a phone home screen from the Pages URL.
 
 ### Phase 1 — The Run ✅ (awaiting your review)
-*Built for the whole run, Top included: Phase 4 keeps the Top-specific calibration and Top hut detail. The viewer's rough ghost descent already lands close to real splits (Junction 49.3 s: Rise 14.3, Stream 27.9, Bulpetts 36.2, 65 mph at the finish).*
+*The run's alignment, buildings and woods now come from OpenStreetMap (bends refitted to within 1.5 m of the mapped centreline on average); the clubhouse and Tower are modelled on their OSM footprint and photos.* *Built for the whole run, Top included: Phase 4 keeps the Top-specific calibration and Top hut detail. The viewer's rough ghost descent already lands close to real splits (Junction 49.3 s: Rise 14.3, Stream 27.9, Bulpetts 36.2, 65 mph at the finish).*
 
 Digitise the map into `cresta.ts` (Junction to Finish first). Cross-section generator for straights and banks. Track mesh: ice with subtle grooves/specular, curved walls, lips, straw beyond Shuttlecock, padded walls, bridges (Hanis, Road, Railway), snow terrain, trees. Track viewer tool.
 **Done when** you can fly down the run in the viewer and recognise every bank from Junction to the finish. **Your review**: does it look like the Cresta?
@@ -199,7 +199,7 @@ Physics model in track coordinates. Traditional toboggan. One placeholder rider 
 **Done when** a full Junction ride is playable on a phone and Shuttlecock is a real decision. **Your playtest**: as an actual rider, does it feel like the Cresta? Expect a few rounds of tuning here.
 
 ### Phase 3 — Riders & toboggans
-Low-poly models for Maximilian, Adelaide and Remo (silhouette, hair, beard, suits, helmets) with pose blending: running, jump-on, forward, knives, arm steering, head turn, raking feet, fall tumble. Rider stats wired into the physics. Flat-top toboggan with its own handling. Agility-dependent transitions. Bot balance check across all rider × toboggan combinations.
+Semi-realistic rigged models for Maximilian, Adelaide and Remo (proportions, hair, beard, skin suits, helmets, rakes on the boots) with pose blending: running, jump-on, forward, knives, arm steering, head turn, raking feet, fall tumble. Rider stats wired into the physics. Flat-top toboggan with its own handling. Agility-dependent transitions. Bot balance check across all rider × toboggan combinations.
 **Done when** the three riders feel distinct and all can reach the targets.
 
 ### Phase 4 — From Top
@@ -214,6 +214,9 @@ Rider select, save slots, Beginner Day tutorial, Junction Practice, progression 
 Weather generator and friction model, snow (visual snowfall + physics), wind, hangover effects, dramatic pre-race cards, the bell, a fuller soundscape (crowd at the finish, wind at speed, tannoy).
 **Done when** two race days feel different and the cards land.
 
+### Visual upgrade (runs alongside Phases 2–4)
+Move the Phase 1 scene to the semi-realistic target: textured pine LODs, PBR ice/snow, sky lighting, and accurate landmark models.
+
 ### Phase 7 — Polish & release
 Menus and scenes (SMTC clubhouse, Sunny Bar at the Kulm for results), SMTC branding, performance pass on a mid-range phone (target a steady 60 fps, with a quality fallback), offline check, settings (sound, haptics, hint zones, left-handed mirror), first public release.
 
@@ -225,7 +228,7 @@ Budget and economy, kit with performance effects, shop (America toboggan, suits,
 - **Physics feel** is the biggest risk. Mitigation: track-coordinate model, tuning page, bot calibration, and early real-rider playtests (Phase 2 gate).
 - **Track accuracy**: bank geometry is estimated from photos. Keep all of it in one data file so corrections are one-line edits.
 - **Touch ergonomics** at high speed: evaluate zone sizes on real phones in Phase 2, with left-handed mirroring later.
-- **Mobile performance**: low-poly, a single directional light + baked ambient, instanced trees, and a capped pixel ratio.
+- **Mobile performance**, now harder with the more realistic look: LODs (detailed near the rider, impostors far away), instanced trees, texture atlases, a single shadowed sun, a capped pixel ratio, and a quality setting.
 
 ## Open questions (non-blocking)
 

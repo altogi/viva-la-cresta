@@ -4,6 +4,7 @@
 import {
   BENDS,
   BEND_BLEND,
+  DRIFTS,
   FLOOR_WIDTH,
   LIP_WIDTH,
   PROFILE,
@@ -201,7 +202,7 @@ export class Track {
   /** Heading in radians, counter-clockwise from east. Bends use a raised-cosine curvature, so entries are smooth. */
   heading(s: number): number {
     let h = START_HEADING * DEG;
-    for (const b of BENDS) {
+    for (const b of [...BENDS, ...DRIFTS]) {
       const t = Math.min(Math.max((s - b.s0) / (b.s1 - b.s0), 0), 1);
       h += b.turn * DEG * (t - Math.sin(2 * Math.PI * t) / (2 * Math.PI));
     }
@@ -210,7 +211,7 @@ export class Track {
 
   curvature(s: number): number {
     let k = 0;
-    for (const b of BENDS) {
+    for (const b of [...BENDS, ...DRIFTS]) {
       if (s <= b.s0 || s >= b.s1) continue;
       const len = b.s1 - b.s0;
       const t = (s - b.s0) / len;

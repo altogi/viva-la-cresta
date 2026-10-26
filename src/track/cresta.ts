@@ -3,7 +3,9 @@
 //
 // Conventions: `s` is horizontal distance along the run in metres from Top start.
 // Elevation `z` in metres above the finish. Turn angles in degrees, positive = left.
-// Bank geometry (radius, wall height) is estimated from photographs.
+// Headings and turn angles are fitted to the OpenStreetMap centreline (see osm.ts), so the run
+// sits on its real alignment (x = east, y = north from Top start). The elevation profile comes
+// from the 1906 map. Bank geometry (radius, wall height) is estimated from photographs.
 
 export interface ProfilePoint {
   s: number;
@@ -41,8 +43,8 @@ export interface Landmark {
 
 export const TRACK_LENGTH = 1212.25;
 export const JUNCTION_S = 322.05;
-/** Heading at Top start, degrees from east (counter-clockwise). */
-export const START_HEADING = -35;
+/** Heading at Top start, degrees from east (counter-clockwise): the run leaves Top towards the NNE. */
+export const START_HEADING = 27;
 
 /** Elevation profile, read off the map's profile drawing. */
 export const PROFILE: ProfilePoint[] = [
@@ -86,25 +88,32 @@ export const LIP_WIDTH = 0.6;
 const low: WallShape = { radius: 0.4, height: 0.6 };
 
 export const BENDS: Bend[] = [
-  { name: 'Curzon', s0: 155, s1: 195, turn: 65, outer: { radius: 3.0, height: 3.6 }, inner: low },
-  { name: 'Brabazon', s0: 208, s1: 240, turn: -55, outer: { radius: 2.5, height: 2.6 }, inner: low },
-  { name: 'Thoma', s0: 255, s1: 300, turn: 60, outer: { radius: 3.2, height: 2.6 }, inner: low },
-  { name: 'Rise', s0: 440, s1: 485, turn: -35, outer: { radius: 2.5, height: 1.6 }, inner: low },
-  { name: 'Battledore', s0: 520, s1: 555, turn: -40, outer: { radius: 3.0, height: 2.0 }, inner: low },
+  { name: 'Curzon', s0: 157, s1: 202, turn: 43, outer: { radius: 3.0, height: 3.6 }, inner: low },
+  { name: 'Brabazon', s0: 209, s1: 250, turn: -28, outer: { radius: 2.5, height: 2.6 }, inner: low },
+  { name: 'Thoma', s0: 253, s1: 305, turn: 47, outer: { radius: 3.2, height: 2.6 }, inner: low },
+  { name: 'Rise', s0: 430, s1: 484, turn: -41, outer: { radius: 2.5, height: 1.6 }, inner: low },
+  { name: 'Battledore', s0: 485, s1: 557, turn: -38, outer: { radius: 3.0, height: 2.0 }, inner: low },
   {
     name: 'Shuttlecock',
-    s0: 575,
-    s1: 630,
-    turn: 80,
+    s0: 562,
+    s1: 632,
+    turn: 89.5,
     outer: { radius: 6.0, height: 1.9 },
     inner: { radius: 0.4, height: 0.5 },
     floorWidth: 1.8,
     runoff: 'straw',
   },
-  { name: 'Stream', s0: 648, s1: 690, turn: -50, outer: { radius: 3.0, height: 4.5 }, inner: low },
-  { name: 'Bulpetts', s0: 862, s1: 895, turn: -15, outer: { radius: 2.0, height: 1.2 }, inner: low },
-  { name: 'Scylla', s0: 995, s1: 1030, turn: 22, outer: { radius: 2.0, height: 1.2 }, inner: low },
-  { name: 'Charybdis', s0: 1068, s1: 1105, turn: -30, outer: { radius: 2.2, height: 1.4 }, inner: low },
+  { name: 'Stream', s0: 641, s1: 689, turn: -41, outer: { radius: 3.0, height: 4.5 }, inner: low },
+  { name: 'Bulpetts', s0: 868, s1: 900, turn: -14, outer: { radius: 2.0, height: 1.2 }, inner: low },
+  { name: 'Scylla', s0: 996, s1: 1027, turn: 23.5, outer: { radius: 2.0, height: 1.2 }, inner: low },
+  { name: 'Charybdis', s0: 1080, s1: 1120, turn: -33, outer: { radius: 2.2, height: 1.4 }, inner: low },
+];
+
+/** Gentle heading drift along the straights (no change to the walls). */
+export const DRIFTS: { s0: number; s1: number; turn: number }[] = [
+  { s0: 60, s1: 146, turn: -4 },
+  { s0: 326, s1: 429, turn: -5 },
+  { s0: 721, s1: 867, turn: -1 },
 ];
 
 /** Distance over which cross-sections blend into and out of a bend (m). */
@@ -118,15 +127,15 @@ export const ZONES: { name: string; s0: number }[] = [
   { name: 'Brabazon', s0: 202 },
   { name: 'Thoma', s0: 250 },
   { name: 'Junction Straight', s0: 302 },
-  { name: 'Rise', s0: 436 },
-  { name: 'Battledore', s0: 512 },
-  { name: 'Shuttlecock', s0: 570 },
-  { name: 'Stream', s0: 642 },
-  { name: 'Bledisloe Straight', s0: 694 },
-  { name: 'Bulpetts', s0: 858 },
+  { name: 'Rise', s0: 426 },
+  { name: 'Battledore', s0: 485 },
+  { name: 'Shuttlecock', s0: 560 },
+  { name: 'Stream', s0: 638 },
+  { name: 'Bledisloe Straight', s0: 692 },
+  { name: 'Bulpetts', s0: 862 },
   { name: 'Scylla', s0: 990 },
-  { name: 'Charybdis', s0: 1062 },
-  { name: 'Cresta Leap', s0: 1108 },
+  { name: 'Charybdis', s0: 1072 },
+  { name: 'Cresta Leap', s0: 1120 },
   { name: 'Finish', s0: TRACK_LENGTH },
 ];
 
@@ -134,16 +143,17 @@ export const LANDMARKS: Landmark[] = [
   { name: 'Top', s: 0, kind: 'start' },
   { name: 'Stable Junction', s: 73.6, kind: 'bridge' },
   { name: 'Church Leap', s: 128, kind: 'section' },
+  { name: 'Junction walkway', s: 319, kind: 'bridge' },
   { name: 'Junction', s: JUNCTION_S, kind: 'start' },
   { name: 'Junction Straight', s: 340, kind: 'section' },
   // Timing eye positions are inferred from split times, not surveyed.
   { name: 'Rise eye', s: 470, kind: 'timing' },
-  { name: 'Hanis Bridge', s: 516, kind: 'bridge' },
+  { name: 'Hanis Bridge', s: 499, kind: 'bridge' },
   { name: 'Stream eye', s: 690, kind: 'timing' },
   { name: 'Bledisloe Straight', s: 700, kind: 'section' },
-  { name: 'Road Bridge', s: 860, kind: 'bridge' },
+  { name: 'Road Bridge', s: 857, kind: 'bridge' },
   { name: 'Bulpetts eye', s: 868, kind: 'timing' },
-  { name: 'Railway Bridge', s: 994, kind: 'bridge' },
+  { name: 'Railway Bridge', s: 993, kind: 'bridge' },
   { name: 'Cresta Leap', s: 1118, kind: 'section' },
   { name: 'Finish', s: TRACK_LENGTH, kind: 'finish' },
 ];

@@ -1,12 +1,15 @@
-// Everything around the ice: mountains, pines, the village, the Top hut, the Junction
-// clubhouse, bridges, timing eyes, the straw and padding beyond Shuttlecock, the finish.
+// Everything around the ice: mountains, the real woods and buildings from OpenStreetMap, the Top hut,
+// the Junction clubhouse, bridges, timing eyes, the straw and padding beyond Shuttlecock, the finish.
 
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Track } from '../sim/track';
-import { BENDS, JUNCTION_S, LANDMARKS, TRACK_LENGTH } from '../track/cresta';
+import { BENDS, LANDMARKS, TRACK_LENGTH } from '../track/cresta';
+import { OSM_IDS, OSM_NEAR, OSM_TREES, OSM_WOODS } from '../track/osm';
+import { buildTownBuildings } from './buildings';
+import { buildClubhouse } from './clubhouse';
 import type { Terrain } from './terrain';
-import { colors, mulberry32, toThree, valueNoise } from './util';
+import { colors, mulberry32, toThree } from './util';
 
 const mat = (color: THREE.ColorRepresentation, opts: THREE.MeshStandardMaterialParameters = {}) =>
   new THREE.MeshStandardMaterial({ color, roughness: 0.8, flatShading: true, ...opts });
@@ -16,12 +19,13 @@ export function buildScenery(track: Track, terrain: Terrain): THREE.Group {
   group.name = 'scenery';
   const ctx = new Placer(track, terrain);
   group.add(buildMountains(terrain));
-  group.add(buildTrees(track, terrain));
-  group.add(buildVillages(ctx));
+  group.add(buildTrees(terrain));
+  group.add(buildTownBuildings(terrain));
   group.add(buildTopHut(ctx));
-  group.add(buildClubhouse(ctx));
+  group.add(buildClubhouse(track, terrain));
   for (const lm of LANDMARKS) {
-    if (lm.kind === 'bridge') group.add(buildBridge(ctx, lm.s, lm.name));
+    // The Junction walkway is part of the clubhouse model.
+    if (lm.kind === 'bridge' && lm.name !== 'Junction walkway') group.add(buildBridge(ctx, lm.s, lm.name));
     if (lm.kind === 'timing' || lm.kind === 'start') group.add(buildTimingEye(ctx, lm.s));
   }
   group.add(buildFinish(ctx));
@@ -115,107 +119,72 @@ function pineGeometry(): THREE.BufferGeometry {
   return mergeGeometries(parts);
 }
 
-function buildTrees(track: Track, terrain: Terrain): THREE.Group {
+function insidePolygon(x: number, y: number, poly: [number, number][]) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+/** Pines inside the woods mapped in OSM, the individually mapped trees, and a few strays on the meadows. */
+function buildTrees(terrain: Terrain): THREE.Group {
   const group = new THREE.Group();
   const rng = mulberry32(1884);
-  const forest = valueNoise(3);
   const { minX, maxX, minY, maxY } = terrain.bounds;
-  const foliage = pineGeometry();
+  const spots: { x: number; y: number; scale: number; near: boolean }[] = [];
+  const consider = (x: number, y: number, keepFar: number) => {
+    if (x < minX || x > maxX || y < minY || y > maxY) return;
+    const { distance } = terrain.distanceToTrack(x, y);
+    if (distance < 12) return;
+    if (distance > 260 && rng() > keepFar) return;
+    spots.push({ x, y, scale: 0.75 + rng() * 0.8, near: distance < 140 });
+  };
+  for (const wood of OSM_WOODS) {
+    const xs = wood.map((p) => p[0]);
+    const ys = wood.map((p) => p[1]);
+    const x0 = Math.max(Math.min(...xs), minX);
+    const x1 = Math.min(Math.max(...xs), maxX);
+    const y0 = Math.max(Math.min(...ys), minY);
+    const y1 = Math.min(Math.max(...ys), maxY);
+    if (x1 <= x0 || y1 <= y0) continue;
+    const attempts = Math.min(6000, ((x1 - x0) * (y1 - y0)) / 55);
+    for (let i = 0; i < attempts; i++) {
+      const x = x0 + rng() * (x1 - x0);
+      const y = y0 + rng() * (y1 - y0);
+      if (insidePolygon(x, y, wood)) consider(x, y, 0.3);
+    }
+  }
+  for (const [x, y] of OSM_TREES) consider(x, y, 1);
+  for (let i = 0; i < 2500; i++) {
+    const x = minX + rng() * (maxX - minX);
+    const y = minY + rng() * (maxY - minY);
+    if (rng() < 0.12 && !OSM_WOODS.some((w) => insidePolygon(x, y, w))) consider(x, y, 0.5);
+  }
+
+  const detailed = pineGeometry();
+  const simple = new THREE.ConeGeometry(2.2, 8.5, 6).translate(0, 4.6, 0);
   const trunk = new THREE.CylinderGeometry(0.25, 0.35, 1.6, 6).translate(0, 0.8, 0);
-  const matrices: THREE.Matrix4[] = [];
-  const tints: THREE.Color[] = [];
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
-  let attempts = 0;
-  while (matrices.length < 1400 && attempts++ < 40000) {
-    const x = minX + rng() * (maxX - minX);
-    const y = minY + rng() * (maxY - minY);
-    const density = forest(x / 140, y / 140);
-    if (density < 0.05 && rng() > 0.04) continue;
-    const { distance } = terrain.distanceToTrack(x, y);
-    if (distance < 14) continue;
-    const z = terrain.height(x, y);
-    const s = 0.7 + rng() * 0.9;
-    q.setFromAxisAngle(up, rng() * Math.PI * 2);
-    m.compose(new THREE.Vector3(x, z - 0.2, -y), q, new THREE.Vector3(s, s * (0.9 + rng() * 0.3), s));
-    matrices.push(m.clone());
-    tints.push(colors.pine.clone().lerp(colors.pineLight, rng()));
-  }
-  // Pines also line the run in places, as in the photographs.
-  for (let s = 20; s < TRACK_LENGTH; s += 9) {
-    for (const side of [-1, 1]) {
-      if (rng() < 0.55) continue;
-      const st = track.frame(s);
-      const lateral = side * (16 + rng() * 14);
-      const x = st.pos[0] + st.left[0] * lateral;
-      const y = st.pos[1] + st.left[1] * lateral;
-      if (terrain.distanceToTrack(x, y).distance < 14) continue;
-      const k = 0.6 + rng() * 0.7;
+  const build = (geo: THREE.BufferGeometry, list: typeof spots, withTrunks: boolean) => {
+    const leaves = new THREE.InstancedMesh(geo, mat('#ffffff'), list.length);
+    const trunks = withTrunks ? new THREE.InstancedMesh(trunk, mat(colors.trunk), list.length) : null;
+    list.forEach((t, i) => {
       q.setFromAxisAngle(up, rng() * Math.PI * 2);
-      m.compose(new THREE.Vector3(x, terrain.height(x, y) - 0.2, -y), q, new THREE.Vector3(k, k, k));
-      matrices.push(m.clone());
-      tints.push(colors.pine.clone().lerp(colors.pineLight, rng()));
-    }
-  }
-  const leaves = new THREE.InstancedMesh(foliage, mat('#ffffff'), matrices.length);
-  const trunks = new THREE.InstancedMesh(trunk, mat(colors.trunk), matrices.length);
-  matrices.forEach((mm, i) => {
-    leaves.setMatrixAt(i, mm);
-    leaves.setColorAt(i, tints[i]);
-    trunks.setMatrixAt(i, mm);
-  });
-  group.add(leaves, trunks);
-  return group;
-}
-
-function houseGeometry(): { body: THREE.BufferGeometry; roof: THREE.BufferGeometry } {
-  const body = new THREE.BoxGeometry(8, 7, 10).translate(0, 3.5, 0);
-  // Gable roof: a triangular prism along the house's length.
-  const roof = new THREE.CylinderGeometry(6.2, 6.2, 11, 3, 1).rotateX(Math.PI / 2).rotateZ(Math.PI / 2);
-  roof.scale(1, 0.55, 1).translate(0, 8.6, 0);
-  return { body, roof };
-}
-
-function buildVillages(ctx: Placer): THREE.Group {
-  const group = new THREE.Group();
-  const rng = mulberry32(1887);
-  const { body, roof } = houseGeometry();
-  const facades = ['#e9dcc0', '#f2e6cf', '#e6c9a8', '#d8a48f', '#f0efe9', '#cfd8c4', '#e8b4a0'].map((c) => new THREE.Color(c));
-  const clusters = [
-    // St Moritz above the Top, Celerina at the bottom, a few chalets on the way.
-    { s: 0, lateral: 120, count: 70, spread: 110 },
-    { s: 120, lateral: 160, count: 30, spread: 80 },
-    { s: TRACK_LENGTH, lateral: -150, count: 60, spread: 120 },
-    { s: 900, lateral: -170, count: 18, spread: 70 },
-    { s: 450, lateral: 140, count: 10, spread: 50 },
-  ];
-  const mats: THREE.Matrix4[] = [];
-  const tints: THREE.Color[] = [];
-  const m = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  for (const c of clusters) {
-    const centre = ctx.ground(c.s, c.lateral);
-    for (let i = 0; i < c.count; i++) {
-      const x = centre.x + (rng() - 0.5) * c.spread * 2;
-      const y = -centre.z + (rng() - 0.5) * c.spread * 2;
-      if (ctx.terrain.distanceToTrack(x, y).distance < 30) continue;
-      const k = 0.8 + rng() * 0.7;
-      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), ctx.heading(c.s) + (rng() < 0.5 ? 0 : Math.PI / 2) + (rng() - 0.5) * 0.3);
-      m.compose(new THREE.Vector3(x, ctx.terrain.height(x, y) - 0.5, -y), q, new THREE.Vector3(k, k * (0.8 + rng() * 0.6), k));
-      mats.push(m.clone());
-      tints.push(facades[Math.floor(rng() * facades.length)]);
-    }
-  }
-  const bodies = new THREE.InstancedMesh(body, mat('#ffffff'), mats.length);
-  const roofs = new THREE.InstancedMesh(roof, mat('#5b4a44'), mats.length);
-  mats.forEach((mm, i) => {
-    bodies.setMatrixAt(i, mm);
-    bodies.setColorAt(i, tints[i]);
-    roofs.setMatrixAt(i, mm);
-  });
-  bodies.castShadow = roofs.castShadow = true;
-  group.add(bodies, roofs);
+      m.compose(new THREE.Vector3(t.x, terrain.height(t.x, t.y) - 0.2, -t.y), q, new THREE.Vector3(t.scale, t.scale * (0.9 + rng() * 0.35), t.scale));
+      leaves.setMatrixAt(i, m);
+      leaves.setColorAt(i, colors.pine.clone().lerp(colors.pineLight, rng()));
+      trunks?.setMatrixAt(i, m);
+    });
+    group.add(leaves);
+    if (trunks) group.add(trunks);
+  };
+  build(detailed, spots.filter((t) => t.near), true);
+  build(simple, spots.filter((t) => !t.near), false);
   return group;
 }
 
@@ -261,11 +230,11 @@ function buildTopHut(ctx: Placer): THREE.Group {
     part.castShadow = true;
     hut.add(part);
   }
-  hut.position.copy(ctx.ground(0, 9, -0.3));
-  const st = ctx.track.frame(0);
-  hut.position.x -= st.forward[0] * 10;
-  hut.position.z += st.forward[1] * 10;
-  hut.position.y = ctx.track.elevation(0) + 0.2;
+  // The octagonal pavilion mapped in OSM, 16 m behind the start.
+  const osm = OSM_NEAR.find((b) => b.id === OSM_IDS.topHut)!;
+  const radius = Math.max(...osm.p.map(([x, y]) => Math.hypot(x, y)));
+  hut.position.set(osm.c[0], ctx.track.elevation(0) + 0.2, -osm.c[1]);
+  hut.scale.set(radius / 4, 1, radius / 4);
   hut.rotation.y = ctx.heading(0);
   // A level snow platform for the start area and the waiting riders.
   const platform = new THREE.Mesh(new THREE.CylinderGeometry(16, 18, 3, 12), mat(colors.snow, { flatShading: false }));
@@ -273,47 +242,6 @@ function buildTopHut(ctx: Placer): THREE.Group {
   platform.receiveShadow = true;
   hut.add(platform);
   return hut;
-}
-
-/** The white Cresta Run clubhouse at Junction, with its tower and SMTC gate. */
-function buildClubhouse(ctx: Placer): THREE.Group {
-  const house = new THREE.Group();
-  const white = mat('#f3f3ef');
-  const glass = mat('#3b5876', { roughness: 0.15, metalness: 0.4 });
-  const lower = new THREE.Mesh(new THREE.BoxGeometry(14, 4, 7), white);
-  lower.position.y = 2;
-  const band = new THREE.Mesh(new THREE.BoxGeometry(14.1, 1.6, 7.1), glass);
-  band.position.y = 2.2;
-  const upper = new THREE.Mesh(new THREE.BoxGeometry(12, 3, 6), white);
-  upper.position.y = 5.5;
-  const upperBand = new THREE.Mesh(new THREE.BoxGeometry(12.1, 1.4, 6.1), glass);
-  upperBand.position.y = 5.4;
-  const tower = new THREE.Mesh(new THREE.BoxGeometry(4.5, 2.6, 4), white);
-  tower.position.set(-2, 8.3, 0);
-  const towerGlass = new THREE.Mesh(new THREE.BoxGeometry(4.6, 1.2, 4.1), glass);
-  towerGlass.position.set(-2, 8.4, 0);
-  const sign = new THREE.Mesh(
-    new THREE.PlaneGeometry(7, 0.9),
-    new THREE.MeshBasicMaterial({ map: signTexture('CRESTA RUN', '#f3f3ef', '#1d2430') }),
-  );
-  sign.position.set(0, 4.35, 3.06);
-  for (const part of [lower, band, upper, upperBand, tower, towerGlass, sign]) {
-    part.castShadow = true;
-    house.add(part);
-  }
-  // Orange SMTC gate panels by the entrance.
-  const logo = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}icon.svg`);
-  logo.colorSpace = THREE.SRGBColorSpace;
-  for (const dx of [-0.8, 0.8]) {
-    const panel = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({ map: logo }));
-    panel.position.set(5 + dx, 1.2, 4.6);
-    house.add(panel);
-  }
-  // Junction is on the run's right, facing the ice.
-  const ext = ctx.extent(JUNCTION_S);
-  house.position.copy(ctx.ground(JUNCTION_S + 6, ext.right - 16));
-  house.rotation.y = ctx.heading(JUNCTION_S) + Math.PI;
-  return house;
 }
 
 function buildBridge(ctx: Placer, s: number, name: string): THREE.Group {

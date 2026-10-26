@@ -206,3 +206,13 @@ body.debug #fps {
 body.debug #loading {
   transition: none;
 }
+
+#loading .credit {
+  position: absolute;
+  bottom: calc(var(--safe-bottom) + 16px);
+  left: 0;
+  right: 0;
+  text-align: center;
+  font: 11px system-ui, sans-serif;
+  opacity: 0.6;
+}
