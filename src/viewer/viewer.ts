@@ -28,6 +28,8 @@ const MODE_LABELS: Record<CameraMode, string> = {
   orbit: 'Orbit',
 };
 const SPEEDS = [1, 0.5, 0.25, 2];
+/** The descent behind the title, relative to a real ride. */
+const ATTRACT_SPEED = 1.5;
 const MPH = 2.23694;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -162,7 +164,8 @@ export class Viewer {
     if (this.attract && (this.s >= TRACK_LENGTH - 0.01 || !this.playing)) this.startFrom(JUNCTION_S, true);
     if (this.playing) {
       const speed = this.ghost.state(this.s).speed;
-      this.s = Math.min(TRACK_LENGTH, this.s + speed * dt * (this.attract ? 0.6 : SPEEDS[this.speedIndex]));
+      // Behind the title it plays at half as fast again as a real ride, to show more of the run.
+      this.s = Math.min(TRACK_LENGTH, this.s + speed * dt * (this.attract ? ATTRACT_SPEED : SPEEDS[this.speedIndex]));
       if (this.s >= TRACK_LENGTH) this.playing = false;
     }
     this.placeRider();
