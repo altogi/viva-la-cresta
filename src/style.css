@@ -852,9 +852,7 @@ body.selecting #select {
   left: 0;
   right: 0;
   bottom: 0;
-  max-height: 52%;
-  overflow-y: auto;
-  padding: 14px 16px calc(var(--safe-bottom) + 14px);
+  padding: 12px 16px calc(var(--safe-bottom) + 12px);
   background: var(--cream);
   color: var(--charcoal);
   border-radius: 14px 14px 0 0;
@@ -873,13 +871,6 @@ body.selecting #select {
   }
 }
 
-.select-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-}
 
 .select-panel h2 {
   font-family: var(--display);
@@ -887,20 +878,45 @@ body.selecting #select {
   text-transform: uppercase;
   letter-spacing: -0.5px;
   color: var(--accent);
-  margin: 0;
-  font-size: 20px;
+  margin: 0 0 6px;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+}
+
+/* Below the rider's card: a clear way to the next rider (swiping the card works too). */
+.switch-rider {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 10px 0;
+  padding: 6px;
+  border-radius: 12px;
+  background: #f3ede0;
+}
+
+.switch-rider > div {
+  text-align: center;
+}
+
+.switch-rider span {
+  font-family: var(--display);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 13px;
+  color: var(--accent);
 }
 
 .select-arrow {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 1px solid rgba(147, 3, 3, 0.25);
-  background: #fff;
-  color: var(--accent);
-  font-size: 24px;
+  width: 52px;
+  height: 44px;
+  border-radius: 10px;
+  border: 0;
+  background: var(--accent);
+  color: #fff;
+  font-size: 30px;
   line-height: 1;
-  padding: 0 0 3px;
+  padding: 0 0 4px;
 }
 
 .select-panel h3 {
@@ -940,7 +956,7 @@ body.selecting #select {
   display: flex;
   justify-content: center;
   gap: 8px;
-  margin: 8px 0 10px;
+  margin-top: 6px;
 }
 
 #select-dots button {
@@ -971,12 +987,6 @@ body.selecting #select {
   font-size: 14px;
 }
 
-.rider-bio {
-  font-family: var(--serif);
-  font-size: 13.5px;
-  color: #555;
-  margin: 4px 0 8px;
-}
 
 .rider-stats {
   display: grid;
@@ -1031,12 +1041,6 @@ body.selecting #select {
   color: #fff;
 }
 
-#select-toboggan-text {
-  font-family: var(--serif);
-  font-size: 13px;
-  color: #555;
-  margin: 8px 0 14px;
-}
 
 #select-done {
   width: 100%;
@@ -1054,39 +1058,15 @@ body.selecting #select {
 }
 
 /* Rider selection for a new career: no toboggan choice, more of the rider's story. */
-.rider-story {
-  display: none;
-  font-family: var(--serif);
-  font-size: 14px;
-  line-height: 1.4;
-  color: #444;
-}
 
-.rider-story p {
-  margin: 0 0 8px;
-}
 
-.rider-story b {
-  font-family: var(--display);
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--accent);
-  margin-right: 4px;
-}
 
-#select.career .rider-story {
-  display: block;
-}
 
-#select.career .toboggan-switch,
-#select.career #select-toboggan-text {
+#select.career .toboggan-switch {
   display: none;
 }
 
-#select.career .select-panel {
-  max-height: 56%;
-}
+
 
 #select.career #select-done {
   margin-top: 6px;
@@ -1591,4 +1571,11 @@ body.screen-hub #hub {
 .sheet-next {
   margin-top: 10px;
   font-weight: bold;
+}
+
+.rider-line {
+  font-family: var(--serif);
+  font-size: 17px;
+  color: var(--charcoal);
+  margin: 2px 0 10px;
 }

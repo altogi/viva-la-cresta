@@ -17,53 +17,39 @@ rng = random.Random(7)
 
 
 def spruce_branch_image(snow=0.5):
-    """A spruce branch seen from above: a main twig, side twigs, dense dark needles, snow on top."""
+    """A spruce bough seen from above: a dense, nearly opaque spray of dark needles with a ragged edge,
+    shaded darker towards the trunk, with snow lying along its upper half."""
     w, h = 512, 256
     img = np.zeros((h, w, 4), np.float32)
     cy = h * 0.5
-    needle = lambda: (0.035 + rng.random() * 0.04, 0.09 + rng.random() * 0.07, 0.06 + rng.random() * 0.04, 1)
-    twig = (0.25, 0.18, 0.12, 1)
-    # Main twig along the card, curving up at the tip.
-    pts = [(x, cy - 0.00025 * (x - w * 0.35) ** 2 * (x > w * 0.35)) for x in np.linspace(4, w - 10, 40)]
-    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
-        lib.stroke(img, x0, y0, x1, y1, twig, 5 - 3 * x0 / w)
-    # Side twigs, swept forward, each furred with needles.
-    for i in range(26):
-        t = 0.06 + i * 0.035
-        x0 = t * w
-        y0 = cy - 0.00025 * max(0, x0 - w * 0.35) ** 2
-        for side in (-1, 1):
-            length = (1 - t) * h * 0.5 * (0.7 + rng.random() * 0.4)
-            ang = math.radians(40 + rng.random() * 20)
-            x1 = x0 + math.cos(ang) * length
-            y1 = y0 + side * math.sin(ang) * length
-            lib.stroke(img, x0, y0, x1, y1, twig, 2.2)
-            for k in range(int(length / 3)):
-                u = k / max(1, length / 3)
-                px, py = x0 + (x1 - x0) * u, y0 + (y1 - y0) * u
-                for s2 in (-1, 1, -1, 1):
-                    a = ang * side + s2 * math.radians(40 + rng.random() * 45)
-                    nl = 9 + rng.random() * 8
-                    lib.stroke(img, px, py, px + math.cos(a) * nl, py + math.sin(a) * nl * 0.9, needle(), 2.0)
-    # Needles along the main twig too.
-    for k in range(160):
-        px = 8 + k * (w - 20) / 160
-        py = cy - 0.00025 * max(0, px - w * 0.35) ** 2
-        for s2 in (-1, 1):
-            a = s2 * math.radians(55 + rng.random() * 30)
-            lib.stroke(img, px, py, px + math.cos(a) * 11, py + math.sin(a) * 11, needle(), 1.8)
-    # Snow: heavy clumps resting on the branch, thickest near the trunk.
+    # The bough's outline: widest a third of the way out, tapering to the tip, slightly upturned.
+    def half_width(x):
+        u = x / w
+        return h * 0.47 * (np.sin(np.clip(u, 0, 1) * math.pi) ** 0.6) * (1 - 0.35 * u)
+    centre = lambda x: cy - 0.0002 * max(0, x - w * 0.4) ** 2
+    for _ in range(9000):
+        x = rng.random() * w * 0.98
+        hw = half_width(x)
+        y = centre(x) + (rng.random() * 2 - 1) * hw * (0.6 + 0.4 * rng.random())
+        a = math.radians(30 + rng.random() * 30) * (1 if y > centre(x) else -1)
+        nl = 7 + rng.random() * 9
+        u = x / w
+        shade = 0.6 + 0.6 * u + (rng.random() - 0.5) * 0.35
+        col = (0.03 * shade, (0.075 + rng.random() * 0.04) * shade, (0.05 + rng.random() * 0.02) * shade, 1)
+        lib.stroke(img, x, y, x + math.cos(a) * nl, y + math.sin(a) * nl, col, 2.2)
+    # The twig showing through near the trunk.
+    lib.stroke(img, 0, cy, w * 0.55, centre(w * 0.55), (0.2, 0.14, 0.1, 1), 4)
+    # Snow on the upper half of the bough (y < centre), in drifts, thickest near the trunk.
     if snow > 0:
-        covered = img[..., 3] > 0.3
-        ys, xs = np.nonzero(covered)
-        for _ in range(int(900 * snow)):
-            i = rng.randrange(len(xs))
-            x, y = xs[i], ys[i]
-            if rng.random() > 1.1 - x / w * 0.7 or (y > cy + 10 and rng.random() < 0.85):
+        for _ in range(int(700 * snow)):
+            x = rng.random() * w * 0.85
+            hw = half_width(x)
+            if rng.random() > 1.05 - x / w * 0.8:
                 continue
-            r = 3 + rng.random() * 8 * (1 - x / w * 0.5)
-            shade = 0.8 + rng.random() * 0.12
-            lib.blob(img, x, y, r, (shade, shade + 0.02, min(1, shade + 0.06), 1), soft=2.5)
+            y = centre(x) - rng.random() * hw * 0.85
+            r = 4 + rng.random() * 9 * (1 - x / w * 0.6)
+            v = 0.82 + rng.random() * 0.12
+            lib.blob(img, x, y, r, (v, v + 0.02, min(1, v + 0.07), 1), soft=2.5)
     return img
 
 
@@ -89,14 +75,14 @@ def larch_branch_image():
                 u = (k + 0.5) / (length / 8)
                 px, py = x0 + (x1 - x0) * u, y0 + (y1 - y0) * u
                 tone = rng.random()
-                col = (0.62 + tone * 0.25, 0.42 + tone * 0.15, 0.16 + tone * 0.06, 1)
-                for _ in range(14):
+                col = (0.55 + tone * 0.22, 0.3 + tone * 0.13, 0.1 + tone * 0.05, 1)
+                for _ in range(24):
                     a = rng.random() * math.tau
-                    nl = 4 + rng.random() * 7
-                    lib.stroke(img, px, py, px + math.cos(a) * nl, py + math.sin(a) * nl, col, 1.7)
+                    nl = 5 + rng.random() * 9
+                    lib.stroke(img, px, py, px + math.cos(a) * nl, py + math.sin(a) * nl, col, 2.3)
     covered = img[..., 3] > 0.3
     ys, xs = np.nonzero(covered)
-    for _ in range(260):
+    for _ in range(140):
         i = rng.randrange(len(xs))
         lib.blob(img, xs[i], ys[i], 2 + rng.random() * 4, (0.93, 0.95, 0.98, 1), soft=2)
     return img
@@ -132,8 +118,8 @@ def build_tree(name, kind, height, seed, snowy=False):
     verts, faces, uv_points = [], [], []
     if kind == "spruce":
         first = 1.2 + r.random() * 0.8
-        spread = height * (0.2 + r.random() * 0.04)  # longest branch, near the bottom
-        step = 0.42
+        spread = height * (0.26 + r.random() * 0.05)  # longest branch, near the bottom
+        step = 0.5
     else:
         first = 2.5 + r.random() * 1.5
         spread = height * (0.2 + r.random() * 0.05)
@@ -160,7 +146,7 @@ def build_tree(name, kind, height, seed, snowy=False):
                 continue
             ln = length * (0.65 + r.random() * 0.65)
             bz = z + r.random() * 0.15
-            card(verts, faces, uv_points, (0, 0, bz), yaw, ln, ln * 0.62, droop, lift)
+            card(verts, faces, uv_points, (0, 0, bz), yaw, ln, ln * (0.85 if kind == "spruce" else 0.62), droop, lift)
             if r.random() < 0.6:
                 card(verts, faces, uv_points, (0, 0, bz), yaw + 0.15, ln * 0.85, ln * 0.5, droop + 0.05, lift, roll=math.radians(65))
         z += step * (0.85 + r.random() * 0.3) * (0.75 + 0.35 * (1 - t))
@@ -200,31 +186,10 @@ def build_tree(name, kind, height, seed, snowy=False):
         for k in range(seg):
             a, b = i * seg + k, i * seg + (k + 1) % seg
             tf.append((a, b, b + seg, a + seg))
-    bark_color = (0.2, 0.14, 0.1) if kind == "spruce" else (0.22, 0.17, 0.13)
+    bark_color = (0.2, 0.14, 0.1) if kind == "spruce" else (0.25, 0.18, 0.12)
     bark = lib.material(f"{kind}_bark", bark_color, 0.95)
     trunk = lib.mesh_object(f"{name}_trunk", tv, tf, None, bark, COLL, smooth=True)
     parts = [leaves, trunk]
-    if kind == "spruce":
-        # A dark core inside the crown, so it reads as a dense tree from a distance.
-        cv, cf = [], []
-        seg = 10
-        levels = [(first + 0.3, spread * 0.28), (first + (height - first) * 0.45, spread * 0.15), (first + (height - first) * 0.75, 0.05)]
-        for zz, rr in levels:
-            for k in range(seg):
-                a = k / seg * math.tau
-                jitter = 1 + (r.random() - 0.5) * 0.6
-                cv.append((math.cos(a) * rr * jitter, math.sin(a) * rr * jitter, zz))
-        cv.append((0, 0, first + (height - first) * 0.8))
-        for i in range(len(levels) - 1):
-            for k in range(seg):
-                a, b = i * seg + k, i * seg + (k + 1) % seg
-                cf.append((a, b, b + seg, a + seg))
-        tip = len(cv) - 1
-        last = (len(levels) - 1) * seg
-        for k in range(seg):
-            cf.append((last + k, last + (k + 1) % seg, tip))
-        core_mat = lib.material("spruce_core", (0.012, 0.03, 0.02), 1.0)
-        parts.append(lib.mesh_object(f"{name}_core", cv, cf, None, core_mat, COLL, smooth=True))
     return lib.join(parts, name)
 
 
@@ -245,7 +210,7 @@ far = []
 for src, name in ((trees[0], "spruce_far"), (trees[3], "larch_far")):
     for o in trees:
         o.hide_render = o is not src
-    img = lib.render_impostor(src, f"{name}.png", 512)
+    img = lib.render_impostor(src, f"{name}.png", 1024)
     h = src.dimensions.z * 1.04
     w = h / 2
     verts, faces, uvs = [], [], []
@@ -261,7 +226,8 @@ for o in trees:
     o.hide_render = False
 for i, t in enumerate(trees):
     t.location = (i * 9 - 18, 0, 0)
-lib.preview("trees.png", (0, -46, 9), (0, 0, 9), size=(1200, 700), lens=40)
+lib.preview("trees.png", (0, -46, 9), (0, 0, 9), size=(1200, 700), lens=40, sky=(0.35, 0.55, 0.9))
+lib.preview("trees_far.png", (0, -120, 6), (0, 0, 8), size=(1200, 500), lens=50, sky=(0.35, 0.55, 0.9))
 stats = {t.name: len(t.data.polygons) for t in trees}
 for t in trees:
     t.location = (0, 0, 0)

@@ -35,6 +35,9 @@ export interface RideInput {
 export const NO_INPUT: RideInput = { knives: false, steer: 0, rakeLeft: 0, rakeRight: 0, runTaps: 0 };
 
 export type StartStyle = 'lying' | 'running';
+
+/** The highest a rider can ride up a bank's wall (radians from the floor): never vertical. */
+export const MAX_CLIMB = 1.22;
 export type Phase = 'waiting' | 'running' | 'riding' | 'finished' | 'fallen';
 export type FallKind = 'fly-out' | 'over-wall' | 'crash' | 'wall';
 
@@ -259,7 +262,32 @@ export class RideSim {
       this.runOut(section);
       return;
     }
+    this.capClimb(section);
     this.checkFall(section, normal);
+  }
+
+  /**
+   * No riding a bank's wall at vertical: once a rider is as high as MAX_CLIMB, their outward speed is
+   * spent and they come back down it. (Low banks whose lip comes first can still throw them out.)
+   */
+  private capClimb(section: ReturnType<Track['section']>) {
+    const st = this.state;
+    const side = st.u >= 0 ? 1 : -1;
+    const wall = side > 0 ? section.left : section.right;
+    if (wall.radius < 0.3) return;
+    const phiMax = wall.height <= wall.radius ? Math.acos(1 - wall.height / wall.radius) : Math.PI / 2;
+    if (phiMax <= MAX_CLIMB) return;
+    const limit = section.floorWidth / 2 + wall.radius * MAX_CLIMB;
+    if (Math.abs(st.u) <= limit) return;
+    st.u = side * limit;
+    if (st.w * side > 0) {
+      // Turn the carve back along the bank, losing the outward part of the speed.
+      const speed = Math.hypot(st.v, st.w - st.slide);
+      st.heading = clamp(st.heading, -0.05, 0.05) - side * 0.05;
+      st.slide = 0;
+      st.v = speed * Math.cos(st.heading);
+      st.w = speed * Math.sin(st.heading);
+    }
   }
 
   /** After the finish: no falls, the walls only bump, and the foam cushion stops the rider. */

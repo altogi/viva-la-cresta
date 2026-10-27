@@ -2,7 +2,7 @@
 // and the chosen rider shown in 3D beside their toboggan at the Top.
 
 import * as THREE from 'three';
-import { RIDERS, TOBOGGANS, type RiderId, type RiderStats, type TobogganId } from '../sim/rider';
+import { RIDERS, type RiderId, type RiderStats, type TobogganId } from '../sim/rider';
 import type { Track } from '../sim/track';
 import type { World } from '../render/world';
 import { RiderModel, type IdleAction } from '../render/riderModel';
@@ -11,32 +11,20 @@ import { toThree } from '../render/util';
 import { flagUrl } from '../ui/flags';
 import { saveSelection, type Selection } from './selection';
 
-const PROFILES: Record<RiderId, { flag: string; line: string; bio: string; story: string; good: string; watch: string; action: IdleAction }> = {
+const PROFILES: Record<RiderId, { flag: string; line: string; action: IdleAction }> = {
   maximilian: {
     flag: 'Germany · 20',
     line: 'Light. Lanky. Lightning off the start.',
-    bio: 'Out at Drakula till four, on the ice by nine. Arms like a crane, legs like a gazelle. Not much of him to carry speed.',
-    story: "Munich money, St Moritz manners, and a grin that gets him into every party at the Kulm. He came for the nightlife and stayed for the ice. Light enough that the banks barely notice him, quick enough that he's halfway down before the bell stops ringing.",
-    good: 'Fastest off the start. Long reach for steering on the knives. Easy to slow down for Shuttlecock.',
-    watch: "Too light to carry speed down the straights: he has to win the race at the top.",
     action: 'comb',
   },
   adelaide: {
     flag: 'England · 25',
     line: 'Balanced. Fearless. No weak spots.',
-    bio: 'Cold plunge before breakfast, family chalet above the lake. Middle weight, middle agility, maximum nerve.',
-    story: "Third generation on the Cresta: her grandfather's name is on a board in the clubhouse and she means to put hers above it. She rides like she does everything else, cheerfully and flat out, and has never once been seen to hesitate at Shuttlecock.",
-    good: 'No weak spot anywhere: the all-rounder who can win from any start.',
-    watch: 'No single gift to lean on either. Every course has to be clean.',
     action: 'flirt',
   },
   remo: {
     flag: 'Switzerland · 50',
     line: 'Heavy. Hairy. Hard to stop.',
-    bio: 'Rides every day of the season. A rocket on the straights, a nightmare to slow down. Plan Shuttlecock early. Beer after.',
-    story: 'Born in Celerina, at the bottom of the run, and has ridden it every winter since the old wooden toboggans. Thirty years of Shuttlecock stories, most of them true. The Tower knows his laugh before they see him.',
-    good: 'All that weight: a rocket down Bledisloe Straight and the fastest at the finish.',
-    watch: 'Slow to move about on the toboggan and heavy to stop. Rake early, or meet the straw.',
     action: 'burp',
   },
 };
@@ -44,11 +32,6 @@ const PROFILES: Record<RiderId, { flag: string; line: string; bio: string; story
 /** Seconds between idle gestures, and how long each takes. */
 const ACTION_EVERY = 5.5;
 const ACTION_LENGTH = 1.9;
-
-const TOBOGGAN_TEXT: Record<TobogganId, string> = {
-  traditional: 'Steel frame and sliding cushion. Forgiving. Every rider starts on one.',
-  flattop: 'Carbon, flexible, shoulders down when forward. Faster, and very sensitive to every movement.',
-};
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -121,13 +104,8 @@ export class SelectMode {
       card.dataset.rider = id;
       card.innerHTML = `
         <div class="rider-name"><img class="flag" src="${flagUrl(LOOKS[id].flag)}" alt="" />${r.name}</div>
-        <div class="rider-flag">${p.flag} · ${p.line}</div>
-        <div class="rider-bio">${p.bio}</div>
-        <div class="rider-story">
-          <p>${p.story}</p>
-          <p><b>Strengths</b> ${p.good}</p>
-          <p><b>Watch out</b> ${p.watch}</p>
-        </div>
+        <div class="rider-flag">${p.flag}</div>
+        <div class="rider-line">${p.line}</div>
         <div class="rider-stats">${ratings(r)
           .map(([label, v]) => `<div class="stat"><span>${label}</span><i><b style="width:${Math.round(v * 100)}%"></b></i></div>`)
           .join('')}</div>`;
@@ -202,7 +180,6 @@ export class SelectMode {
   private refresh() {
     for (const dot of document.querySelectorAll<HTMLElement>('#select-dots button')) dot.classList.toggle('chosen', dot.dataset.rider === this.selection.rider);
     for (const b of document.querySelectorAll<HTMLElement>('[data-toboggan]')) b.classList.toggle('chosen', b.dataset.toboggan === this.selection.toboggan);
-    $('select-toboggan-text').textContent = `${TOBOGGANS[this.selection.toboggan].name}: ${TOBOGGAN_TEXT[this.selection.toboggan]}`;
     // Models are kept once built (and the others are built ahead, a frame at a time).
     const model = this.modelFor(this.selection.rider, this.selection.toboggan);
     if (model === this.preview) return;

@@ -387,14 +387,15 @@ export class Crowd {
   }
 
   /**
-   * Junction, as in the photographs: toboggans laid out in a row beside the run on the clubhouse side,
+   * Junction, as in the photographs: toboggans laid out in a row beside the run opposite the clubhouse,
    * riders in helmets waiting by them, and the clubhouse terrace lined with spectators.
    */
   private buildJunction() {
     const s0 = JUNCTION_S;
     const st = this.track.frame(s0);
     const club = OSM_NEAR.find((b) => b.id === OSM_IDS.clubhouse)!.c;
-    const side = Math.sign((club[0] - st.pos[0]) * st.left[0] + (club[1] - st.pos[1]) * st.left[1]) || 1;
+    // Riders get ready on the side of the run opposite the clubhouse.
+    const side = -(Math.sign((club[0] - st.pos[0]) * st.left[0] + (club[1] - st.pos[1]) * st.left[1]) || 1);
     const colors = ['#b3261e', '#d9a21a', '#1f4fa8', '#1d1d1f', '#b3261e', '#2f7d4a', '#d9a21a', '#7a1d1d'];
     for (let k = 0; k < 8; k++) {
       const s = s0 - 10 + k * 1.6;
