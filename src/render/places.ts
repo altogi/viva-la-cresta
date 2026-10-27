@@ -74,9 +74,13 @@ export function pathBridge(track: Track) {
 /**
  * The cutting at Stable Junction: the run passes deep between snow walls there, the road and the
  * ground level with the footbridge's deck above it (as in the photograph from the run). Height of
- * the ground above the run's floor, by distance down the run.
+ * the ground above the run's floor, by distance down the run; it is level out to CUTTING_FLAT
+ * metres from the run and eases back down to the hillside by CUTTING_EDGE.
  */
-export const CUTTING = { s0: 38, s1: 112, ramp: 16, height: 3.0 };
+export const CUTTING_FLAT = 18;
+export const CUTTING_EDGE = 52;
+
+export const CUTTING = { s0: 34, s1: 116, ramp: 28, height: 3.0 };
 
 export function cuttingHeight(s: number): number {
   const { s0, s1, ramp, height } = CUTTING;

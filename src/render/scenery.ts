@@ -14,6 +14,7 @@ import { buildTopHut } from './topHut';
 import { CUTTING, cuttingHeight, finishPlaces, pathBridge, platformFrame, PATH_BRIDGE } from './places';
 import { lips, surfaceAt } from '../sim/surface';
 import type { Terrain } from './terrain';
+import { trackSurfaceHeight } from './trackMesh';
 import { colors, mulberry32, toThree } from './util';
 
 const mat = (color: THREE.ColorRepresentation, opts: THREE.MeshStandardMaterialParameters = {}) =>
@@ -183,6 +184,8 @@ function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group
     [100, 180, -1],
     [322, 470, 1],
     [205, 258, -1],
+    [240, 322, 1],
+    [240, 322, -1],
     [688, 862, 1],
     [688, 862, -1],
   ];
@@ -376,8 +379,10 @@ function footpathAcross(ctx: Placer): THREE.Object3D {
       const z = dir * (span + d);
       for (const x of [-1.1, 1.1]) {
         v.set(x, 0, z).applyMatrix4(frame.matrixWorld);
-        // The ground is level with the deck here (the run is in a cutting): the path just goes on.
-        v.y = Math.max(ctx.terrain.height(v.x, -v.z), frame.position.y + deck - 0.05) + 0.04;
+        // The ground is level with the deck here (the run is in a cutting): the path just goes on,
+        // following the ground as it eases back down to the hillside further out.
+        const ground = ctx.terrain.height(v.x, -v.z);
+        v.y = (d < 3 ? Math.max(ground, frame.position.y + deck - 0.05) : ground) + 0.04;
         v.applyMatrix4(inv);
         positions.push(v.x, v.y, v.z);
       }
@@ -678,8 +683,12 @@ function buildFinishExit(ctx: Placer): THREE.Group {
  * from the run's lips to the ground above (raised to the footbridge's level), and along the right
  * a row of rough wooden posts with white cloth stretched between them.
  */
+/** Distances out from the cutting's lip of the snow laid over the ground beside it (m). */
+const SKIN = [0.6, 1.5, 3, 5, 8, 11, 14];
+
 function buildCutting(ctx: Placer): THREE.Group {
   const group = new THREE.Group();
+  group.name = 'cutting';
   const track = ctx.track;
   const wallPos: number[] = [];
   const wallIdx: number[] = [];
@@ -690,19 +699,25 @@ function buildCutting(ctx: Placer): THREE.Group {
     for (let s = CUTTING.s0; s <= CUTTING.s1 + 1e-6; s += 1) {
       const section = track.section(s);
       const lip = surfaceAt(section, lips(section)[side > 0 ? 'left' : 'right']);
-      const top = Math.max(lip.z, cuttingHeight(s) - 0.25);
-      // Lip, top of the wall (a little back, a little rounded), and out over the ground.
-      const points = [
-        v(s, lip.y, lip.z - 0.02),
-        v(s, lip.y + side * 0.18, top),
-        v(s, lip.y + side * 0.6, top + 0.12),
-        v(s, side * 9, top + 0.02),
-      ];
+      const top = Math.max(trackSurfaceHeight(track, s, lip.y + side * 0.18) ?? lip.z, cuttingHeight(s) - 0.25) + 0.02;
+      // Lip, top of the wall (a little back), then snow laid over the ground (finer than the
+      // terrain's grid) out to where the terrain itself begins, its edge tucked under it.
+      const points = [v(s, lip.y, lip.z - 0.02), v(s, lip.y + side * 0.18, top)];
+      for (const d of SKIN) {
+        const p = v(s, lip.y + side * d, 0);
+        // Where the ground lies below the lip (the cutting's ends) the snow follows the run's own
+        // embankment down to it, so the cutting fades into the run either side of it.
+        const ground = ctx.terrain.height(p.x, -p.z) + (d === SKIN[SKIN.length - 1] ? -0.15 : 0.08);
+        const bank = trackSurfaceHeight(track, s, lip.y + side * d);
+        p.y = bank === null ? ground : Math.max(ground, v(s, lip.y + side * d, bank + 0.03).y);
+        points.push(p);
+      }
       for (const p of points) wallPos.push(p.x, p.y, p.z);
       if (row > 0) {
-        const a = base + (row - 1) * 4;
-        const b = base + row * 4;
-        for (let k = 0; k < 3; k++) {
+        const n = 2 + SKIN.length;
+        const a = base + (row - 1) * n;
+        const b = base + row * n;
+        for (let k = 0; k < n - 1; k++) {
           if (side > 0) wallIdx.push(a + k, b + k, b + k + 1, a + k, b + k + 1, a + k + 1);
           else wallIdx.push(a + k, a + k + 1, b + k + 1, a + k, b + k + 1, b + k);
         }

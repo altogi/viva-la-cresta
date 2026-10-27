@@ -6,7 +6,8 @@ import * as THREE from 'three';
 import type { Station, Track } from '../sim/track';
 import { TERRAIN_BASE } from './trackMesh';
 import { colors, valueNoise } from './util';
-import { cuttingHeight } from './places';
+import { CUTTING_EDGE, CUTTING_FLAT, cuttingHeight } from './places';
+import { OSM_IDS, OSM_NEAR } from '../track/osm';
 
 const CELL = 6;
 const slopeTint = new THREE.Color('#c9d5e2');
@@ -15,6 +16,9 @@ const MARGIN = 450;
 const CORRIDOR = 6;
 const BLEND_START = 16;
 const BLEND_END = 140;
+/** Round the Junction hut the ground is level with its door this far out, then eases back by PAD_EDGE. */
+const PAD_FLAT = 5;
+const PAD_EDGE = 18;
 
 /** Spatial hash for nearest-centreline queries in the horizontal plane (reach ~70 m). */
 export class TrackIndex {
@@ -71,6 +75,8 @@ export class Terrain {
   private readonly centre: [number, number];
   private readonly leftDir: [number, number];
   readonly bounds: { minX: number; maxX: number; minY: number; maxY: number };
+  /** The level ground round the Junction hut: its footprint and the height of the door's sill. */
+  private readonly pad: { ring: [number, number][]; z: number };
 
   constructor(track: Track) {
     this.index = new TrackIndex(track);
@@ -88,6 +94,13 @@ export class Terrain {
       minY: Math.min(...ys) - MARGIN,
       maxY: Math.max(...ys) + MARGIN,
     };
+    const hut = OSM_NEAR.find((b) => b.id === OSM_IDS.junctionHut)!;
+    let floor = track.stations[0];
+    for (const st of track.stations) {
+      if (Math.hypot(st.pos[0] - hut.c[0], st.pos[1] - hut.c[1]) < Math.hypot(floor.pos[0] - hut.c[0], floor.pos[1] - hut.c[1])) floor = st;
+    }
+    // The hut's floor stands 0.3 m under the run's (as in clubhouse.ts), its door's sill 0.55 above that.
+    this.pad = { ring: hut.p.map(([x, y]) => [hut.c[0] + x, hut.c[1] + y]), z: floor.pos[2] - 0.3 + 0.5 };
     this.mesh = this.build();
   }
 
@@ -110,8 +123,16 @@ export class Terrain {
     if (!station || distance >= BLEND_END) return far;
     // Sits just under the track's embankment skirts, which hide the corridor's ragged edge.
     // At Stable Junction the ground rises to the footbridge: the run runs in a cutting there.
-    const near = station.pos[2] + Math.max(TERRAIN_BASE - 0.6, cuttingHeight(station.s) - 0.02);
-    return near + (far - near) * THREE.MathUtils.smoothstep(distance, BLEND_START, BLEND_END);
+    const cut = cuttingHeight(station.s) * (1 - THREE.MathUtils.smoothstep(distance, CUTTING_FLAT, CUTTING_EDGE));
+    const near = station.pos[2] + Math.max(TERRAIN_BASE - 0.6, cut - 0.02);
+    return this.level(x, y, near + (far - near) * THREE.MathUtils.smoothstep(distance, BLEND_START, BLEND_END));
+  }
+
+  /** Flatten the ground round the Junction hut, so its door opens onto level snow. */
+  private level(x: number, y: number, z: number) {
+    const d = distanceToRing(x, y, this.pad.ring);
+    if (d >= PAD_EDGE) return z;
+    return z + (this.pad.z - z) * (1 - THREE.MathUtils.smoothstep(d, PAD_FLAT, PAD_EDGE));
   }
 
   /** Ground height at any horizontal point. */
@@ -179,6 +200,22 @@ export class Terrain {
     mesh.name = 'terrain';
     return mesh;
   }
+}
+
+/** Distance from a point to a closed ring (0 inside it). */
+function distanceToRing(x: number, y: number, ring: [number, number][]): number {
+  let best = Infinity;
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [ax, ay] = ring[j];
+    const [bx, by] = ring[i];
+    if (ay > y !== by > y && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) inside = !inside;
+    const ex = bx - ax;
+    const ey = by - ay;
+    const t = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey || 1)));
+    best = Math.min(best, Math.hypot(ax + ex * t - x, ay + ey * t - y));
+  }
+  return inside ? 0 : best;
 }
 
 function fitPlane(stations: Station[]): [number, number, number] {
