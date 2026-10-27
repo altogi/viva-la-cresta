@@ -161,6 +161,11 @@ export class Sound {
   }
 
 
+  /** The context and the master volume, for the music (null until the first touch starts audio). */
+  musicContext(): { ctx: AudioContext; destination: AudioNode } | null {
+    return this.ctx ? { ctx: this.ctx, destination: this.master } : null;
+  }
+
   setMuted(muted: boolean) {
     this.muted = muted;
     if (this.ctx) this.master.gain.setTargetAtTime(muted ? 0 : 0.9, this.ctx.currentTime, 0.05);

@@ -16,6 +16,8 @@ import { RiderModel } from '../render/riderModel';
 import { Ragdoll } from '../render/ragdoll';
 import { FallDebris } from '../render/particles';
 import type { Crowd } from '../render/crowd';
+import type { WeatherView } from '../render/weather';
+import { adjust, Lag, MOODS, rollMoods, WEATHER, weatherFor, type Mood, type Weather } from './conditions';
 import { groundHeight } from '../render/ground';
 import { toThree } from '../render/util';
 import type { Sound } from '../audio/sound';
@@ -32,6 +34,10 @@ export interface RideSetup {
     title: string;
     /** A race course: a fall disqualifies. */
     race?: boolean;
+    /** The rider's first ride from Top: a crowd turns out for it. */
+    firstTop?: boolean;
+    /** The day's weather (announced in the hub as the day began). */
+    weather?: Weather | null;
     coach?: Coach;
     /** Extra lines on the fall card (advice after a first fall). */
     fallLines?: (kind: string, zone: string) => string[];
@@ -117,6 +123,12 @@ export class RideMode {
   private readonly riderPos = new THREE.Vector3();
   /** Visitors beside the run, who react to falls. */
   crowd: Crowd | null = null;
+  /** The day's weather on screen. */
+  weatherView: WeatherView | null = null;
+  /** The hangover's slow hands (no lag otherwise). */
+  private lag = new Lag(0);
+  /** This ride's own luck, good or bad. */
+  moods: Mood[] = [];
   /** Where the rider celebrates by the finish hut, once in (null until then). */
   private finishSpot: ReturnType<Crowd['finishSpot']> | null = null;
   /** This ride beat a best that already stood: Hello Hello! */
@@ -200,6 +212,20 @@ export class RideMode {
     this.setup = setup;
     this.crowd?.populate();
     this.crowd?.endFinish();
+    // A rider's first ride from Top (in a career, or the first ever in free rides) draws a crowd.
+    let firstTop = false;
+    if (setup.startS < 4) {
+      if (setup.career) firstTop = !!setup.career.firstTop;
+      else {
+        try {
+          firstTop = !localStorage.getItem('vlc-rode-top');
+          localStorage.setItem('vlc-rode-top', '1');
+        } catch {
+          /* storage unavailable: no occasion */
+        }
+      }
+    }
+    this.crowd?.topEvent(firstTop);
     this.finishSpot = null;
     this.hello = false;
     this.ragdoll.clear();
@@ -211,11 +237,18 @@ export class RideMode {
     this.model = new RiderModel(LOOKS[rider], toboggan);
     this.world.scene.add(this.model.root);
     this.bankHits = 0;
-    this.sim = new RideSim(this.track, RIDERS[rider], TOBOGGANS[toboggan], {
+    // The day's weather (free rides: the same all of today) and this ride's own luck.
+    const weather = setup.career ? setup.career.weather ?? null : freeRideWeather();
+    this.weatherView?.set(weather);
+    this.moods = rollMoods();
+    const adjusted = adjust(RIDERS[rider], TOBOGGANS[toboggan], weather, this.moods);
+    this.lag = new Lag(adjusted.lag);
+    this.sim = new RideSim(this.track, adjusted.rider, adjusted.toboggan, {
       startS: setup.startS,
       start: setup.start,
       steps: setup.steps,
       splitsAt: SPLITS,
+      rakeGrip: adjusted.rakeGrip,
     });
     this.controls.reset(false);
     this.controls.setRunning(false);
@@ -229,7 +262,14 @@ export class RideMode {
     document.body.classList.add('riding');
     $('ride-card').hidden = true;
     const hint = setup.start === 'running' ? 'Tap to start · then tap RUN to run' : 'Tap to start · lying start';
-    this.banner('Run Clear!', setup.career ? `${setup.career.title}<br>${hint}` : hint);
+    // Free rides announce the day's weather here; a career did so as the day began.
+    const notes = [
+      ...(weather && !setup.career ? [`<b>${WEATHER[weather].title}.</b> ${WEATHER[weather].text}`] : []),
+      ...this.moods.map((m) => `<b>${MOODS[m].title}.</b> ${MOODS[m].text}`),
+    ];
+    const line = `${setup.career ? `${setup.career.title}<br>${hint}` : hint}${notes.map((n) => `<span class="ride-note">${n}</span>`).join('')}`;
+    if (firstTop) this.banner('Top is good!', `Your first ride from Top: everyone has come to watch.<br>${line}`);
+    else this.banner('Run Clear!', line);
     this.result = null;
     // In a career the card leads on; there's no riding again straight away.
     $('ride-again').hidden = !!setup.career;
@@ -289,6 +329,7 @@ export class RideMode {
       this.simClock = 0;
       this.lastStride.t = -1;
       this.sim.release();
+      this.crowd?.cheerTop();
       this.stage = 'live';
       this.stageTime = 0;
       this.applyCam();
@@ -301,7 +342,7 @@ export class RideMode {
       this.simClock += dt;
       const input = this.autopilot
         ? autopilotInput(this.track, this.sim, this.autopilot, this.simClock, this.lastStride)
-        : this.controls.read(dt);
+        : this.lag.apply(this.controls.read(dt), dt);
       this.sim.update(dt, input);
       this.setup.career?.coach?.update({ stage: this.stage, s: this.sim.state.s, steer: input.steer, knives: input.knives, rake: Math.max(input.rakeLeft, input.rakeRight) }, realDt);
       const st = this.sim.state;
@@ -715,4 +756,10 @@ export class RideMode {
     $('ride-posture').classList.toggle('on-knives', st.posture > 0.5);
     $('zones').classList.toggle('active', this.stage === 'live');
   }
+}
+
+/** Free rides: today's weather, the same all day. */
+export function freeRideWeather(): Weather | null {
+  const d = new Date();
+  return weatherFor(`free-${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
 }

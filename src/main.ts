@@ -17,13 +17,15 @@ import { clearBadgeBackground } from './ui/badge';
 import { Crowd, setPeopleTemplates } from './render/crowd';
 import { RIDERS, TOBOGGANS } from './sim/rider';
 import { Viewer } from './viewer/viewer';
-import { RideMode, type RideSetup } from './game/rideMode';
+import { freeRideWeather, RideMode, type RideSetup } from './game/rideMode';
+import { WeatherView } from './render/weather';
 import { Sound } from './audio/sound';
+import { Music } from './audio/music';
 import { POLICIES } from './sim/autopilot';
 import { createTuningPanel } from './ui/tuning';
 
 /** Extra Blender models (public/models/<name>.glb) the scenery uses. */
-const MODELS: string[] = ['town', 'balloon', 'riders', 'junction', 'bridges', 'props', 'people'];
+const MODELS: string[] = ['town', 'balloon', 'riders', 'junction', 'bridges', 'props', 'people', 'tophut'];
 
 registerSW({ immediate: true });
 
@@ -69,6 +71,9 @@ async function start() {
   if (debug) Object.assign(window, { crowd });
   world.scene.add(crowd.group);
   ride.crowd = crowd;
+  const weather = new WeatherView(world);
+  ride.weatherView = weather;
+  weather.set(freeRideWeather());
   if (debug) {
     Object.assign(window, { world, track, viewer, ride, crowd });
     createTuningPanel();
@@ -87,6 +92,8 @@ async function start() {
   let mode: Mode = 'intro';
   /** Where the track viewer goes back to. */
   let viewerReturn: Mode = 'saves';
+  /** Called on every change of mode (the music plays off the ice). */
+  let onMode: (() => void) | null = null;
   const setMode = (next: Mode) => {
     if (mode === 'select' && next !== 'select') select.close();
     mode = next;
@@ -98,6 +105,7 @@ async function start() {
     const attract = next === 'menu' || next === 'intro' || next === 'saves' || next === 'hub';
     ghost.visible = attract || next === 'viewer';
     viewer.setAttract(attract);
+    onMode?.();
   };
   const setGhost = (sel: Selection) => {
     ghost.removeFromParent();
@@ -117,7 +125,41 @@ async function start() {
   for (const img of document.querySelectorAll<HTMLImageElement>('.badge, .badge-small')) clearBadgeBackground(img);
   // Phones only let sound start from a touch, and pause it again after a call, the lock screen or
   // a switch of app: any touch, click or key anywhere wakes it.
-  for (const type of ['pointerdown', 'touchend', 'click', 'keydown']) document.addEventListener(type, () => sound.start(), { capture: true, passive: true });
+  // Music in the menus and between rides (not on the ice), unless turned off.
+  const music = new Music(() => sound.musicContext());
+  let musicOn = true;
+  try {
+    musicOn = localStorage.getItem('vlc-music') !== 'off';
+  } catch {
+    /* storage unavailable: music on */
+  }
+  const musicButton = document.getElementById('music-toggle')!;
+  const updateMusic = () => {
+    musicButton.classList.toggle('off', !musicOn);
+    musicButton.setAttribute('aria-label', musicOn ? 'Music off' : 'Music on');
+    if (musicOn && mode !== 'ride') music.play();
+    else music.stop();
+  };
+  onMode = updateMusic;
+  musicButton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    musicOn = !musicOn;
+    try {
+      localStorage.setItem('vlc-music', musicOn ? 'on' : 'off');
+    } catch {
+      /* not remembered */
+    }
+    updateMusic();
+  });
+  for (const type of ['pointerdown', 'touchend', 'click', 'keydown'])
+    document.addEventListener(
+      type,
+      () => {
+        sound.start();
+        updateMusic();
+      },
+      { capture: true, passive: true },
+    );
   document.getElementById('intro')!.addEventListener('click', () => sound.start());
   document.getElementById('new-game')!.addEventListener('click', () => sound.start());
 
@@ -167,6 +209,7 @@ async function start() {
     else if (mode === 'select') select.update(dt);
     else viewer.update(dt);
     crowd.update(dt, mode === 'ride' ? ride.riderPosition : null);
+    weather.update(dt);
     world.renderer.render(world.scene, world.camera);
     if (debug) {
       frames++;

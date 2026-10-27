@@ -1671,3 +1671,280 @@ body.screen-hub #hub {
 }
 
 
+
+/* ---------- The club's race calendar ---------- */
+#calendar {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  overflow-y: auto;
+  background: #fffaf2;
+  color: var(--charcoal);
+  padding: calc(var(--safe-top) + 12px) 12px calc(var(--safe-bottom) + 12px);
+}
+
+body.calendar-open #calendar {
+  display: block;
+}
+
+.cal-bar {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  max-width: 1200px;
+  margin: 0 auto 10px;
+}
+
+#calendar button {
+  border: 0;
+  border-radius: 2px;
+  background: #f1ede6;
+  color: var(--charcoal);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 7px 9px;
+  min-height: 32px;
+}
+
+#cal-month {
+  margin: 0;
+  text-align: center;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(20px, 5vw, 30px);
+  color: var(--charcoal);
+}
+
+.cal-nav {
+  display: flex;
+  gap: 2px;
+}
+
+#cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.cal-dow {
+  font-family: var(--serif);
+  font-size: 13px;
+  padding: 4px 2px;
+}
+
+.cal-day {
+  min-height: 64px;
+  background: #f3f0ea;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 4px;
+}
+
+.cal-day.empty {
+  background: none;
+}
+
+.cal-day.off {
+  opacity: 0.45;
+}
+
+.cal-day.past .cal-num {
+  color: #aaa;
+}
+
+.cal-day.today {
+  outline: 2px solid var(--accent);
+}
+
+.cal-num {
+  font-family: var(--serif);
+  font-size: 14px;
+  padding: 4px 6px 3px;
+  border-bottom: 2px solid #e6e2da;
+  margin-bottom: 2px;
+}
+
+.cal-event {
+  margin: 0 2px;
+  padding: 3px 4px;
+  background: #7e1a0e;
+  color: #fff;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 9px;
+  line-height: 1.15;
+  text-transform: uppercase;
+  word-break: break-word;
+}
+
+.cal-event.club {
+  background: #b9a89a;
+}
+
+.cal-event small {
+  display: block;
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.cal-foot {
+  max-width: 1200px;
+  margin: 12px auto 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--serif);
+  font-size: 13px;
+}
+
+.cal-key::before {
+  content: '';
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  vertical-align: -1px;
+  background: #7e1a0e;
+}
+
+.cal-key.club::before {
+  background: #b9a89a;
+}
+
+#calendar #cal-close {
+  margin-left: auto;
+  background: var(--accent);
+  color: #fff;
+  padding: 0 22px;
+}
+
+@media (min-width: 760px) {
+  .cal-day {
+    min-height: 92px;
+  }
+  .cal-event {
+    font-size: 11px;
+    padding: 4px 6px;
+  }
+  .cal-num {
+    font-size: 17px;
+  }
+}
+
+/* The day's weather in the hub, and notes on the ride's start banner. */
+#hub-weather {
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--gold);
+  background: #fff;
+  font-family: var(--serif);
+  font-size: 14px;
+}
+
+#hub-weather b {
+  display: block;
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+#ride-banner .ride-note {
+  display: block;
+  max-width: 420px;
+  margin: 10px auto 0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+/* Music on/off: a small round button in the corner, off the ice. */
+#music-toggle {
+  position: fixed;
+  top: calc(var(--safe-top) + 10px);
+  left: 10px;
+  z-index: 30;
+  width: 38px;
+  height: 38px;
+  padding: 9px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(36, 40, 42, 0.45);
+  color: #fff;
+  backdrop-filter: blur(4px);
+}
+
+#music-toggle svg {
+  width: 100%;
+  height: 100%;
+}
+
+#music-toggle .slash {
+  display: none;
+}
+
+#music-toggle.off .slash {
+  display: inline;
+}
+
+body.riding #music-toggle,
+body.selecting #music-toggle,
+body.viewing #music-toggle,
+body.calendar-open #music-toggle {
+  display: none;
+}
+
+.cal-event {
+  hyphens: auto;
+  -webkit-hyphens: auto;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.cal-short {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  .cal-bar {
+    grid-template-columns: 1fr auto;
+  }
+  #cal-month {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  #cal-grid {
+    gap: 2px;
+  }
+  .cal-dow {
+    font-size: 11px;
+  }
+  .cal-day {
+    min-height: 54px;
+  }
+  .cal-num {
+    font-size: 12px;
+    padding: 3px 4px 2px;
+  }
+  .cal-event {
+    margin: 0 1px;
+    padding: 2px 2px;
+    font-size: 7.5px;
+    letter-spacing: -0.01em;
+  }
+  .cal-the,
+  .cal-long {
+    display: none;
+  }
+  .cal-short {
+    display: inline;
+  }
+}

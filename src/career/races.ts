@@ -1,10 +1,11 @@
-// The season's races: handicap races (one day, three courses, net of the Tower's handicap) and the
-// scratch majors (Curzon Cup, Brabazon Trophy, Morgan Cup, Grand National), each with a field of
+// The season's races, from the club's calendar: handicap races (three courses a day, net of Tower's
+// handicap) and the scratch majors (Curzon Cup, Morgan Cup, Brabazon Trophy, Grand National), each with a field of
 // NPC riders whose times, speeds and falls follow the Tower's real sheets (scaled to this run).
 
 import { mulberry32 } from '../render/util';
 import { npcName } from './names';
 import { SCRATCH_JUNCTION, SCRATCH_TOP, towerHandicap, type Career, type RaceEntry, type Start } from './career';
+import type { RiderId } from '../sim/rider';
 
 export interface Race {
   id: string;
@@ -20,21 +21,79 @@ export interface Race {
   /** Field strength: the best and slowest riders' average course times. */
   fast: number;
   slow: number;
+  /** Open only to some riders (the Swiss Championship to the Swiss), and why. */
+  only?: { riders: RiderId[]; why: string };
 }
 
+/** Season day of a date: the run opens on Thursday 17 December and closes on 28 February. */
+export function seasonDay(month: 'Dec' | 'Jan' | 'Feb', date: number): number {
+  return month === 'Dec' ? date - 17 : month === 'Jan' ? 15 + date - 1 : 46 + date - 1;
+}
+
+const jct = (id: string, name: string, day: number, field = 36, note?: string): Race => ({ id, name, note, start: 'junction', kind: 'handicap', days: 1, day, field, fast: 45, slow: 60 });
+const top = (id: string, name: string, day: number, field = 42): Race => ({ id, name, start: 'top', kind: 'handicap', days: 1, day, field, fast: 59.5, slow: 77 });
+
+/**
+ * The races a rider can enter, one a day, from the club's calendar (CALENDAR has everything on it):
+ * Junction handicaps until Top opens, the Curzon Cup at Junction, then the Top majors (the Morgan
+ * Cup, the Brabazon Trophy, the Grand National) among handicaps from both starts.
+ */
 export const RACES: Race[] = [
-  { id: 'celerina-bowl', name: 'The Celerina Bowl', start: 'junction', kind: 'handicap', days: 1, day: 6, field: 34, fast: 45, slow: 60 },
-  { id: 'curzon', name: 'The Curzon Cup', start: 'junction', kind: 'major', days: 2, day: 15, field: 21, fast: SCRATCH_JUNCTION - 0.2, slow: 48.5 },
-  { id: 'silver-chip', name: 'The Harjes Cartier Silver Chip', note: "(The Poor Man's Curzon)", start: 'junction', kind: 'handicap', days: 1, day: 17, field: 40, fast: 45.5, slow: 61 },
-  { id: 'engadine-plate', name: 'The Engadine Plate', start: 'junction', kind: 'handicap', days: 1, day: 24, field: 38, fast: 45, slow: 60 },
-  { id: 'brabazon', name: 'The Brabazon Trophy', start: 'top', kind: 'major', days: 2, day: 31, field: 20, fast: SCRATCH_TOP, slow: 64 },
-  { id: 'shuttlecock-plate', name: 'The Shuttlecock Plate', start: 'top', kind: 'handicap', days: 1, day: 38, field: 44, fast: 59.5, slow: 77 },
-  { id: 'morgan', name: 'The Morgan Cup', start: 'top', kind: 'major', days: 1, day: 44, field: 20, fast: SCRATCH_TOP, slow: 63.5 },
-  { id: 'badrutt', name: 'The Johannes Badrutt Memorial Trophy', start: 'top', kind: 'handicap', days: 1, day: 51, field: 48, fast: 59, slow: 78 },
-  { id: 'grand-national', name: 'The Grand National', start: 'top', kind: 'major', days: 2, day: 58, field: 20, fast: SCRATCH_TOP - 0.2, slow: 63 },
+  jct('bartley-bear', 'The Bartley Bear', seasonDay('Dec', 17), 30),
+  jct('lowe-portago', 'The Lowe Portago Challenge', seasonDay('Dec', 27)),
+  jct('nino-bibbia', 'The Nino Bibbia Challenge Cup', seasonDay('Dec', 28)),
+  jct('fairchilds-maccarthy', 'The Fairchilds MacCarthy Cup', seasonDay('Dec', 29)),
+  jct('bledisloe', 'The Bledisloe Cup', seasonDay('Jan', 1), 40),
+  jct('heaton', 'The Heaton Gold Cup', seasonDay('Jan', 2), 38),
+  jct('baron-oertzen', 'The Baron Oertzen Cup', seasonDay('Jan', 3)),
+  jct('lightning', 'The Lightning Cup', seasonDay('Jan', 6)),
+  { id: 'curzon', name: 'The Curzon Cup', start: 'junction', kind: 'major', days: 2, day: seasonDay('Jan', 9), field: 21, fast: SCRATCH_JUNCTION - 0.2, slow: 48.5 },
+  jct('escalante', 'The Escalante Cup', seasonDay('Jan', 13)),
+  jct('junction-calisch', 'The Junction Calisch', seasonDay('Jan', 16), 34),
+  { ...jct('swiss-championship', 'The Swiss Championship', seasonDay('Jan', 17), 24), only: { riders: ['remo'], why: 'Only Swiss riders.' } },
+  jct('stagni', 'The Stagni Cup', seasonDay('Jan', 20)),
+  jct('knapp', 'The Knapp Cup', seasonDay('Jan', 23)),
+  top('aris-vatimbella', 'The Aris Vatimbella Challenge Cup', seasonDay('Jan', 24)),
+  jct('harland', 'The Harland Trophy', seasonDay('Jan', 27)),
+  top('bott', 'The Bott Cup', seasonDay('Jan', 30)),
+  { id: 'morgan', name: 'The Morgan Cup', start: 'top', kind: 'major', days: 1, day: seasonDay('Jan', 31), field: 20, fast: SCRATCH_TOP, slow: 63.5 },
+  { id: 'brabazon', name: 'The Brabazon Trophy', start: 'top', kind: 'major', days: 2, day: seasonDay('Feb', 6), field: 20, fast: SCRATCH_TOP, slow: 64 },
+  jct('coppa-italia', "The Coppa d'Italia", seasonDay('Feb', 11)),
+  { id: 'grand-national', name: 'The Grand National', start: 'top', kind: 'major', days: 1, day: seasonDay('Feb', 13), field: 20, fast: SCRATCH_TOP - 0.2, slow: 63 },
+  top('badrutt', 'The Johannes Badrutt Memorial Trophy', seasonDay('Feb', 14), 48),
+  jct('glattfelder', 'The Glattfelder Cup', seasonDay('Feb', 17)),
+  { ...jct('claude-cartier', 'The Claude Cartier Challenge Cup', seasonDay('Feb', 19), 34), days: 2 },
+  top('gunter-sachs', 'The Gunter Sachs Challenge Cup', seasonDay('Feb', 21)),
+  jct('bonsai', 'The Bonsai Challenge', seasonDay('Feb', 26), 32),
+  jct('willoughby', 'The Willoughby Cup', seasonDay('Feb', 27)),
+  jct('payne', 'The Payne Cup', seasonDay('Feb', 28)),
 ];
 
-export const raceById = (id: string) => RACES.find((r) => r.id === id)!;
+/** Everything on the club's calendar, by season day: the races above and the club's other events. */
+export const CALENDAR: { day: number; name: string }[] = [
+  ...([
+    ['Dec', 17, 'The Bartley Bear'], ['Dec', 21, 'The University Challenge'], ['Dec', 27, 'The Lowe Portago Challenge'],
+    ['Dec', 28, 'The Nino Bibbia Challenge Cup'], ['Dec', 29, 'The Fairchilds MacCarthy Cup'], ['Dec', 31, 'Fathers + Sons and Brothers Races'],
+    ['Dec', 31, 'The Family Event'], ['Jan', 1, 'The Bledisloe Cup'], ['Jan', 1, "Children's"], ['Jan', 2, 'The Bucherer Trophy'],
+    ['Jan', 2, 'The Heaton Gold Cup'], ['Jan', 3, 'The Baron Oertzen Cup'], ['Jan', 6, 'The Lightning Cup'], ['Jan', 9, 'The Curzon Cup'],
+    ['Jan', 9, 'The Lorna Robertson Challenge Cup'], ['Jan', 10, 'The Curzon Cup'], ['Jan', 10, 'The Harjes Cartier Silver Chip'],
+    ['Jan', 10, 'The Lorna Robertson Challenge Cup'], ['Jan', 13, 'The Escalante Cup'], ['Jan', 16, 'The Junction Calisch'],
+    ['Jan', 16, 'The Calisch Grischun'], ['Jan', 17, 'The Swiss Championship'], ['Jan', 20, 'The Stagni Cup'], ['Jan', 23, 'The Knapp Cup'],
+    ['Jan', 24, 'The Aris Vatimbella Challenge Cup'], ['Jan', 25, 'The Army Championship (T)'], ['Jan', 27, 'The Harland Trophy'],
+    ['Jan', 27, 'The Inter Services Championship'], ['Jan', 27, "The Services' Silver Spoon"], ['Jan', 30, 'The Bott Cup'],
+    ['Jan', 30, 'The Hans Badrutt Challenge Cup'], ['Jan', 31, 'The Morgan Cup'], ['Feb', 3, 'Inter Club Event'], ['Feb', 5, 'Monobob'],
+    ['Feb', 6, 'The Brabazon Trophy'], ['Feb', 7, 'The Brabazon Trophy'], ['Feb', 7, 'The Roger Gibbs Challenge Cup'],
+    ['Feb', 11, "The Coppa d'Italia"], ['Feb', 11, "The Coppetta d'Italia"], ['Feb', 13, 'The Grand National'],
+    ['Feb', 13, 'The Ladies Grand National'], ['Feb', 14, 'The Johannes Badrutt Memorial Trophy'], ['Feb', 16, 'Seniors from Stream'],
+    ['Feb', 16, 'The Crawford Cup'], ['Feb', 16, 'The Julian Board Seniors Cup'], ['Feb', 17, 'The Glattfelder Cup'], ['Feb', 17, 'The Marsden Cup'],
+    ['Feb', 19, 'The Claude Cartier Challenge Cup'], ['Feb', 20, 'The Claude Cartier Challenge Cup'], ['Feb', 20, "The President's Race"],
+    ['Feb', 21, 'Junction Night Riding - Coffin'], ['Feb', 21, 'The Gunter Sachs Challenge Cup'], ['Feb', 24, 'Seiler Team Race'],
+    ['Feb', 25, 'End of Term Race'], ['Feb', 26, 'The Bonsai Challenge'], ['Feb', 26, 'The Combination Event'], ['Feb', 27, 'The Willoughby Cup'],
+    ['Feb', 28, 'The Nigel Moores Memorial Race'], ['Feb', 28, 'The Payne Cup'],
+  ] as const).map(([m, d, name]) => ({ day: seasonDay(m, d), name })),
+];
+
+export const raceById = (id: string) => RACES.find((r) => r.id === id);
 
 /** The race running on a season day (its first or a later day), if any. */
 export function raceOn(day: number): { race: Race; raceDay: number } | null {
@@ -49,6 +108,7 @@ export function upcoming(day: number, n = 3): Race[] {
 /** Why a rider can't enter a race, or null if they can. */
 export function cannotEnter(c: Career, race: Race): string | null {
   if (!c.member) return 'Supplementary List riders cannot race.';
+  if (race.only && !race.only.riders.includes(c.rider)) return race.only.why;
   if (race.start === 'top' && c.top !== 'yes') return 'Only riders who have qualified for Top.';
   return null;
 }

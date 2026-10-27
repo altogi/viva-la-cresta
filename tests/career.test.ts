@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { goal, handicap, newCareer, nextDay, nextPractice, recordPractice, startConversion, SEASON_DAYS, type Career } from '../src/career/career';
+import { dateOf, goal, handicap, newCareer, nextDay, nextPractice, recordPractice, startConversion, SEASON_DAYS, TOP_OPENS, type Career } from '../src/career/career';
 import { RACES, cannotEnter, npcField, raceOn, standings } from '../src/career/races';
 
 const ride = (c: Career, time: number | null) => recordPractice(c, nextPractice(c), time, time === null ? 'Shuttlecock' : null, 60);
@@ -85,6 +85,11 @@ describe('career progression', () => {
     c.toboggan = 'flattop';
     for (const t of [46.5, 48, 46.8, 46.9]) ride(c, t);
     expect(c.top).toBe('converting');
+    // Top isn't open until 11 January: Junction till then, and those rides don't count towards Top.
+    expect(nextPractice(c)).toMatchObject({ start: 'junction' });
+    ride(c, 46);
+    expect(c.conversion?.lying).toBe(1);
+    c.day = TOP_OPENS;
     expect(nextPractice(c)).toMatchObject({ start: 'top', style: 'lying' });
   });
 
@@ -110,11 +115,18 @@ describe('career progression', () => {
 });
 
 describe('races', () => {
-  it('runs the majors in order through the season, ending with the Grand National', () => {
-    const majors = RACES.filter((r) => r.kind === 'major').map((r) => r.id);
-    expect(majors).toEqual(['curzon', 'brabazon', 'morgan', 'grand-national']);
-    expect(RACES.at(-1)!.id).toBe('grand-national');
-    expect(raceOn(RACES[1].day + 1)?.raceDay).toBe(1);
+  it('runs the season from 17 December to 28 February, the majors on their dates, Top races only once Top is open', () => {
+    const majors = RACES.filter((r) => r.kind === 'major').map((r) => [r.id, dateOf(r.day).short]);
+    expect(majors).toEqual([['curzon', '9 Jan'], ['morgan', '31 Jan'], ['brabazon', '6 Feb'], ['grand-national', '13 Feb']]);
+    expect(dateOf(0).label).toBe('Thursday 17th December');
+    expect(dateOf(SEASON_DAYS - 1).short).toBe('28 Feb');
+    expect(dateOf(TOP_OPENS).short).toBe('11 Jan');
+    const curzon = RACES.find((r) => r.id === 'curzon')!;
+    expect(raceOn(curzon.day + 1)?.raceDay).toBe(1);
+    for (const r of RACES.filter((r) => r.start === 'top')) expect(r.day).toBeGreaterThanOrEqual(TOP_OPENS);
+    // One race a day.
+    const days = RACES.flatMap((r) => Array.from({ length: r.days }, (_, k) => r.day + k));
+    expect(new Set(days).size).toBe(days.length);
   });
 
   it('keeps SL riders out, and Top races for riders qualified for Top', () => {
@@ -134,13 +146,13 @@ describe('races', () => {
     expect(fell).toBeGreaterThanOrEqual(0);
     expect(fell).toBeLessThan(race.field / 3);
     const gn = RACES.find((r) => r.id === 'grand-national')!;
-    const best = standings(gn, npcField(gn, 3), 2)[0];
-    expect(best.total! / 6).toBeGreaterThan(gn.fast - 1);
-    expect(best.total! / 6).toBeLessThan(gn.fast + 1.5);
+    const best = standings(gn, npcField(gn, 3), gn.days)[0];
+    expect(best.total! / (3 * gn.days)).toBeGreaterThan(gn.fast - 1);
+    expect(best.total! / (3 * gn.days)).toBeLessThan(gn.fast + 1.5);
   });
 
   it('nets handicap races at three handicaps per day', () => {
-    const race = RACES.find((r) => r.id === 'celerina-bowl')!;
+    const race = RACES.find((r) => r.id === 'bledisloe')!;
     const field = npcField(race, 11);
     const row = standings(race, field, 1).find((r) => r.net !== null)!;
     expect(row.net).toBeCloseTo(row.total! - 3 * row.entrant.handicap, 2);

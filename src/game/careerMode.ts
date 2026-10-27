@@ -19,10 +19,11 @@ import {
   type Career,
   type Setup,
 } from '../career/career';
-import { cannotEnter, fallCode, fastestOfDay, npcField, playerEntrant, raceOn, standings, upcoming, type Entrant, type Race } from '../career/races';
+import { CALENDAR, RACES, cannotEnter, fallCode, fastestOfDay, npcField, playerEntrant, raceOn, standings, upcoming, type Entrant, type Race } from '../career/races';
 import { deleteCareer, loadSaves, newId, nextGameName, storeCareer } from '../career/saves';
 import { Coach, fallAdvice } from './coach';
 import type { RideMode, RideResult, RideSetup } from './rideMode';
+import { WEATHER, weatherFor } from './conditions';
 import type { SelectMode } from './selectMode';
 import type { Selection } from './selection';
 
@@ -51,6 +52,12 @@ export class CareerMode {
       this.hub();
     });
     $('hub-games').addEventListener('click', () => this.saves());
+    $('hub-calendar').addEventListener('click', () => this.openCalendar());
+    $('cal-close').addEventListener('click', () => document.body.classList.remove('calendar-open'));
+    $('cal-prev').addEventListener('click', () => this.drawCalendar(this.calMonth - 1));
+    $('cal-next').addEventListener('click', () => this.drawCalendar(this.calMonth + 1));
+    $('cal-start').addEventListener('click', () => this.drawCalendar(0));
+    $('cal-today').addEventListener('click', () => this.drawCalendar(this.monthOf(this.career?.day ?? 0)));
     $('sheet-close').addEventListener('click', () => {
       $('sheet').hidden = true;
       this.afterSheet?.();
@@ -58,6 +65,69 @@ export class CareerMode {
   }
 
   private afterSheet: (() => void) | null = null;
+
+  /** The same all day: one day in ten hot, one cold, one snowing. */
+  private weatherToday() {
+    const c = this.career!;
+    return weatherFor(`${c.id}-${c.season}-${c.day}`);
+  }
+
+  // ---------- The club's calendar ----------
+
+  /** The month shown: 0 December, 1 January, 2 February. */
+  private calMonth = 0;
+
+  private monthOf(day: number) {
+    return day < 15 ? 0 : day < 46 ? 1 : 2;
+  }
+
+  private openCalendar() {
+    document.body.classList.add('calendar-open');
+    this.drawCalendar(this.monthOf(this.career?.day ?? 0));
+  }
+
+  /** A month of the season as the club prints it: Monday first, the events in each day. */
+  private drawCalendar(month: number) {
+    this.calMonth = Math.max(0, Math.min(2, month));
+    const c = this.career;
+    const season = c?.season ?? 1;
+    const opening = dateOf(0, season);
+    $('cal-start').textContent = `${opening.year} season start`;
+    const first = new Date(Date.UTC(opening.year + (this.calMonth > 0 ? 1 : 0), (11 + this.calMonth) % 12, 1));
+    $('cal-month').textContent = first.toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    const days = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+    const lead = (first.getUTCDay() + 6) % 7; // Monday first
+    const grid = $('cal-grid');
+    grid.replaceChildren();
+    for (const name of ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) grid.append(Object.assign(document.createElement('div'), { className: 'cal-dow', textContent: name }));
+    for (let k = 0; k < lead; k++) grid.append(Object.assign(document.createElement('div'), { className: 'cal-day empty' }));
+    const msDay = 86400000;
+    for (let d = 1; d <= days; d++) {
+      const date = Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), d);
+      const day = Math.round((date - opening.date.getTime()) / msDay);
+      const cell = document.createElement('div');
+      const open = day >= 0 && day < 74;
+      cell.className = `cal-day${open ? '' : ' off'}${c && day < c.day ? ' past' : ''}${c && day === c.day ? ' today' : ''}`;
+      cell.append(Object.assign(document.createElement('div'), { className: 'cal-num', textContent: String(d) }));
+      for (const ev of CALENDAR.filter((e) => e.day === day)) {
+        // Races the game runs are the ones a rider can enter; the rest are the club's own events.
+        const race = RACES.find((rc) => rc.name === ev.name && day >= rc.day && day < rc.day + rc.days);
+        const el = document.createElement('div');
+        el.className = `cal-event${race ? '' : ' club'}`;
+        // On a phone the "The" goes, and the race's format shortens.
+        const the = ev.name.startsWith('The ');
+        el.innerHTML = `${the ? '<span class="cal-the">The </span>' : ''}${(the ? ev.name.slice(4) : ev.name).replace(/&/g, '&amp;').replace(/</g, '&lt;')}`;
+        if (race) {
+          const why = c ? cannotEnter(c, race) : null;
+          const small = document.createElement('small');
+          small.innerHTML = `<span class="cal-long">${race.start === 'top' ? 'Top' : 'Junction'} · ${race.kind === 'major' ? 'scratch' : 'handicap'}${why && race.only ? ' · ' + why : ''}</span><span class="cal-short">${race.start === 'top' ? 'Top' : 'Jct'}${race.kind === 'major' ? ' · Scr' : ''}</span>`;
+          el.append(small);
+        }
+        cell.append(el);
+      }
+      grid.append(cell);
+    }
+  }
 
   intro() {
     this.show('intro');
@@ -137,6 +207,12 @@ export class CareerMode {
     $('hub-rider').innerHTML = `<img class="flag" src="${flagUrl(LOOKS[c.rider].flag)}" alt="" />${RIDERS[c.rider].name} <small>${c.member ? 'Member' : 'SL'}</small>`;
     $('hub-date').textContent = `${date.label} · Season ${c.season}`;
     $('hub-goal').textContent = goal(c);
+    // The day's weather, announced as the run opens.
+    const weather = this.weatherToday();
+    this.ride.weatherView?.set(weather);
+    const wEl = $('hub-weather');
+    wEl.hidden = !weather;
+    if (weather) wEl.innerHTML = `<b>${WEATHER[weather].title}</b> ${WEATHER[weather].text}`;
 
     // Today: a race, or practice.
     const today = raceOn(c.day);
@@ -186,7 +262,7 @@ export class CareerMode {
       : '<div class="muted">—</div>';
     $('hub-races').innerHTML = upcoming(c.day)
       .map((r) => `<div><span>${dateOf(r.day).short} · ${r.name}</span><b>${r.start === 'top' ? 'Top' : 'Jct'} · ${r.kind === 'major' ? 'Scr' : 'H’cap'}</b></div>`)
-      .join('') || '<div class="muted">The season is over: next season starts on 26 December.</div>';
+      .join('') || '<div class="muted">The season is over: next season starts on 17 December.</div>';
     const won = c.results.filter((r) => r.position === 1).length;
     $('hub-record').textContent = c.results.length ? `${c.results.length} race${c.results.length > 1 ? 's' : ''}, ${won} won${c.gnWon ? ' · Grand National winner' : ''}` : '';
     this.show('hub');
@@ -273,6 +349,8 @@ export class CareerMode {
       career: {
         title,
         race,
+        firstTop: setup.start === 'top' && !c.rides.some((r) => r.start === 'top'),
+        weather: this.weatherToday(),
         coach,
         fallLines: c.seenFallHelp ? undefined : fallAdvice,
         onDone: (r) => onDone(r),
@@ -414,7 +492,7 @@ export class CareerMode {
       <div class="sheet-race">${race.name.toUpperCase()}</div>
       ${race.note ? `<div class="sheet-note">${race.note}</div>` : ''}
       <div class="sheet-start">(${race.start === 'top' ? 'Top' : 'Junction'}${handicapRace ? ', Handicap' : ''})</div>
-      <div class="sheet-date">${dateOf(seasonDay).label} 2026</div>
+      <div class="sheet-date">${dateOf(seasonDay, this.career!.season).label} ${dateOf(seasonDay, this.career!.season).year}</div>
       ${dayName ? `<div class="sheet-day">${dayName}:</div>` : ''}
       <table>${head}${body}</table>
       <div class="sheet-foot">

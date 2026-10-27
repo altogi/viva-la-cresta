@@ -25,6 +25,9 @@
       <p class="tap">Tap to start</p>
     </section>
 
+    <!-- Music on and off, off the ice -->
+    <button id="music-toggle" aria-label="Music off"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V5l11-2v13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6" cy="18" r="3" fill="currentColor"/><circle cx="17" cy="16" r="3" fill="currentColor"/><line class="slash" x1="3" y1="3" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+
     <!-- Saved games -->
     <section id="saves" class="screen">
       <div class="panel">
@@ -48,6 +51,7 @@
           <button id="hub-games" class="quiet">Games</button>
         </div>
         <div id="hub-date"></div>
+        <div id="hub-weather" hidden></div>
         <p id="hub-goal"></p>
         <div id="hub-today"></div>
         <div id="hub-choices"></div>
@@ -60,7 +64,26 @@
         <div id="hub-bests" class="hub-list"></div>
         <h3>Coming up</h3>
         <div id="hub-races" class="hub-list"></div>
+        <button id="hub-calendar">Race calendar</button>
         <p id="hub-record" class="muted"></p>
+      </div>
+    </section>
+
+    <!-- The club's calendar for the season, a month at a time -->
+    <section id="calendar">
+      <div class="cal-bar">
+        <button id="cal-start">Season start</button>
+        <h2 id="cal-month"></h2>
+        <div class="cal-nav">
+          <button id="cal-prev">Prev</button>
+          <button id="cal-next">Next</button>
+          <button id="cal-today">Today</button>
+        </div>
+      </div>
+      <div id="cal-grid"></div>
+      <div class="cal-foot">
+        <span class="cal-key open">Races you can enter</span><span class="cal-key club">Other club events</span>
+        <button id="cal-close" class="primary">Close</button>
       </div>
     </section>
 

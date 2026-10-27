@@ -170,6 +170,10 @@ M["snow"] = lib.material("roof_snow", (0.93, 0.95, 0.99), 0.85)
 M["trim"] = lib.material("trim", (0.95, 0.95, 0.93), 0.6)
 M["plinth"] = lib.material("plinth", (0.55, 0.53, 0.5), 0.95)
 M["roof_edge"] = lib.material("roof_edge", (0.28, 0.24, 0.22), 0.8)
+M["quoin"] = lib.material("quoin", (0.62, 0.62, 0.6), 0.9)
+M["frieze"] = lib.material("frieze", (0.45, 0.46, 0.47), 0.9)
+M["door"] = lib.material("door", (0.26, 0.16, 0.09), 0.7)
+M["stone"] = lib.material("chimney_stone", (0.4, 0.38, 0.36), 0.95)
 
 
 class Builder:
@@ -198,9 +202,9 @@ class Builder:
         self.uvs += list(uv)
         self.mats.append(self.mat(m))
 
-    def box(self, x0, x1, y0, y1, z0, z1, m):
+    def box(self, x0, x1, y0, y1, z0, z1, m, bottom=True):
         p = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0), (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
-        for f in ((0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7), (4, 5, 6, 7), (0, 3, 2, 1)):
+        for f in ((0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7), (4, 5, 6, 7)) + (((0, 3, 2, 1),) if bottom else ()):
             self.quad(*[p[k] for k in f], m)
 
     def wall(self, a, b, z0, z1, m, u_off=0.0):
@@ -285,7 +289,7 @@ def roof(bld, hl, hw, top, kind, overhang, pitch_deg, gable_mat, edge_mat):
     return ridge_z
 
 
-def balconies(bld, hl, hw, levels, base_z, span, mat="wood", every=1, sides=(-1, 1)):
+def balconies(bld, hl, hw, levels, base_z, span, mat="wood", every=1, sides=(-1, 1), snowy=True):
     """Timber balconies stacked on the long sides: slab, plank railing, brackets."""
     for side in sides:
         y = side * hw
@@ -300,11 +304,68 @@ def balconies(bld, hl, hw, levels, base_z, span, mat="wood", every=1, sides=(-1,
             for xe in (x0, x1):
                 bld.box(xe - 0.03, xe + 0.03, min(y, rail_y), max(y, rail_y), z, z + 1.0, mat)
             bld.box(x0, x1, min(rail_y, rail_y + 0.1 * side), max(rail_y, rail_y + 0.1 * side), z + 1.0, z + 1.06, "wood_light")
+            if snowy:
+                bld.box(x0, x1, min(rail_y - 0.04 * side, rail_y + 0.14 * side), max(rail_y - 0.04 * side, rail_y + 0.14 * side), z + 1.06, z + 1.16, "snow", bottom=False)
+
+
+def chimney(bld, x, y, z0, z1, m):
+    """A plastered chimney stack through the roof, a stone cap with snow on it."""
+    w = 0.38
+    bld.box(x - w, x + w, y - w, y + w, z0, z1, m, bottom=False)
+    bld.box(x - w - 0.1, x + w + 0.1, y - w - 0.1, y + w + 0.1, z1, z1 + 0.14, "stone")
+    bld.box(x - w - 0.06, x + w + 0.06, y - w - 0.06, y + w + 0.06, z1 + 0.14, z1 + 0.32, "snow", bottom=False)
+
+
+def drift(bld, hl, hw):
+    """Snow banked against the walls all round, so the house sits in the snow rather than on it."""
+    out, up, down = 1.3, 0.35, -0.6
+    c = [(-hl, -hw), (hl, -hw), (hl, hw), (-hl, hw)]
+    o = [(-hl - out, -hw - out), (hl + out, -hw - out), (hl + out, hw + out), (-hl - out, hw + out)]
+    for i in range(4):
+        n = (i + 1) % 4
+        bld.quad((o[i][0], o[i][1], down), (o[n][0], o[n][1], down), (c[n][0], c[n][1], up), (c[i][0], c[i][1], up), "snow")
+
+
+def quoins(bld, hl, hw, top):
+    """Painted corner stones up the corners (Engadin sgraffito houses), alternating long and short."""
+    z = 0.6
+    k = 0
+    while z + 0.55 < top - 0.8:
+        long = 0.6 if k % 2 == 0 else 0.34
+        for cx, cy in ((-hl, -hw), (hl, -hw), (hl, hw), (-hl, hw)):
+            sx, sy = (1 if cx < 0 else -1), (1 if cy < 0 else -1)
+            e = 0.015
+            # On the long side, and on the end, at each corner.
+            a, b = (cx, cy - sy * e), (cx + sx * long, cy - sy * e)
+            bld.quad((a[0], a[1], z), (b[0], b[1], z), (b[0], b[1], z + 0.55), (a[0], a[1], z + 0.55), "quoin")
+            a, b = (cx - sx * e, cy), (cx - sx * e, cy + sy * (0.94 - long))
+            bld.quad((a[0], a[1], z), (b[0], b[1], z), (b[0], b[1], z + 0.55), (a[0], a[1], z + 0.55), "quoin")
+        z += 0.62
+        k += 1
+
+
+def frieze(bld, hl, hw, top):
+    """A grey painted band under the eaves, all round."""
+    e = 0.012
+    c = [(-hl, -hw - e), (hl, -hw - e), (hl + e, -hw), (hl + e, hw), (hl, hw + e), (-hl, hw + e), (-hl - e, hw), (-hl - e, -hw)]
+    for a, b in ((c[0], c[1]), (c[2], c[3]), (c[4], c[5]), (c[6], c[7])):
+        bld.quad((a[0], a[1], top - 0.75), (b[0], b[1], top - 0.75), (b[0], b[1], top - 0.35), (a[0], a[1], top - 0.35), "frieze")
+
+
+def front_door(bld, hl, hw):
+    """A timber door in the long side with a little snow-laden canopy over it."""
+    y = -hw - 0.02
+    bld.quad((-0.55, y, 0.6), (0.55, y, 0.6), (0.55, y, 2.75), (-0.55, y, 2.75), "door")
+    bld.box(-0.9, 0.9, -hw - 0.9, -hw, 3.05, 3.17, "wood")
+    bld.box(-0.9, 0.9, -hw - 0.9, -hw, 3.17, 3.37, "snow", bottom=False)
+    bld.box(-1.0, 1.0, -hw - 1.2, -hw, 0.3, 0.6, "stone", bottom=False)
 
 
 def building(b):
     hl, hw = b["length"] / 2, b["width"] / 2
     style = b["style"]
+    # The details that only show close to (distance from the run, m).
+    near = b.get("distance", 999)
     levels = max(1, int(b["levels"]))
     base_z = -0.5
     top = 0.6 + levels * FLOOR
@@ -334,6 +395,12 @@ def building(b):
         for i in range(4):
             a, c = corners[i], corners[(i + 1) % 4]
             bld.quad((a[0], a[1], top - 0.35), (c[0], c[1], top - 0.35), (c[0], c[1], top), (a[0], a[1], top), "trim")
+    if style == "engadin" and near < 110:
+        quoins(bld, hl, hw, top)
+        frieze(bld, hl, hw, top)
+    drift(bld, hl, hw)
+    if levels >= 2 and hl > 3.5 and near < 160:
+        front_door(bld, hl, hw)
     roof_kind = b["roof"]
     if style == "yellow":
         roof_kind = "hipped"
@@ -347,11 +414,18 @@ def building(b):
         overhang = {"engadin": 1.25, "chalet": 1.4, "pastel": 0.8, "yellow": 0.7}.get(style, 0.9)
         pitch = {"engadin": 26, "chalet": 24, "pastel": 28, "yellow": 30}.get(style, 26)
         gable = "chalet_boards" if style in ("engadin", "chalet") else wall
-        roof(bld, hl, hw, top, roof_kind, overhang, pitch, gable, "roof_edge")
+        ridge = roof(bld, hl, hw, top, roof_kind, overhang, pitch, gable, "roof_edge")
+        # One or two chimneys poking through the slope near the ridge.
+        n = (2 if hl > 7 else 1) if near < 220 else 0
+        for k in range(n):
+            x = (-0.4 + 0.8 * k) * hl if n == 2 else rng.uniform(-0.3, 0.3) * hl
+            y = hw * 0.32 * (1 if rng.random() < 0.5 else -1)
+            slope_z = ridge - abs(y) * math.tan(math.radians(pitch))
+            chimney(bld, x, y, top, slope_z + 1.1, "trim")
     if style == "engadin" and levels >= 2 and hl > 4:
-        balconies(bld, hl, hw, levels, 0.6, hl * 0.62)
+        balconies(bld, hl, hw, levels, 0.6, hl * 0.62, snowy=near < 160)
     elif style == "pastel" and levels >= 2 and hl > 5:
-        balconies(bld, hl, hw, levels, 0.6, min(hl * 0.35, 4), "wood", every=1, sides=(1,))
+        balconies(bld, hl, hw, levels, 0.6, min(hl * 0.35, 4), "wood", every=1, sides=(1,), snowy=near < 160)
     elif style == "chalet" and levels >= 2 and hw > 3:
         # A balcony across the gable end.
         for f in range(1, levels):

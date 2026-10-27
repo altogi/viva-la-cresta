@@ -532,6 +532,9 @@ export class Crowd {
   /** The technician and the hut's other worker, who join in on a Hello Hello. */
   private readonly staff: Agent[] = [];
   private partyCheer = false;
+  /** The crowd that turns out at Top for a rider's first ride from there, and their banner. */
+  private topCrowd: Agent[] | null = null;
+  private topBanner: THREE.Object3D | null = null;
   private hutFrame: THREE.Object3D | null = null;
   /** This ride's visitors are all fur coats (one ride in ten). */
   furDay = false;
@@ -835,6 +838,106 @@ export class Crowd {
     }
   }
 
+  /**
+   * A rider's first ride from Top is an occasion: a big crowd round the start and the hut, a
+   * "TOP IS GOOD!" banner over the start, and everyone cheering them away. Off for other rides.
+   */
+  topEvent(on: boolean) {
+    if (on && !this.topCrowd) this.buildTopCrowd();
+    for (const a of this.topCrowd ?? []) {
+      if (on) this.group.add(a.body.group);
+      else a.body.group.removeFromParent();
+      a.cheer = 0;
+    }
+    if (this.topBanner) {
+      if (on) this.group.add(this.topBanner);
+      else this.topBanner.removeFromParent();
+    }
+    this.topOn = on;
+  }
+
+  private topOn = false;
+
+  /** The crowd at Top cheers the rider away. */
+  cheerTop() {
+    if (!this.topOn) return;
+    for (const a of this.topCrowd ?? []) {
+      a.cheer = 3 + Math.random() * 3;
+      a.cheerRest = 10;
+    }
+  }
+
+  private buildTopCrowd() {
+    const top = this.track.frame(0);
+    const fwd = new THREE.Vector3(top.forward[0], 0, -top.forward[1]).normalize();
+    const side = new THREE.Vector3(top.left[0], 0, -top.left[1]).normalize();
+    const ground = this.track.elevation(0) + TOP_PLATFORM;
+    const start = new THREE.Vector3(top.pos[0], ground, -top.pos[1]);
+    const osm = OSM_NEAR.find((b) => b.id === OSM_IDS.topHut)!;
+    const hut = new THREE.Vector3(osm.c[0], ground, -osm.c[1]);
+    const crowd: Agent[] = [];
+    const taken: THREE.Vector3[] = [];
+    // Two deep along both sides of the start and the first metres of the run, a crowd behind the
+    // start and round the hut, all facing the start.
+    for (let tries = 0; crowd.length < 64 && tries < 2000; tries++) {
+      const along = -14 + Math.random() * 24;
+      const across = (Math.random() < 0.5 ? -1 : 1) * (2.6 + Math.random() * 7);
+      const at = start.clone().addScaledVector(fwd, along).addScaledVector(side, across);
+      if (along > -3 && Math.abs(across) < 3.2) continue; // the run itself
+      if (at.distanceTo(hut) < HUT_APOTHEM + 1.2) continue;
+      if (taken.some((p) => p.distanceTo(at) < 0.75)) continue;
+      // Off the platform the ground falls away: stay on it.
+      if (at.clone().sub(start.clone().addScaledVector(fwd, -12)).length() > 14.5) continue;
+      taken.push(at);
+      const kind: Kind = pick(['man', 'man', 'mother', 'furGirl', 'oldLady', 'child', 'man']);
+      const body = makeBody(kind);
+      const look = start.clone().addScaledVector(fwd, 2).sub(at);
+      const heading = Math.atan2(-look.z, look.x) + (Math.random() - 0.5) * 0.5;
+      body.group.position.copy(at);
+      body.group.rotation.y = heading;
+      crowd.push({
+        kind, body, home: at.clone(), pos: at.clone(), heading, homeHeading: heading, mode: 'idle', timer: 0,
+        dir: new THREE.Vector2(), phase: Math.random() * 10, speed: 0, offset: new THREE.Vector2(), scared: new THREE.Vector3(), perch: true,
+        stance: pick<Stance>(['relaxed', 'filming', 'filming', 'chatting', 'relaxed']),
+      });
+    }
+    this.topCrowd = crowd;
+    // The banner, on two poles over the run just behind the start, facing down it.
+    const banner = new THREE.Group();
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 192;
+    const g = canvas.getContext('2d')!;
+    g.fillStyle = '#f6f1e6';
+    g.fillRect(0, 0, 1024, 192);
+    g.strokeStyle = '#930303';
+    g.lineWidth = 14;
+    g.strokeRect(10, 10, 1004, 172);
+    g.fillStyle = '#930303';
+    g.font = 'bold 118px Georgia, serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText('TOP IS GOOD!', 512, 102);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const cloth = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.1), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, side: THREE.DoubleSide }));
+    cloth.position.y = 2.9;
+    cloth.castShadow = true;
+    banner.add(cloth);
+    const poleGeo = new THREE.CylinderGeometry(0.05, 0.06, 3.6, 8);
+    const poleMat = new THREE.MeshStandardMaterial({ color: '#6b4a2e', roughness: 0.8 });
+    for (const x of [-3.1, 3.1]) {
+      const pole = new THREE.Mesh(poleGeo, poleMat);
+      pole.position.set(x, 1.8, 0);
+      pole.castShadow = true;
+      banner.add(pole);
+    }
+    banner.position.copy(start).addScaledVector(fwd, -4.5);
+    // The banner's face (+z) towards the run below.
+    banner.rotation.y = Math.atan2(fwd.x, fwd.z);
+    this.topBanner = banner;
+  }
+
   /** Back to waiting, for the next rider. */
   endFinish() {
     if (!this.partyCheer) return;
@@ -1046,6 +1149,12 @@ export class Crowd {
     for (const a of this.terraceCrowd) {
       this.step(a, dt, rider);
       a.body.sync?.();
+    }
+    if (this.topOn) {
+      for (const a of this.topCrowd!) {
+        this.step(a, dt, rider);
+        a.body.sync?.();
+      }
     }
     for (const l of this.leads) {
       const p = l.line.geometry.attributes.position as THREE.BufferAttribute;

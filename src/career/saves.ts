@@ -1,6 +1,6 @@
 // Saved games, kept in the browser's storage. Each save is one career.
 
-import type { Career } from './career';
+import { SEASON_DAYS, type Career } from './career';
 
 const KEY = 'vlc-careers';
 
@@ -8,10 +8,22 @@ export function loadSaves(): Career[] {
   try {
     const list = JSON.parse(localStorage.getItem(KEY) ?? '[]') as Career[];
     // Saves from before a field existed get its starting value.
-    return Array.isArray(list) ? list.map((c) => ({ ...c, tutorialStep: c.tutorialStep ?? 0 })).sort((a, b) => b.lastPlayed - a.lastPlayed) : [];
+    return Array.isArray(list) ? list.map(upgrade).sort((a, b) => b.lastPlayed - a.lastPlayed) : [];
   } catch {
     return [];
   }
+}
+
+/** Saves from before a field existed get its starting value; old calendars move to the new one. */
+function upgrade(c: Career): Career {
+  const out = { ...c, tutorialStep: c.tutorialStep ?? 0 };
+  if (!out.calendar) {
+    // Day 0 was 26 December; it's now 17 December. A race in progress belonged to the old calendar.
+    out.day = Math.min(SEASON_DAYS - 1, out.day + 9);
+    out.race = null;
+    out.calendar = 2;
+  }
+  return out;
 }
 
 export function storeCareer(career: Career) {

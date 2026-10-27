@@ -28,7 +28,7 @@ export function buildScenery(track: Track, terrain: Terrain, assets: Assets): TH
   if (assets.models.balloon) group.add(driftingBalloon(assets.models.balloon));
   group.add(buildTrees(track, terrain, assets));
   group.add(assets.models.town ? placeTown(terrain, assets.models.town) : buildTownBuildings(terrain));
-  group.add(buildTopArea(ctx));
+  group.add(buildTopArea(ctx, assets.models.tophut));
   group.add(assets.models.junction ? placeJunction(assets.models.junction) : buildClubhouse(track, terrain));
   group.add(towerFlag(track));
   for (const lm of LANDMARKS) {
@@ -345,14 +345,18 @@ function signTexture(text: string, bg: string, fg: string, width = 512, height =
 /** Height of the snow platform round the Top start and hut, relative to the start's ice. */
 export const TOP_PLATFORM = -0.1;
 
-function buildTopArea(ctx: Placer): THREE.Group {
+function buildTopArea(ctx: Placer, model?: THREE.Object3D): THREE.Group {
   const group = new THREE.Group();
   const z0 = ctx.track.elevation(0);
   const st = ctx.track.frame(0);
   const heading = ctx.heading(0);
   // The pavilion mapped in OSM, 16 m behind the start, standing on the start platform.
   const osm = OSM_NEAR.find((b) => b.id === OSM_IDS.topHut)!;
-  const hut = buildTopHut();
+  // Modelled in Blender (blender/tophut.py), or built here if the model didn't load.
+  const hut = model ?? buildTopHut();
+  hut.traverse((o) => {
+    if (o instanceof THREE.Mesh) o.castShadow = o.receiveShadow = true;
+  });
   hut.position.set(osm.c[0], z0 + TOP_PLATFORM, -osm.c[1]);
   hut.rotation.y = heading;
   group.add(hut);

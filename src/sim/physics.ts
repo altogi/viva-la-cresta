@@ -89,6 +89,8 @@ export interface RideOptions {
   /** Steps allowed before diving onto the toboggan (running start conversion). */
   steps?: number;
   splitsAt?: { name: string; s: number }[];
+  /** How well the rakes bite (1 normally; 0 with the mind elsewhere). */
+  rakeGrip?: number;
 }
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -233,7 +235,7 @@ export class RideSim {
     const rakeR = input.rakeRight;
     const mu = sp.angle > 1.2 ? P.wallFriction : lerp(this.toboggan.muForward, this.toboggan.muKnives, p);
     const dragK = (0.5 * P.airDensity * this.rider.dragArea * lerp(this.toboggan.dragForward, P.dragKnives, p)) / this.rider.mass;
-    const rake = (rakeL + rakeR) * lerp(P.rakeForward, P.rakeKnives, p) * Math.min(1.5, load / G) * (REFERENCE_MASS / this.rider.mass);
+    const rake = (rakeL + rakeR) * lerp(P.rakeForward, P.rakeKnives, p) * Math.min(1.5, load / G) * (REFERENCE_MASS / this.rider.mass) * (this.options.rakeGrip ?? 1);
     const resist = mu * load + dragK * speed * speed + rake;
 
     // Steering: arms on the knives, a turn of the head into the wind when forward, a single raking foot.

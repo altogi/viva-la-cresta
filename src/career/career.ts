@@ -57,7 +57,7 @@ export interface Career {
   created: number;
   lastPlayed: number;
   season: number;
-  /** Day of the season, 0 = Friday 26 December. */
+  /** Day of the season, 0 = Thursday 17 December (the run opens) to 73 = 28 February. */
   day: number;
   ridesToday: number;
   /** Clean finishes in the beginner stage (first ride and practice), which move the rider on. */
@@ -79,10 +79,14 @@ export interface Career {
   race: RaceEntry | null;
   results: RaceResult[];
   gnWon: boolean;
+  /** 2 once the season runs 17 December to 28 February (older saves started on 26 December). */
+  calendar?: number;
 }
 
 export const RIDES_PER_DAY = 5;
-export const SEASON_DAYS = 66; // 26 December to 1 March
+export const SEASON_DAYS = 74; // 17 December to 28 February
+/** Top opens on 11 January (season day 25); until then everyone rides from Junction. */
+export const TOP_OPENS = 25;
 /** The club takes a rider on after this many finishes under MEMBER_TIME. */
 export const MEMBER_RIDES = 5;
 export const MEMBER_TIME = 50;
@@ -117,17 +121,18 @@ export function newCareer(id: string, name: string, rider: RiderId, now = Date.n
     race: null,
     results: [],
     gnWon: false,
+    calendar: 2,
   };
 }
 
-/** The date of a season day, as the sheets print it. */
-export function dateOf(day: number): { label: string; short: string } {
-  const d = new Date(Date.UTC(2025, 11, 26 + day));
+/** The date of a season day, as the sheets print it (season 1 is the winter of 2026-27). */
+export function dateOf(day: number, season = 1): { label: string; short: string; year: number; date: Date } {
+  const d = new Date(Date.UTC(2025 + season, 11, 17 + day));
   const weekday = d.toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' });
   const date = d.getUTCDate();
   const month = d.toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
   const nth = (n: number) => (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
-  return { label: `${weekday} ${date}${nth(date)} ${month}`, short: `${date} ${month.slice(0, 3)}` };
+  return { label: `${weekday} ${date}${nth(date)} ${month}`, short: `${date} ${month.slice(0, 3)}`, year: d.getUTCFullYear(), date: d };
 }
 
 export const bestKey = (start: Start, toboggan: TobogganId) => `${start}-${toboggan}`;
@@ -145,12 +150,13 @@ export function nextPractice(c: Career): Setup {
     const steps = CONVERSION_STEPS[Math.min(n - LYING_RIDES, CONVERSION_STEPS.length - 1)];
     return { start: 'junction', toboggan: 'traditional', style: 'running', steps };
   }
-  if (c.conversion) {
+  if (c.conversion && !(c.conversion.start === 'top' && c.day < TOP_OPENS)) {
     const conv = c.conversion;
     if (conv.lying > 0) return { start: conv.start, toboggan: conv.toboggan, style: 'lying', steps: 0 };
     return { start: conv.start, toboggan: conv.toboggan, style: 'running', steps: conv.steps[0] ?? FULL_STEPS };
   }
-  const start = c.top === 'yes' ? c.start : 'junction';
+  // Until Top opens, a rider learning Top (or qualified for it) rides from Junction.
+  const start = c.top === 'yes' && c.day >= TOP_OPENS ? c.start : 'junction';
   const toboggan = c.flattop === 'yes' ? c.toboggan : 'traditional';
   return { start, toboggan, style: 'running', steps: FULL_STEPS };
 }
@@ -171,6 +177,7 @@ export function goal(c: Career): string {
     return 'Ride well and Tower will notice.';
   }
   if (c.choicePending) return 'Tower is impressed. Choose your next step.';
+  if (c.conversion?.start === 'top' && c.day < TOP_OPENS) return 'Top opens on 11 January. Junction until then.';
   if (c.conversion) {
     const conv = c.conversion;
     const what = conv.toboggan === 'flattop' && conv.start === 'junction' ? 'Converting to the flat-top' : 'Learning to ride from Top';
@@ -228,7 +235,8 @@ export function recordPractice(c: Career, setup: Setup, time: number | null, fal
     }
     return out;
   }
-  if (c.conversion) {
+  // Only rides from Top count towards learning Top.
+  if (c.conversion && setup.start === c.conversion.start) {
     const conv = c.conversion;
     if (conv.lying > 0) conv.lying--;
     else conv.steps.shift();
