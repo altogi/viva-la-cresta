@@ -9,7 +9,7 @@ const baked = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.
 
 const plain = (mesh: THREE.Mesh) => {
   const m = mesh.material as THREE.MeshStandardMaterial;
-  return !Array.isArray(m) && !m.map && !m.transparent && !m.vertexColors && !(m.emissive && m.emissive.getHex() !== 0) && mesh.morphTargetInfluences === undefined;
+  return !(mesh as THREE.SkinnedMesh).isSkinnedMesh && !Array.isArray(m) && !m.map && !m.transparent && !m.vertexColors && !(m.emissive && m.emissive.getHex() !== 0) && mesh.morphTargetInfluences === undefined;
 };
 
 /** Merge the plain meshes under `root` into one mesh per part: `root` itself and each of `parts`. */

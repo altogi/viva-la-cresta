@@ -23,7 +23,7 @@ import { POLICIES } from './sim/autopilot';
 import { createTuningPanel } from './ui/tuning';
 
 /** Extra Blender models (public/models/<name>.glb) the scenery uses. */
-const MODELS: string[] = ['town', 'balloon'];
+const MODELS: string[] = ['town', 'balloon', 'riders'];
 
 registerSW({ immediate: true });
 
@@ -45,6 +45,10 @@ async function start() {
   const t0 = performance.now();
   const lap = (label: string) => debug && console.info(`${label}: ${(performance.now() - t0).toFixed(0)} ms`);
   const assets = await loadAssets(MODELS);
+  for (const id of ['maximilian', 'adelaide', 'remo']) {
+    const body = assets.models.riders?.getObjectByName(`rider_${id}`);
+    if (body) RiderModel.templates[id] = body;
+  }
   lap('models');
   const world = createWorld(document.getElementById('scene') as HTMLCanvasElement);
   const track = new Track();

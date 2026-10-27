@@ -16,6 +16,7 @@ import { drawFlag } from '../ui/flags';
 import { buildFace, type FaceRig } from './face';
 import { solveTwoBone } from './ik';
 import { bakeParts } from './bake';
+import { RiderBody, type Joints } from './riderBody';
 import { LOOKS, type RiderLook } from './riderLooks';
 
 export type IdleAction = 'comb' | 'flirt' | 'burp';
@@ -110,7 +111,11 @@ interface Targets {
 }
 
 export class RiderModel {
+  /** Bodies made in Blender, by rider (set once the models have loaded); without them, the code-built body. */
+  static templates: Partial<Record<string, THREE.Object3D>> = {};
   readonly root = new THREE.Group();
+  /** The Blender body following this skeleton, when there is one. */
+  private skinned: RiderBody | null = null;
   readonly toboggan = new THREE.Group();
   /** Everything of the rider, pivoting at the pelvis (detached as one body in a fall). */
   readonly body = new THREE.Group();
@@ -229,7 +234,47 @@ export class RiderModel {
     this.contactShadow.renderOrder = 1;
     this.contactShadow.castShadow = false;
     this.root.add(this.contactShadow);
+    const template = RiderModel.templates[look.id];
+    if (template) {
+      // The Blender body takes over from the code-built limbs and torso; the head stays.
+      const head = new Set<THREE.Object3D>();
+      this.head.traverse((o) => head.add(o));
+      this.body.traverse((o) => {
+        if (o instanceof THREE.Mesh && !head.has(o)) o.visible = false;
+      });
+      this.skinned = new RiderBody(template, look);
+      this.body.add(this.skinned.root);
+    }
     this.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0 });
+  }
+
+  /** Where the skeleton's joints are now, in world space, for the Blender body to follow. */
+  private joints(): Joints {
+    this.root.updateMatrixWorld(true);
+    const s = this.look.scale;
+    const at = (o: THREE.Object3D, x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z).applyMatrix4(o.matrixWorld);
+    const t = this.torso;
+    const pair = (f: (i: number) => THREE.Vector3): [THREE.Vector3, THREE.Vector3] => [f(0), f(1)];
+    const forward = new THREE.Vector3().setFromMatrixColumn(this.root.matrixWorld, 0).normalize();
+    const ankle = pair((i) => at(this.legs[i].mid, this.legs[i].lower));
+    return {
+      pelvis: at(this.body),
+      waist: at(t, 0.14 * s),
+      chest: at(t, 0.3 * s),
+      neck: at(t, this.shoulder + 0.03 * s),
+      neckTop: at(t, this.shoulder + 0.1 * s),
+      shoulder: pair((i) => at(this.arms[i].root)),
+      elbow: pair((i) => at(this.arms[i].mid)),
+      wrist: pair((i) => at(this.arms[i].mid, this.arms[i].lower)),
+      fingers: pair((i) => at(this.arms[i].mid, this.arms[i].lower + 0.17 * s)),
+      hip: pair((i) => at(this.legs[i].root)),
+      knee: pair((i) => at(this.legs[i].mid)),
+      ankle,
+      // Standing, the feet point ahead along the ground; lying, the toes point back along the legs.
+      toe: pair((i) =>
+        this.standing ? ankle[i].clone().addScaledVector(forward, 0.17 * s).add(new THREE.Vector3(0, -0.04 * s, 0)) : at(this.legs[i].mid, this.legs[i].lower + 0.17 * s),
+      ),
+    };
   }
 
   private chain(upper: number, lower: number, upperRadii: number[], lowerRadii: number[], upperMat: THREE.Material, lowerMat: THREE.Material): Chain {
@@ -418,6 +463,7 @@ export class RiderModel {
       }
     }
     this.apply(targets);
+    if (this.skinned) this.skinned.pose(this.joints());
     this.express(wink, open);
     if (this.smoke.length && p.stand) this.puff(p.stand.time);
     const cushion = this.toboggan.getObjectByName('cushion');
