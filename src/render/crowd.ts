@@ -4,6 +4,7 @@
 // Also the riders waiting their turn at Top, with their toboggans.
 
 import * as THREE from 'three';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import type { Track } from '../sim/track';
 import type { Terrain } from './terrain';
 import { lips } from '../sim/surface';
@@ -27,6 +28,8 @@ interface Body {
   head: THREE.Object3D;
   /** Where a lead clips on (the dog's collar, the man's hand), in the body's frame. */
   hand?: THREE.Vector3;
+  /** For a skinned body: carry the parts' swings over to its bones (after they're set each frame). */
+  sync?: () => void;
 }
 
 interface Agent {
@@ -70,6 +73,50 @@ const RUN_SPEED: Record<Kind, number> = { man: 4.6, mother: 3.8, child: 3.4, old
 let PEOPLE: THREE.Object3D | null = null;
 export function setPeopleTemplates(scene: THREE.Object3D | undefined) {
   PEOPLE = scene ?? null;
+  // The garments' zone tags come in as vertex colours; keep them out of the colour multiply.
+  PEOPLE?.traverse((o) => {
+    const geo = (o as THREE.Mesh).geometry as THREE.BufferGeometry | undefined;
+    if ((o as THREE.SkinnedMesh).isSkinnedMesh && geo?.getAttribute('color')) {
+      geo.setAttribute('zone', geo.getAttribute('color'));
+      geo.deleteAttribute('color');
+    }
+  });
+}
+
+/**
+ * One material per visitor (blender/people_mpfb.py packs each person into one atlas): the
+ * garments tagged by zone (coat, hat, scarf, gloves) take this visitor's colours.
+ */
+function zonedMaterial(base: THREE.MeshStandardMaterial, colours: { coat: string; hat: string; scarf: string; gloves: string }) {
+  const m = base.clone();
+  m.vertexColors = false;
+  m.transparent = false;
+  m.alphaTest = 0.5;
+  m.depthWrite = true;
+  m.side = THREE.DoubleSide;
+  m.roughness = 0.8;
+  m.metalness = 0;
+  const uniforms = {
+    tintCoat: { value: new THREE.Color(colours.coat) },
+    tintHat: { value: new THREE.Color(colours.hat) },
+    tintScarf: { value: new THREE.Color(colours.scarf) },
+    tintGloves: { value: new THREE.Color(colours.gloves) },
+  };
+  m.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 zone;\nvarying float vZone;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvZone = zone.r;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying float vZone;\nuniform vec3 tintCoat;\nuniform vec3 tintHat;\nuniform vec3 tintScarf;\nuniform vec3 tintGloves;')
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+        if (vZone > 0.125) diffuseColor.rgb *= vZone < 0.375 ? tintCoat : vZone < 0.625 ? tintHat : vZone < 0.875 ? tintScarf : tintGloves;`,
+      );
+  };
+  m.customProgramCacheKey = () => 'person-zones';
+  return m;
 }
 
 type PersonOptions = Parameters<typeof person>[0];
@@ -316,9 +363,81 @@ function makeBody(kind: Kind): Body {
   return bake(buildBody(kind));
 }
 
-/** The Blender person when its parts are loaded, the simple one otherwise. */
+/** The MakeHuman person when loaded, else the Blender parts, else the simple one. */
 function dressed(kind: Kind, o: PersonOptions): Body {
-  return modelledPerson(kind, o) ?? person(o);
+  // A share of the men are the gent in the long coat and fedora.
+  const variant = kind === 'man' && Math.random() < 0.4 ? 'gent' : kind;
+  return skinnedPerson(variant, o) ?? modelledPerson(kind, o) ?? person(o);
+}
+
+/** Heights of the MakeHuman people as built, measured once. */
+const modelHeights = new Map<string, number>();
+
+/**
+ * A visitor on a MakeHuman body (blender/people_mpfb.py): face, hair and clothes from MakeHuman,
+ * the coat, hat, scarf and gloves in this visitor's colours. The crowd swings simple parts (hips,
+ * shoulders, head) as for the other bodies; `sync` turns the skeleton's bones to match.
+ */
+function skinnedPerson(kind: string, o: PersonOptions): Body | null {
+  const template = PEOPLE?.getObjectByName(`person_${kind}`);
+  if (!template) return null;
+  if (!modelHeights.has(kind)) modelHeights.set(kind, new THREE.Box3().setFromObject(template).getSize(new THREE.Vector3()).y || 1.75);
+  const root = cloneSkinned(template);
+  root.position.set(0, 0, 0);
+  const colours = { coat: o.coat, hat: o.hat ?? o.coat, scarf: o.scarf ?? o.coat, gloves: pick(['#2a2622', '#3a2a20', '#1d2433', o.hat ?? '#2a2622']) };
+  const bones = new Map<string, THREE.Bone>();
+  root.traverse((n) => {
+    if ((n as THREE.Bone).isBone) bones.set(n.name.replace(/_\d+$/, ''), n as THREE.Bone);
+    if (n instanceof THREE.Mesh) {
+      n.castShadow = true;
+      const restyle = (m: THREE.Material) => zonedMaterial(m as THREE.MeshStandardMaterial, colours);
+      n.material = Array.isArray(n.material) ? n.material.map(restyle) : restyle(n.material);
+    }
+  });
+  const g = new THREE.Group();
+  const inner = new THREE.Group();
+  inner.rotation.y = Math.PI / 2; // built facing -Y in Blender (+Z here); the crowd's people face +X
+  inner.add(root);
+  g.add(inner);
+  const k = o.height / modelHeights.get(kind)!;
+  g.scale.setScalar(k);
+  g.updateMatrixWorld(true);
+  // Each driven bone: its rest rotation and its parent's, in the body's frame.
+  const gq = new THREE.Quaternion();
+  g.getWorldQuaternion(gq).invert();
+  const drive = (name: string) => {
+    const bone = bones.get(name);
+    if (!bone) return null;
+    const parent = new THREE.Quaternion();
+    bone.parent!.getWorldQuaternion(parent);
+    parent.premultiply(gq);
+    return { bone, rest: bone.quaternion.clone(), parent, parentInv: parent.clone().invert(), proxy: new THREE.Object3D() };
+  };
+  const legs = [drive('thighL'), drive('thighR')].filter((d) => d) as NonNullable<ReturnType<typeof drive>>[];
+  const arms = [drive('upperarmL'), drive('upperarmR')].filter((d) => d) as NonNullable<ReturnType<typeof drive>>[];
+  const neck = drive('neck');
+  const spine = drive('spine');
+  const all = [...legs, ...arms, ...(neck ? [neck] : [])];
+  // MakeHuman's A pose holds the arms out; bring them down to hang at the sides first.
+  const hang = new Map(arms.map((d, i) => [d, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), i === 0 ? -0.62 : 0.62)]));
+  const turn = new THREE.Quaternion();
+  const stoop = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -(o.stoop ?? 0));
+  if (spine) spine.bone.quaternion.copy(spine.parentInv.clone().multiply(stoop).multiply(spine.parent).multiply(spine.rest));
+  const sync = () => {
+    for (const d of all) {
+      turn.setFromEuler(d.proxy.rotation);
+      const down = hang.get(d);
+      if (down) turn.multiply(down);
+      d.bone.quaternion.copy(d.parentInv).multiply(turn).multiply(d.parent).multiply(d.rest);
+    }
+  };
+  sync();
+  g.updateMatrixWorld(true);
+  const hand = bones.get('handR');
+  const handAt = new THREE.Vector3(0.05, 0.36, 0.2);
+  if (hand) g.worldToLocal(hand.getWorldPosition(handAt));
+  // Legs and arms are listed left then right, as the simple bodies' are (side -1 then +1).
+  return { group: g, legs: legs.map((d) => d.proxy), arms: arms.map((d) => d.proxy), head: neck?.proxy ?? new THREE.Object3D(), hand: handAt, sync };
 }
 
 function buildBody(kind: Kind): Body {
@@ -687,8 +806,14 @@ export class Crowd {
       w.time += dt;
       w.model.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, stand: { time: w.time, action: null, t: 0, posture: w.posture, look: w.look + Math.sin(w.time * 0.3) * 0.15 } });
     }
-    for (const a of this.agents) this.step(a, dt, rider);
-    for (const a of this.terraceCrowd) this.step(a, dt, rider);
+    for (const a of this.agents) {
+      this.step(a, dt, rider);
+      a.body.sync?.();
+    }
+    for (const a of this.terraceCrowd) {
+      this.step(a, dt, rider);
+      a.body.sync?.();
+    }
     for (const l of this.leads) {
       const p = l.line.geometry.attributes.position as THREE.BufferAttribute;
       const hand = l.from.body.hand!.clone().applyMatrix4(l.from.body.group.matrixWorld);

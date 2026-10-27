@@ -23,7 +23,9 @@ from mathutils import Vector
 
 import lib
 
-lib.reset()
+# blender/people_mpfb.py borrows just the dog from this file, in its own scene.
+if not globals().get("DOG_ONLY"):
+    lib.reset()
 COLL = lib.collection("people")
 
 ZONES = ["coat", "trousers", "boots", "skin", "hair", "hat", "scarf", "dark"]
@@ -230,41 +232,44 @@ def apply_rot(obj):
     bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
 
 
-objs = []
-objs += person("man", 0.1, hat="beanie", scarf=True)
-objs += person("mother", 0.5, long_hair=True, hat="beanie")
-objs += person("child", 0.1, hat="beanie", puffy=True)
-objs += person("oldLady", 0.8, hat="beret", scarf=True, stick=True)
-objs += person("furGirl", 0.85, fur=True, long_hair=True, hat="fur", glasses=True)
-objs += dog()
+if globals().get("DOG_ONLY"):
+    DOG_PARTS = dog()
+else:
+    objs = []
+    objs += person("man", 0.1, hat="beanie", scarf=True)
+    objs += person("mother", 0.5, long_hair=True, hat="beanie")
+    objs += person("child", 0.1, hat="beanie", puffy=True)
+    objs += person("oldLady", 0.8, hat="beret", scarf=True, stick=True)
+    objs += person("furGirl", 0.85, fur=True, long_hair=True, hat="fur", glasses=True)
+    objs += dog()
 
-# A preview: one of each, assembled, coloured.
-preview_cols = {"coat": (0.2, 0.25, 0.35), "trousers": (0.12, 0.12, 0.14), "boots": (0.2, 0.13, 0.08), "skin": (0.9, 0.72, 0.6), "hair": (0.35, 0.22, 0.12), "hat": (0.6, 0.1, 0.1), "scarf": (0.8, 0.65, 0.2), "dark": (0.03, 0.03, 0.03)}
-for z, c in preview_cols.items():
-    M[z].node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (*c, 1)
-temp = []
-for i, kind in enumerate(("man", "mother", "child", "oldLady", "furGirl")):
-    x = 0
-    y = (i - 2) * 0.9
-    k = 0.65 if kind == "child" else 1.0
-    for name, loc in ((f"{kind}_torso", (0, 0, 0.92)), (f"{kind}_head", (0, 0, 0.92 + 0.66)), (f"{kind}_hat", (0, 0, 0.92 + 0.66)), (f"{kind}_scarf", (0, 0, 0.92)),
-                      (f"{kind}_leg", (0, 0.09, 0.92)), (f"{kind}_leg", (0, -0.09, 0.92)), (f"{kind}_arm", (0, 0.19, 0.92 + 0.47)), (f"{kind}_arm", (0, -0.19, 0.92 + 0.47))):
-        src = bpy.data.objects.get(name)
-        if not src:
-            continue
-        dup = src.copy()
-        COLL.objects.link(dup)
-        dup.location = (x, y + loc[1] * k, loc[2] * k)
-        dup.scale = (k, k, k)
-        temp.append(dup)
-for o in objs:
-    if o.name.startswith("dog_"):
-        o.location = (0, 3.5, 0)
-lib.preview("people.png", (3.2, -1.2, 1.3), (0, 0, 1.0), size=(1200, 700), lens=40, sky=(0.35, 0.55, 0.9))
-for d in temp:
-    bpy.data.objects.remove(d)
-for o in objs:
-    o.location = (0, 0, 0)
-for z in ZONES:
-    M[z].node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.7, 0.7, 0.7, 1)
-result = {"export": lib.export_glb("people.glb", objs), "objects": [o.name for o in objs]}
+    # A preview: one of each, assembled, coloured.
+    preview_cols = {"coat": (0.2, 0.25, 0.35), "trousers": (0.12, 0.12, 0.14), "boots": (0.2, 0.13, 0.08), "skin": (0.9, 0.72, 0.6), "hair": (0.35, 0.22, 0.12), "hat": (0.6, 0.1, 0.1), "scarf": (0.8, 0.65, 0.2), "dark": (0.03, 0.03, 0.03)}
+    for z, c in preview_cols.items():
+        M[z].node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (*c, 1)
+    temp = []
+    for i, kind in enumerate(("man", "mother", "child", "oldLady", "furGirl")):
+        x = 0
+        y = (i - 2) * 0.9
+        k = 0.65 if kind == "child" else 1.0
+        for name, loc in ((f"{kind}_torso", (0, 0, 0.92)), (f"{kind}_head", (0, 0, 0.92 + 0.66)), (f"{kind}_hat", (0, 0, 0.92 + 0.66)), (f"{kind}_scarf", (0, 0, 0.92)),
+                          (f"{kind}_leg", (0, 0.09, 0.92)), (f"{kind}_leg", (0, -0.09, 0.92)), (f"{kind}_arm", (0, 0.19, 0.92 + 0.47)), (f"{kind}_arm", (0, -0.19, 0.92 + 0.47))):
+            src = bpy.data.objects.get(name)
+            if not src:
+                continue
+            dup = src.copy()
+            COLL.objects.link(dup)
+            dup.location = (x, y + loc[1] * k, loc[2] * k)
+            dup.scale = (k, k, k)
+            temp.append(dup)
+    for o in objs:
+        if o.name.startswith("dog_"):
+            o.location = (0, 3.5, 0)
+    lib.preview("people.png", (3.2, -1.2, 1.3), (0, 0, 1.0), size=(1200, 700), lens=40, sky=(0.35, 0.55, 0.9))
+    for d in temp:
+        bpy.data.objects.remove(d)
+    for o in objs:
+        o.location = (0, 0, 0)
+    for z in ZONES:
+        M[z].node_tree.nodes["Principled BSDF"].inputs["Base Color"].default_value = (0.7, 0.7, 0.7, 1)
+    result = {"export": lib.export_glb("people.glb", objs), "objects": [o.name for o in objs]}
