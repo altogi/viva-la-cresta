@@ -42,6 +42,7 @@ M = {
     "sleeper": lib.material("b_sleeper", (0.28, 0.24, 0.2), 0.9),
     "ballast": lib.material("b_ballast", (0.4, 0.38, 0.36), 1.0),
     "snow": lib.material("b_snow", (0.93, 0.95, 0.98), 0.85),
+    "trodden": lib.material("b_trodden", (0.78, 0.8, 0.84), 0.95),
     "red": lib.material("b_rhb_red", (0.62, 0.04, 0.04), 0.35),
     "red_dark": lib.material("b_rhb_red_dark", (0.35, 0.03, 0.03), 0.5),
     "window": lib.material("b_window", (0.04, 0.06, 0.09), 0.08, metallic=0.5),
@@ -149,7 +150,8 @@ def snow_bank(B, x0, x1, y0, y1, z, h):
 
 
 def stable_junction(d):
-    """Low road bridge, a concrete slab faced with grey boards, as in the photograph from the run."""
+    """The low bridge above Church Leap, a concrete slab faced with grey boards, as in the
+    photograph from the run: the visitors' footpath crosses on it."""
     B = Builder()
     half = d["width"] / 2
     under = max(d["wall"], 0.75) + 1.65
@@ -162,8 +164,9 @@ def stable_junction(d):
             z = under + 0.05 + k * 0.32
             B.box(x, x + 0.25, -span, span, z, z + 0.3, "boards")
         B.box(x - 0.02, x + 0.27, -span, span, under + 1.33, under + 1.42, "concrete")
-    # Road and snow drifts against the parapets.
-    B.box(-deep / 2 + 0.25, deep / 2 - 0.25, -span, span, under + 0.55, under + 0.6, "asphalt")
+    # A footpath across: packed snow, trodden down the middle, drifts against the parapets.
+    B.box(-deep / 2 + 0.25, deep / 2 - 0.25, -span, span, under + 0.55, under + 0.6, "snow")
+    B.box(-1.0, 1.0, -span, span, under + 0.6, under + 0.605, "trodden")
     for x0, x1 in ((-deep / 2 + 0.25, -deep / 2 + 0.9), (deep / 2 - 0.9, deep / 2 - 0.25)):
         snow_bank(B, x0, x1, -span, span, under + 0.6, 0.35)
     abutments(B, half, under, deep, "concrete_dark")

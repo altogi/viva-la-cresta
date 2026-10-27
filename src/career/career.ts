@@ -213,7 +213,7 @@ export function recordPractice(c: Career, setup: Setup, time: number | null, fal
   if (!c.member) {
     // Only a clean finish moves a beginner on.
     if (time !== null) c.practiceRides++;
-    // The President takes a liking to you once you have five rides under 50 s.
+    // Ride well often enough and the President takes a liking to you.
     if (memberRides(c) >= MEMBER_RIDES) {
       c.member = true;
       out.joined = true;

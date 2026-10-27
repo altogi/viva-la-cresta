@@ -291,7 +291,11 @@ let silentLoop: HTMLAudioElement | null = null;
 function playThroughSilentSwitch() {
   const session = (navigator as unknown as { audioSession?: { type: string } }).audioSession;
   if (session) session.type = 'playback';
-  if (silentLoop) return;
+  if (silentLoop) {
+    // iOS pauses it when the page is hidden; start it again with the next touch.
+    if (silentLoop.paused) void silentLoop.play().catch(() => undefined);
+    return;
+  }
   // Half a second of silence as an 8 kHz, 8-bit mono WAV.
   const samples = 4000;
   const bytes = new Uint8Array(44 + samples);

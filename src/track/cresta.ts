@@ -166,12 +166,10 @@ export const LANDMARKS: Landmark[] = [
   { name: 'Junction Straight', s: 340, kind: 'section' },
   // Timing eye positions are inferred from split times, not surveyed.
   { name: 'Rise eye', s: 470, kind: 'timing' },
-  { name: 'Hanis Bridge', s: 499, kind: 'bridge' },
   { name: 'Stream eye', s: 690, kind: 'timing' },
   { name: 'Bledisloe Straight', s: 700, kind: 'section' },
   { name: 'Road Bridge', s: 857, kind: 'bridge' },
   { name: 'Bulpetts eye', s: 868, kind: 'timing' },
-  { name: 'Railway Bridge', s: 993, kind: 'bridge' },
   { name: 'Cresta Leap', s: 1118, kind: 'section' },
   { name: 'Finish', s: TRACK_LENGTH, kind: 'finish' },
 ];

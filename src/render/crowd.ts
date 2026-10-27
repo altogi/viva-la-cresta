@@ -12,7 +12,7 @@ import { RiderModel, looseToboggan, type Prop, type StandPosture } from './rider
 import { clubhouseTerrace } from './clubhouse';
 import { JUNCTION_S } from '../track/cresta';
 import { OSM_IDS, OSM_NEAR } from '../track/osm';
-import { PLATFORM, finishPlaces, platformFrame } from './places';
+import { PLATFORM, finishPlaces, pathBridge, platformFrame } from './places';
 import { HUT_APOTHEM } from './topHut';
 import { TOP_PLATFORM } from './scenery';
 import { LOOKS, type RiderLook } from './riderLooks';
@@ -30,7 +30,13 @@ interface Body {
   hand?: THREE.Vector3;
   /** For a skinned body: carry the parts' swings over to its bones (after they're set each frame). */
   sync?: () => void;
+  /** Elbows (left, right) and the spine, where the body has them, for gestures and breathing. */
+  forearms?: THREE.Object3D[];
+  spine?: THREE.Object3D;
 }
+
+/** How someone stands about when there's nothing to see. */
+type Stance = 'relaxed' | 'pockets' | 'folded' | 'chatting' | 'filming';
 
 interface Agent {
   kind: Kind;
@@ -51,6 +57,15 @@ interface Agent {
   leader?: Agent;
   offset: THREE.Vector2;
   scared: THREE.Vector3;
+  /** Idle life: a habitual stance, glances about, cheering a rider past, a stroll now and then. */
+  stance?: Stance;
+  glance?: number;
+  glanceTimer?: number;
+  cheer?: number;
+  cheerStyle?: 'clap' | 'wave';
+  cheerRest?: number;
+  stroll?: THREE.Vector3 | null;
+  strollTimer?: number;
 }
 
 const mats = new Map<string, THREE.MeshStandardMaterial>();
@@ -356,7 +371,7 @@ function dog(): Body {
   return { group: g, legs, arms: [tail], head, hand: new THREE.Vector3(0.3, 0.5, 0) };
 }
 
-const pick = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)];
+const pick = <T,>(xs: T[]): T => xs[Math.floor(Math.random() * xs.length)];
 const SKINS = ['#f1cdb5', '#e6bea4', '#d9a384', '#c68e6b', '#8d5a3c'];
 
 function makeBody(kind: Kind): Body {
@@ -411,21 +426,32 @@ function skinnedPerson(kind: string, o: PersonOptions): Body | null {
     const parent = new THREE.Quaternion();
     bone.parent!.getWorldQuaternion(parent);
     parent.premultiply(gq);
-    return { bone, rest: bone.quaternion.clone(), parent, parentInv: parent.clone().invert(), proxy: new THREE.Object3D() };
+    return { bone, rest: bone.quaternion.clone(), parent, parentInv: parent.clone().invert(), proxy: new THREE.Object3D(), hinge: null as THREE.Vector3 | null };
   };
   const legs = [drive('thighL'), drive('thighR')].filter((d) => d) as NonNullable<ReturnType<typeof drive>>[];
   const arms = [drive('upperarmL'), drive('upperarmR')].filter((d) => d) as NonNullable<ReturnType<typeof drive>>[];
   const neck = drive('neck');
   const spine = drive('spine');
-  const all = [...legs, ...arms, ...(neck ? [neck] : [])];
+  const forearms = [drive('forearmL'), drive('forearmR')].filter((d) => d) as NonNullable<ReturnType<typeof drive>>[];
+  // Elbows bend about their own hinge: across the plane of the forearm and forward, so the
+  // forearm folds forward and in, whatever the arm's lean.
+  const toBody = new THREE.Quaternion();
+  g.getWorldQuaternion(toBody).invert();
+  for (const [d, hand] of [[forearms[0], bones.get('handL')], [forearms[1], bones.get('handR')]] as const) {
+    if (!d || !hand) continue;
+    const elbowAt = d.bone.getWorldPosition(new THREE.Vector3());
+    const dir = hand.getWorldPosition(new THREE.Vector3()).sub(elbowAt).applyQuaternion(toBody).normalize();
+    d.hinge = dir.clone().cross(new THREE.Vector3(1, 0, 0)).normalize();
+  }
+  const all = [...legs, ...arms, ...forearms, ...(neck ? [neck] : []), ...(spine ? [spine] : [])];
   // MakeHuman's A pose holds the arms out; bring them down to hang at the sides first.
   const hang = new Map(arms.map((d, i) => [d, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), i === 0 ? -0.62 : 0.62)]));
   const turn = new THREE.Quaternion();
-  const stoop = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -(o.stoop ?? 0));
-  if (spine) spine.bone.quaternion.copy(spine.parentInv.clone().multiply(stoop).multiply(spine.parent).multiply(spine.rest));
+  if (spine) spine.proxy.userData.lean = -(o.stoop ?? 0);
   const sync = () => {
     for (const d of all) {
-      turn.setFromEuler(d.proxy.rotation);
+      if (d.hinge) turn.setFromAxisAngle(d.hinge, d.proxy.rotation.z);
+      else turn.setFromEuler(d.proxy.rotation);
       const down = hang.get(d);
       if (down) turn.multiply(down);
       d.bone.quaternion.copy(d.parentInv).multiply(turn).multiply(d.parent).multiply(d.rest);
@@ -437,7 +463,7 @@ function skinnedPerson(kind: string, o: PersonOptions): Body | null {
   const handAt = new THREE.Vector3(0.05, 0.36, 0.2);
   if (hand) g.worldToLocal(hand.getWorldPosition(handAt));
   // Legs and arms are listed left then right, as the simple bodies' are (side -1 then +1).
-  return { group: g, legs: legs.map((d) => d.proxy), arms: arms.map((d) => d.proxy), head: neck?.proxy ?? new THREE.Object3D(), hand: handAt, sync };
+  return { group: g, legs: legs.map((d) => d.proxy), arms: arms.map((d) => d.proxy), head: neck?.proxy ?? new THREE.Object3D(), hand: handAt, sync, forearms: forearms.map((d) => d.proxy), spine: spine?.proxy };
 }
 
 function buildBody(kind: Kind): Body {
@@ -711,6 +737,20 @@ export class Crowd {
       const home = new THREE.Vector3(x, PLATFORM.deck, -(0.45 + Math.random() * 0.5)).applyMatrix4(frame.matrixWorld);
       this.placeStill(makeBody(kind), kind, home, towardRun + (Math.random() - 0.5) * 0.7);
     }
+    // On the footbridge above Church Leap: along both parapets, most watching the riders come down
+    // the run towards them, a few looking down towards the Leap.
+    const bridge = pathBridge(this.track);
+    for (const x of [-2.0, 2.0]) {
+      for (let z = -bridge.span + 1.2; z < bridge.span - 1; z += 1.1 + Math.random() * 0.9) {
+        if (Math.random() < 0.3) continue;
+        const kind: Kind = pick(['man', 'mother', 'man', 'furGirl', 'oldLady', 'child']);
+        const home = new THREE.Vector3(x, bridge.deck, z).applyMatrix4(bridge.frame.matrixWorld);
+        // Facing over the parapet: up the run (-x in the bridge's frame) from the uphill side.
+        const look = new THREE.Vector3(x < 0 ? -1 : 1, 0, 0).transformDirection(bridge.frame.matrixWorld);
+        const heading = Math.atan2(-look.z, look.x) + (Math.random() - 0.5) * 0.6;
+        this.placeStill(makeBody(kind), kind, home, heading);
+      }
+    }
     const finish = finishPlaces(this.track, this.terrain);
     const tech = finish.technician;
     const fst = this.track.frame(tech.s);
@@ -789,6 +829,110 @@ export class Crowd {
     return agent;
   }
 
+  /** Idle life: glances, the odd stroll, and cheering a rider who comes close. */
+  private idleLife(a: Agent, dt: number, rider: THREE.Vector3 | null) {
+    if (a.kind === 'dog') return;
+    a.stance ??= pick<Stance>(['relaxed', 'pockets', 'pockets', 'folded', 'chatting', 'chatting', 'filming', 'relaxed']);
+    a.cheerStyle ??= Math.random() < 0.55 ? 'clap' : 'wave';
+    a.glanceTimer = (a.glanceTimer ?? Math.random() * 4) - dt;
+    if (a.glanceTimer <= 0) {
+      a.glance = (Math.random() - 0.5) * 1.6;
+      a.glanceTimer = 2 + Math.random() * 5;
+    }
+    a.cheer = Math.max(0, (a.cheer ?? 0) - dt);
+    a.cheerRest = Math.max(0, (a.cheerRest ?? 0) - dt);
+    if (rider && a.mode === 'idle' && a.cheer === 0 && a.cheerRest === 0) {
+      const d = Math.hypot(rider.x - a.pos.x, rider.z - a.pos.z);
+      if (d < 22) {
+        if (Math.random() < 0.65) a.cheer = 2 + Math.random() * 1.5;
+        a.cheerRest = 8;
+      }
+    }
+    // Visitors on the path wander a little now and then; those on stands and terraces stay put.
+    if (!a.perch && !a.leader && a.mode === 'idle' && !a.stroll) {
+      a.strollTimer = (a.strollTimer ?? 6 + Math.random() * 20) - dt;
+      if (a.strollTimer <= 0) {
+        const r = 0.8 + Math.random() * 2;
+        const t = Math.random() * Math.PI * 2;
+        a.stroll = new THREE.Vector3(a.home.x + Math.cos(t) * r, 0, a.home.z + Math.sin(t) * r);
+        a.strollTimer = 10 + Math.random() * 25;
+      }
+    }
+  }
+
+  /** Arms, elbows, head and breath: walking and running swings, else the stance or a cheer. */
+  private gesture(a: Agent, dt: number, pace: number, swing: number) {
+    const b = a.body;
+    const t = a.phase;
+    // Targets: [upper arm forward, upper arm out] for each side, elbow bends, head turn.
+    const arm = [
+      [0, 0],
+      [0, 0],
+    ];
+    const elbow = [0.1, 0.1];
+    let head = a.glance ?? 0;
+    if (pace > 0.1 || a.mode === 'flee') {
+      for (let i = 0; i < 2; i++) arm[i][0] = -Math.sin(t + (i ? 0 : Math.PI)) * swing * 0.8 + (a.mode === 'flee' ? 0.3 : 0);
+      elbow[0] = elbow[1] = 0.35 + swing * 0.6;
+      head = 0;
+    } else if ((a.cheer ?? 0) > 0) {
+      const now = performance.now() / 1000;
+      if (a.cheerStyle === 'clap') {
+        const clap = Math.sin(now * 15) * 0.16;
+        arm[0] = [0.4, -0.22 - clap];
+        arm[1] = [0.4, -0.22 - clap];
+        elbow[0] = elbow[1] = 1.45;
+      } else {
+        arm[0] = [2.5, 0.25];
+        arm[1] = [2.5, 0.25];
+        elbow[0] = 0.3 + Math.sin(now * 9) * 0.35;
+        elbow[1] = 0.3 + Math.sin(now * 9 + 1.5) * 0.35;
+      }
+      head = 0;
+    } else {
+      switch (a.stance) {
+        case 'pockets':
+          arm[0] = [-0.12, 0.05];
+          arm[1] = [-0.12, 0.05];
+          elbow[0] = elbow[1] = 0.55;
+          break;
+        case 'folded':
+          arm[0] = [0.08, -0.22];
+          arm[1] = [0.12, -0.22];
+          elbow[0] = elbow[1] = 1.6;
+          break;
+        case 'chatting': {
+          // Talking to whoever's beside them: the hands moving now and then.
+          const talk = Math.sin(t * 0.9) * 0.5 + 0.5;
+          arm[0] = [0.15, -0.05];
+          arm[1] = [0.2 + talk * 0.15, -0.05];
+          elbow[0] = 1.0 + Math.sin(t * 1.3) * 0.2;
+          elbow[1] = 1.1 + talk * 0.35;
+          break;
+        }
+        case 'filming':
+          arm[0] = [0.35, -0.1];
+          arm[1] = [1.25, -0.15];
+          elbow[0] = 1.1;
+          elbow[1] = 0.85;
+          break;
+        default:
+          arm[0] = [Math.sin(t * 0.3) * 0.05, 0];
+          arm[1] = [Math.sin(t * 0.3 + 1) * 0.05, 0];
+      }
+    }
+    const k = Math.min(1, dt * 6);
+    b.arms.forEach((part, i) => {
+      // Left arm is on -z: "out" (away from the body) turns it about +x, the right arm about -x.
+      part.rotation.z += (arm[i][0] - part.rotation.z) * k;
+      const out = (i === 0 ? 1 : -1) * arm[i][1];
+      part.rotation.x += (out - part.rotation.x) * k;
+    });
+    b.forearms?.forEach((part, i) => (part.rotation.z += (elbow[i] - part.rotation.z) * k));
+    b.head.rotation.y += (THREE.MathUtils.clamp(head, -1.1, 1.1) - b.head.rotation.y) * Math.min(1, dt * 3);
+    if (b.spine) b.spine.rotation.z = (b.spine.userData.lean ?? 0) + Math.sin(performance.now() / 1000 * 1.7 + a.phase) * 0.02;
+  }
+
   /** A rider has fallen at `at`: everyone close enough runs away from it, then looks back. */
   scare(at: THREE.Vector3) {
     for (const a of this.agents) {
@@ -849,12 +993,23 @@ export class Crowd {
         speed = Math.min(1.2, d);
         target = Math.atan2(-dz, dx);
       }
+    } else if (a.mode === 'idle' && a.stroll) {
+      // A few steps along the path, then stand again.
+      const dx = a.stroll.x - a.pos.x;
+      const dz = a.stroll.z - a.pos.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 0.25) a.stroll = null;
+      else {
+        speed = Math.min(0.75, d);
+        target = Math.atan2(-dz, dx);
+      }
     } else if (rider) {
       // Curious: turn to watch a rider coming past.
       const dx = rider.x - a.pos.x;
       const dz = rider.z - a.pos.z;
       if (dx * dx + dz * dz < 40 * 40) target = Math.atan2(-dz, dx);
     }
+    this.idleLife(a, dt, rider);
     // Followers stay near their leader when it moves.
     if (a.leader && a.mode !== 'flee' && a.leader.mode !== 'idle') {
       const want = new THREE.Vector3(a.leader.pos.x + a.offset.x * 0.6, 0, a.leader.pos.z + a.offset.y * 0.6);
@@ -879,7 +1034,7 @@ export class Crowd {
     const b = a.body;
     b.legs.forEach((leg, i) => (leg.rotation.z = Math.sin(a.phase + (i % 2 ? Math.PI : 0) + (i > 1 ? Math.PI : 0)) * swing));
     if (a.kind === 'dog') b.arms[0].rotation.x = Math.sin(a.phase * 4) * 0.5; // the tail wags
-    else b.arms.forEach((arm, i) => (arm.rotation.z = -Math.sin(a.phase + (i ? 0 : Math.PI)) * swing * 0.8 + (a.mode === 'flee' ? 0.3 : 0)));
+    else this.gesture(a, dt, pace, swing);
     b.group.position.set(a.pos.x, a.pos.y + (pace > 0.1 ? Math.abs(Math.sin(a.phase)) * 0.04 : Math.sin(a.phase) * 0.004), a.pos.z);
     b.group.rotation.y = a.heading;
   }

@@ -59,6 +59,7 @@ const ZONES: Record<string, (l: RiderLook) => string | undefined> = {
   sweater: (l) => l.outfit.torso,
   leather: (l) => l.outfit.pelvis,
   socks: (l) => l.outfit.shin,
+  bootleather: (l) => l.outfit.boots,
 };
 
 const Y = new THREE.Vector3(0, 1, 0);

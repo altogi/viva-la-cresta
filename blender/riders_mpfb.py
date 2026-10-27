@@ -26,6 +26,9 @@ exec(open(os.path.join(lib.ROOT, "blender", "riders.py")).read())
 
 from bl_ext.user_default.mpfb.services.humanservice import HumanService  # noqa: E402
 from bl_ext.user_default.mpfb.services.targetservice import TargetService  # noqa: E402
+from bl_ext.user_default.mpfb.services.locationservice import LocationService  # noqa: E402
+
+DATA = LocationService.get_user_data()
 
 CAUCASIAN = {"asian": 0.0, "caucasian": 1.0, "african": 0.0}
 # Shape targets on top of the macros: Remo's belly, from a lifetime of afternoons with a beer.
@@ -73,6 +76,8 @@ def make_body(look):
     for target, weight in DETAILS.get(rid, {}).items():
         TargetService.load_target(human, TargetService.target_full_path(target), weight=weight, name=target)
     rig = HumanService.add_builtin_rig(human, "game_engine")
+    # Boots from the MakeHuman pack (ankle boots), fitted to this body; the feet under them go.
+    shoes = HumanService.add_mhclo_asset(os.path.join(DATA, "clothes", "shoes03", "shoes03.mhclo"), human, asset_type="Clothes", subdiv_levels=0, material_type="MAKESKIN")
     bpy.ops.object.select_all(action="DESELECT")
     human.select_set(True)
     bpy.context.view_layer.objects.active = human
@@ -87,6 +92,13 @@ def make_body(look):
     for v in human.data.vertices:
         v.co = mw @ v.co
     human.matrix_world.identity()
+    for m in list(shoes.modifiers):
+        shoes.modifiers.remove(m)
+    smw = shoes.matrix_world.copy()
+    shoes.parent = None
+    for v in shoes.data.vertices:
+        v.co = smw @ v.co
+    shoes.matrix_world.identity()
     bones = {b.name: (rig.matrix_world @ b.head_local, rig.matrix_world @ b.tail_local) for b in rig.data.bones}
     bpy.data.objects.remove(rig)
 
@@ -95,6 +107,10 @@ def make_body(look):
     k = 1.75 * s / top
     for v in human.data.vertices:
         v.co *= k
+    for v in shoes.data.vertices:
+        v.co *= k
+    fold_groups(shoes)
+    boot_leather(shoes, rid)
     head = lambda n: bones[n][0] * k
     tail = lambda n: bones[n][1] * k
     j = {
@@ -153,7 +169,6 @@ def make_body(look):
     neck_cut = j["neck_top"][2] - 0.01 * s
     doomed = {v.index for v in human.data.vertices if head_weight[v.index] > 0.45 or v.co.z > neck_cut}
     # The foot and the bottom of the shin, which the boot's shaft covers.
-    feet = {v.index for v in human.data.vertices if (foot_weight[v.index] > 0.25 and v.co.z < j["ankle_L"][2] + 0.06 * s) or v.co.z < j["ankle_L"][2] + 0.11 * s}
     bm = bmesh.new()
     bm.from_mesh(human.data)
     bm.verts.ensure_lookup_table()
@@ -171,37 +186,6 @@ def make_body(look):
     crotch = [v for v in bm.verts if abs(v.co.x) < 0.075 * s and pz - 0.17 * s < v.co.z < pz + 0.01 * s and v.co.y < j["pelvis"][1] + 0.03 * s]
     for _ in range(20):
         bmesh.ops.smooth_vert(bm, verts=crotch, factor=0.7, use_axis_x=True, use_axis_y=True, use_axis_z=True)
-    # The boots: each foot wrapped in a smooth shell (its convex hull, rounded), so the boot follows
-    # the real foot and ankle but has a toe box and a heel instead of toes. The foot inside goes.
-    boots = {}
-    for side, sx in (("L", 1), ("R", -1)):
-        pts = [bm.verts[i].co.copy() for i in feet if bm.verts[i].co.x * sx > 0]
-        hull_bm = bmesh.new()
-        for p in pts:
-            hull_bm.verts.new((p.x, p.y, max(p.z, 0.012 * s)))
-        bmesh.ops.convex_hull(hull_bm, input=hull_bm.verts)
-        loose = [v for v in hull_bm.verts if not v.link_faces]
-        bmesh.ops.delete(hull_bm, geom=loose, context="VERTS")
-        me = bpy.data.meshes.new(f"boot_{rid}_{side}")
-        hull_bm.to_mesh(me)
-        hull_bm.free()
-        obj = bpy.data.objects.new(f"boot_{rid}_{side}", me)
-        bpy.context.scene.collection.objects.link(obj)
-        # Rounded off: remeshed to an even skin and smoothed, a little fuller than the foot.
-        rem = obj.modifiers.new("even", "REMESH")
-        rem.mode = "VOXEL"
-        rem.voxel_size = 0.009 * s
-        sm = obj.modifiers.new("round", "SMOOTH")
-        sm.factor = 0.8
-        sm.iterations = 12
-        disp = obj.modifiers.new("fuller", "DISPLACE")
-        disp.strength = 0.005 * s
-        dec = obj.modifiers.new("lighter", "DECIMATE")
-        dec.ratio = 0.35
-        apply_all(obj)
-        boots[side] = obj
-    ankle_top = j["ankle_L"][2] + 0.09 * s
-    doomed |= {i for i in feet if bm.verts[i].co.z < ankle_top}
     bmesh.ops.delete(bm, geom=[bm.verts[i] for i in doomed], context="VERTS")
     bm.to_mesh(human.data)
     bm.free()
@@ -216,7 +200,83 @@ def make_body(look):
     human.select_set(True)
     bpy.context.view_layer.objects.active = human
     bpy.ops.object.shade_smooth()
-    return human, j, boots
+    return human, j, shoes
+
+
+def fold_groups(obj):
+    """MakeHuman's bone weights on a fitted asset, folded into the game's bones."""
+    names = {g.index: g.name for g in obj.vertex_groups}
+    folded = []
+    for v in obj.data.vertices:
+        acc = {}
+        for g in v.groups:
+            t = our_bone(names[g.group])
+            if t and g.weight > 0:
+                acc[t] = acc.get(t, 0) + g.weight
+        folded.append(acc)
+    for g in list(obj.vertex_groups):
+        obj.vertex_groups.remove(g)
+    made = {}
+    for v in obj.data.vertices:
+        total = sum(folded[v.index].values()) or 1
+        for name, w in folded[v.index].items():
+            if name not in made:
+                made[name] = obj.vertex_groups.new(name=name)
+            made[name].add([v.index], w / total, "REPLACE")
+
+
+def boot_leather(shoes, rid):
+    """The boots' own texture, lightened to a neutral leather so the game can tint it to the kit's
+    boot colour (material {rid}_bootleather)."""
+    import numpy as np
+    m = shoes.data.materials[0] if shoes.data.materials else None
+    img = next((n.image for n in m.node_tree.nodes if n.bl_idname == "ShaderNodeTexImage" and n.image and "diffuse" in n.image.name.lower()), None) if m and m.use_nodes else None
+    mat = bpy.data.materials.get(f"{rid}_bootleather") or bpy.data.materials.new(f"{rid}_bootleather")
+    mat.use_nodes = True
+    nodes = mat.node_tree.nodes
+    nodes.clear()
+    out = nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.inputs["Roughness"].default_value = 0.45
+    mat.node_tree.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    if img:
+        small = img.copy()
+        small.scale(512, 512)
+        px = np.array(small.pixels[:], dtype=np.float32).reshape(-1, 4)
+        lum = px[:, :3] @ np.array([0.3, 0.59, 0.11], dtype=np.float32)
+        lum = 0.35 + 0.65 * (lum - lum.min()) / max(1e-4, lum.max() - lum.min())
+        px[:, 0] = px[:, 1] = px[:, 2] = lum
+        small.pixels.foreach_set(px.ravel())
+        small.pack()
+        tex = nodes.new("ShaderNodeTexImage")
+        tex.image = small
+        mat.node_tree.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    shoes.data.materials.clear()
+    shoes.data.materials.append(mat)
+    for poly in shoes.data.polygons:
+        poly.material_index = 0
+    shoes.name = f"boots_{rid}"
+
+
+def copy_weights(obj, body):
+    """Each vertex of a detail takes the bone weights of the nearest point of the body under it,
+    so it bends with the body instead of tearing where two bones meet."""
+    from mathutils import kdtree
+    tree = kdtree.KDTree(len(body.data.vertices))
+    for v in body.data.vertices:
+        tree.insert(v.co, v.index)
+    tree.balance()
+    names = {g.index: g.name for g in body.vertex_groups}
+    for g in list(obj.vertex_groups):
+        obj.vertex_groups.remove(g)
+    made = {}
+    for v in obj.data.vertices:
+        _, idx, _ = tree.find(obj.matrix_world @ v.co)
+        for g in body.data.vertices[idx].groups:
+            name = names[g.group]
+            if name not in made:
+                made[name] = obj.vertex_groups.new(name=name)
+            made[name].add([v.index], g.weight, "REPLACE")
 
 
 def smooth_zones(body, passes=4):
@@ -259,10 +319,25 @@ def sole_and_rakes(rid, side, body, j, s, sole_mat, steel):
     return lib.join(parts, f"soles_{rid}_{side}")
 
 
+def rakes_for(rid, side, sx, shoes, s, steel):
+    """The steel rakes over the toe of one boot: a plate with a row of teeth along its front edge."""
+    pts = [v.co for v in shoes.data.vertices if v.co.x * sx > 0 and v.co.z < 0.06 * s]
+    x0, x1 = min(p.x for p in pts), max(p.x for p in pts)
+    y0 = min(p.y for p in pts)
+    cx = (x0 + x1) / 2
+    X, Y, Z = Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1))
+    toe = y0 - 0.003
+    parts = [rounded_box(f"rakeplate_{rid}_{side}", (cx, toe + 0.016 * s, 0.03 * s), (X, Y, Z), ((x1 - x0) * 0.38, 0.02 * s, 0.004 * s), steel, bevel=0.3)]
+    for k in range(5):
+        tx = cx + (k - 2) * (x1 - x0) * 0.16
+        parts.append(lib.mesh_object(f"tooth_{rid}_{side}_{k}", [(tx - 0.005 * s, toe, 0.03 * s), (tx + 0.005 * s, toe, 0.03 * s), (tx, toe - 0.014 * s, 0.012 * s), (tx, toe + 0.008 * s, 0.026 * s)], [(0, 1, 2), (1, 3, 2), (3, 0, 2), (0, 3, 1)], None, steel))
+    return lib.join(parts, f"rakes_{rid}_{side}")
+
+
 def build_mpfb(look):
     rid = look["id"]
     s = look["scale"]
-    body, j, boots = make_body(look)
+    body, j, shoes = make_body(look)
     o = look["outfit"]
     colours = {
         "torso": o["torso"], "upperArm": o["upperArm"], "forearm": o["forearm"], "hands": o["hands"], "pelvis": o["pelvis"],
@@ -306,10 +381,8 @@ def build_mpfb(look):
     sole_mat = lib.material(f"{rid}_sole", (0.05, 0.045, 0.04), 0.8)
     steel = lib.material(f"{rid}_rakes", (0.7, 0.72, 0.75), 0.3, metallic=0.9)
     extremities = []
-    for side in "LR":
-        boots[side].data.materials.append(mats["boots"])
-        extremities.append((boots[side], f"foot.{side}"))
-        extremities.append((sole_and_rakes(rid, side, boots[side], j, s, sole_mat, steel), f"foot.{side}"))
+    for side, sx in (("L", 1), ("R", -1)):
+        extremities.append((rakes_for(rid, side, sx, shoes, s, steel), f"foot.{side}"))
     kit = remo_kit(rid, j, s, look, body, mats) if rid == "remo" else []
 
     arm_data = bpy.data.armatures.new(f"rig_{rid}")
@@ -328,12 +401,12 @@ def build_mpfb(look):
             bone.use_connect = False
     bpy.ops.object.mode_set(mode="OBJECT")
     for d in parts:
-        d.vertex_groups.new(name="chest").add(list(range(len(d.data.vertices))), 1.0, "REPLACE")
+        copy_weights(d, body)
     for obj, bone in extremities:
         obj.vertex_groups.new(name=bone).add(list(range(len(obj.data.vertices))), 1.0, "REPLACE")
     for obj in kit:
-        weight_nearest(obj, j)
-    mesh = lib.join([body, *parts, *(x for x, _ in extremities), *kit], f"body_{rid}")
+        copy_weights(obj, body)
+    mesh = lib.join([body, *parts, shoes, *(x for x, _ in extremities), *kit], f"body_{rid}")
     mesh.parent = rig
     mod = mesh.modifiers.new("Armature", "ARMATURE")
     mod.object = rig

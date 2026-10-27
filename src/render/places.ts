@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { Track } from '../sim/track';
 import { lips, surfaceAt } from '../sim/surface';
 import type { Terrain } from './terrain';
+import { toThree } from './util';
 
 /** The observers' stand just before Shuttlecock, on the outside (right) of the run. */
 export const PLATFORM = { s: 548, back: 5.5, deck: 2.6, length: 9 };
@@ -47,4 +48,25 @@ export function finishPlaces(track: Track, terrain: Terrain) {
     hut: besideRun(track, terrain, end - 10, lip + 4.6),
     technician: { s: end - 2.2, u: lip + 0.9 },
   };
+}
+
+/** The footbridge above Church Leap, where the visitors' path crosses the run. */
+export const PATH_BRIDGE = { s: 73.6, name: 'Stable Junction' };
+
+/**
+ * The footbridge's frame (x down the run, z across it, origin on the run's floor under the middle
+ * of the bridge), the height of its deck above that, and how far it reaches either side.
+ */
+export function pathBridge(track: Track) {
+  const st = track.frame(PATH_BRIDGE.s);
+  const pts = track.crossSection(PATH_BRIDGE.s);
+  const right = pts[0].y;
+  const left = pts[pts.length - 1].y;
+  const wall = Math.max(pts[0].z, pts[pts.length - 1].z);
+  const frame = new THREE.Object3D();
+  frame.position.copy(toThree(track.toWorld(st, (left + right) / 2, 0)));
+  frame.rotation.y = track.heading(PATH_BRIDGE.s);
+  frame.updateMatrixWorld(true);
+  // Must match stable_junction() in blender/bridges.py.
+  return { frame, deck: Math.max(wall, 0.75) + 1.65 + 0.6, span: (left - right) / 2 + 3.6 };
 }

@@ -11,7 +11,7 @@ import { OSM_BUILDINGS, OSM_IDS, OSM_NEAR, OSM_TREES, OSM_WOODS } from '../track
 import { buildTownBuildings, placeTown } from './buildings';
 import { buildClubhouse } from './clubhouse';
 import { buildTopHut } from './topHut';
-import { finishPlaces, platformFrame } from './places';
+import { finishPlaces, pathBridge, platformFrame, PATH_BRIDGE } from './places';
 import type { Terrain } from './terrain';
 import { colors, mulberry32, toThree } from './util';
 
@@ -134,13 +134,13 @@ function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group
   const group = new THREE.Group();
   const rng = mulberry32(1884);
   const { minX, maxX, minY, maxY } = terrain.bounds;
-  const spots: { x: number; y: number; scale: number; distance: number }[] = [];
-  const consider = (x: number, y: number, keepFar: number) => {
+  const spots: { x: number; y: number; scale: number; distance: number; card?: boolean }[] = [];
+  const consider = (x: number, y: number, keepFar: number, card = false) => {
     if (x < minX || x > maxX || y < minY || y > maxY) return;
     const { distance } = terrain.distanceToTrack(x, y);
     if (distance < 12) return;
     if (distance > 260 && rng() > keepFar) return;
-    spots.push({ x, y, scale: 0.75 + rng() * 0.8, distance });
+    spots.push({ x, y, scale: 0.75 + rng() * 0.8, distance, card });
   };
   for (const wood of OSM_WOODS) {
     const xs = wood.map((p) => p[0]);
@@ -169,6 +169,28 @@ function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group
       const x = st.pos[0] + st.left[0] * lateral;
       const y = st.pos[1] + st.left[1] * lateral;
       if (clearOfBuildings(x, y)) consider(x, y, 1);
+    }
+  }
+  // Dense forest close beside the run where the riders see it: left of the run from Junction down
+  // past the Rise, right of it at Brabazon, and both sides of the Bledisloe straight. Beyond the
+  // first row the trees there are pictures (cheap on phones; they read the same at that distance).
+  const dense: [number, number, number][] = [
+    [322, 470, 1],
+    [205, 258, -1],
+    [688, 862, 1],
+    [688, 862, -1],
+  ];
+  const clearOfBigBuildings = (x: number, y: number) => buildings.every(([bx, by]) => Math.hypot(bx - x, by - y) > 20);
+  for (const [s0, s1, side] of dense) {
+    for (let s = s0; s < s1; s += 2.2) {
+      for (let k = 0; k < 6; k++) {
+        const at = Math.min(TRACK_LENGTH, s + (rng() - 0.5) * 2.2);
+        const st = track.frame(at);
+        const lateral = side * (13 + rng() * 58);
+        const x = st.pos[0] + st.left[0] * lateral;
+        const y = st.pos[1] + st.left[1] * lateral;
+        if (clearOfBigBuildings(x, y)) consider(x, y, 1, Math.abs(lateral) > 24);
+      }
     }
   }
   // The Top hut stands in a stand of trees: all round it, clear of the start platform.
@@ -225,7 +247,7 @@ function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group
     // Real heights 9-20 m: the models are 13-21 m tall.
     const s = (0.5 + rng() * 0.45) * t.scale;
     m.compose(new THREE.Vector3(t.x, terrain.height(t.x, t.y) - 0.3, -t.y), q, new THREE.Vector3(s, s * (0.92 + rng() * 0.16), s));
-    if (t.distance < 35) {
+    if (t.distance < 35 && !t.card) {
       // Close to the run: the modelled tree, with its own picture inside it. The boughs are near
       // level, so seen side-on from a little way off they thin to nothing; the picture keeps the
       // crown's outline from every angle.
@@ -325,9 +347,52 @@ function placeBridge(ctx: Placer, s: number, name: string, models: THREE.Object3
   holder.traverse((o) => {
     if (o instanceof THREE.Mesh) o.castShadow = o.receiveShadow = true;
   });
+  if (name === PATH_BRIDGE.name) holder.add(footpathAcross(ctx));
   const train = models.getObjectByName('rhb_train');
   if (name === 'Road Bridge' && train) holder.add(...railwayLine(ctx, holder, ext.height, (ext.left - ext.right) / 2 + 3.6, train.clone()));
   return holder;
+}
+
+/**
+ * The visitors' path, carried on across the snow from both ends of the footbridge above Church
+ * Leap: down from the deck to the ground, then on over the terrain. Built in the bridge's frame.
+ */
+function footpathAcross(ctx: Placer): THREE.Object3D {
+  const { frame, deck, span } = pathBridge(ctx.track);
+  const inv = frame.matrixWorld.clone().invert();
+  const positions: number[] = [];
+  const index: number[] = [];
+  const v = new THREE.Vector3();
+  let row = 0;
+  for (const dir of [-1, 1]) {
+    for (let d = 0; d <= 40; d += 1.25) {
+      const z = dir * (span + d);
+      for (const x of [-1.1, 1.1]) {
+        v.set(x, 0, z).applyMatrix4(frame.matrixWorld);
+        const ground = ctx.terrain.height(v.x, -v.z) + 0.05;
+        // Down a ramp from the deck to the ground over the first few metres.
+        const t = Math.min(1, d / 6);
+        const worldY = (frame.position.y + deck + 0.01) * (1 - t) + ground * t;
+        v.y = Math.max(worldY, ground);
+        v.applyMatrix4(inv);
+        positions.push(v.x, v.y, v.z);
+      }
+      if (d > 0) {
+        const a = (row - 1) * 2;
+        const b = row * 2;
+        if (dir > 0) index.push(a, a + 1, b + 1, a, b + 1, b);
+        else index.push(a, b + 1, a + 1, a, b, b + 1);
+      }
+      row++;
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(index);
+  geometry.computeVertexNormals();
+  const path = new THREE.Mesh(geometry, mat('#d6dce5', { flatShading: false, roughness: 1, side: THREE.DoubleSide }));
+  path.receiveShadow = true;
+  return path;
 }
 
 /** Must match blender/bridges.py: the Road Bridge's deck, and where its track lies. */

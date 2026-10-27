@@ -66,6 +66,7 @@ async function start() {
   const sound = new Sound();
   const ride = new RideMode(world, track, terrain, sound);
   const crowd = new Crowd(track, terrain);
+  if (debug) Object.assign(window, { crowd });
   world.scene.add(crowd.group);
   ride.crowd = crowd;
   if (debug) {
@@ -114,6 +115,9 @@ async function start() {
   );
   if (debug) Object.assign(window, { career });
   for (const img of document.querySelectorAll<HTMLImageElement>('.badge, .badge-small')) clearBadgeBackground(img);
+  // Phones only let sound start from a touch, and pause it again after a call, the lock screen or
+  // a switch of app: any touch, click or key anywhere wakes it.
+  for (const type of ['pointerdown', 'touchend', 'click', 'keydown']) document.addEventListener(type, () => sound.start(), { capture: true, passive: true });
   document.getElementById('intro')!.addEventListener('click', () => sound.start());
   document.getElementById('new-game')!.addEventListener('click', () => sound.start());
 
