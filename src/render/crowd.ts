@@ -372,7 +372,7 @@ function waitingLook(base: RiderLook, suit: string, helmet: string): RiderLook {
     ...base,
     hair: { ...base.hair },
     helmet: { shell: helmet, visor: '#15191c' },
-    outfit: { ...base.outfit, torso: suit, upperArm: suit, forearm: suit, pelvis: suit, thigh: suit, shin: suit, lettering: '#f4f4f0', bib: String(20 + Math.floor(Math.random() * 60)), bottle: false, braces: undefined },
+    outfit: { ...base.outfit, torso: suit, upperArm: suit, forearm: suit, pelvis: suit, thigh: suit, shin: suit, lettering: '#f4f4f0', backStripe: undefined, legStripe: undefined, bottle: false, braces: undefined },
   };
 }
 

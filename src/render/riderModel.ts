@@ -78,7 +78,7 @@ function striped(suit: string, stripe: string): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({ map, roughness: 0.5 });
 }
 
-/** A canvas texture for lettering and bibs. */
+/** A canvas texture for lettering. */
 function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = w;
@@ -303,7 +303,7 @@ export class RiderModel {
     }
   }
 
-  /** Pelvis to shoulders: a lathe-turned torso, flattened front to back, with lettering and bib. */
+  /** Pelvis to shoulders: a lathe-turned torso, flattened front to back, with lettering and back stripe. */
   private buildTorso(look: RiderLook) {
     const s = look.scale;
     const L = this.shoulder;
@@ -339,22 +339,12 @@ export class RiderModel {
       plate.position.set(L * 0.78, front - 0.004, 0);
       this.torso.add(plate);
     }
-    if (o.bib) {
-      // Race number on the back, under the flag.
-      const tex = canvasTexture(160, 192, (g) => {
-        g.fillStyle = '#f4f4f0';
-        g.fillRect(0, 0, 160, 192);
-        drawFlag(g, look.flag, 40, 10, 80, 48);
-        g.fillStyle = '#16181a';
-        g.font = 'bold 96px Outfit, Verdana, sans-serif';
-        g.textAlign = 'center';
-        g.textBaseline = 'middle';
-        g.fillText(o.bib!, 80, 128);
-      });
-      const bib = new THREE.Mesh(new THREE.PlaneGeometry(0.17 * s, 0.2 * s), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6 }));
-      bib.rotation.set(-Math.PI / 2, 0, -Math.PI / 2);
-      bib.position.set(L * 0.62, back + 0.004, 0);
-      this.torso.add(bib);
+    if (o.backStripe) {
+      // A broad stripe down the middle of the back.
+      const stripe = new THREE.Mesh(new THREE.PlaneGeometry(L * 0.9, 0.09 * s), m(o.backStripe, 0.5));
+      stripe.rotation.set(-Math.PI / 2, 0, 0);
+      stripe.position.set(L * 0.5, back + 0.004, 0);
+      this.torso.add(stripe);
     }
     if (o.braces) {
       // Lederhosen braces over the shoulders, with the chest bar.

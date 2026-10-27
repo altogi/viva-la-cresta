@@ -26,9 +26,8 @@
    "boots": "#151616",
    "pads": "#18191a",
    "shoulderPads": true,
-   "legStripe": "#e8e8e2",
-   "lettering": "#f2f2ee",
-   "bib": "17"
+   "backStripe": "#ecece6",
+   "lettering": "#f2f2ee"
   }
  },
  "adelaide": {
@@ -50,17 +49,15 @@
   },
   "outfit": {
    "torso": "#2147ad",
-   "upperArm": "#2147ad",
-   "forearm": "#2147ad",
+   "upperArm": "#e88db3",
+   "forearm": "#e88db3",
    "hands": "#1c3170",
    "pelvis": "#1d3f99",
-   "thigh": "#2147ad",
-   "shin": "#2147ad",
+   "thigh": "#e88db3",
+   "shin": "#e88db3",
    "boots": "#1b2b63",
    "pads": "#1b2f6e",
-   "legStripe": "#f4f4f2",
-   "lettering": "#d9322e",
-   "bib": "12"
+   "lettering": "#d9322e"
   }
  },
  "remo": {

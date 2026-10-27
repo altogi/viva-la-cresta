@@ -155,6 +155,9 @@ def zone_of(p, normal, j, look):
     o = look["outfit"]
     base = name.split(".")[0]
     side = 1 if name.endswith(".L") else -1
+    stripe = o.get("backStripe")
+    if stripe and base in ("hips", "spine", "chest") and normal.y > 0.25 and abs(p.x) < 0.05 * look["scale"] and j["waist"][2] - 0.06 * look["scale"] < p.z < j["neck"][2] - 0.02:
+        return "backstripe"
     if base in ("hips",):
         return "pelvis"
     if base in ("spine", "chest"):
@@ -164,6 +167,8 @@ def zone_of(p, normal, j, look):
     if base == "neck":
         return "skin"
     if base == "upperarm":
+        if t < 0.16:
+            return "torso"  # the shoulder belongs to the body of the suit; the sleeve starts below
         if t > 0.88 and o.get("pads"):
             return "pads"
         return "upperArm"
@@ -174,8 +179,12 @@ def zone_of(p, normal, j, look):
     if base == "hand":
         return "hands"
     if base == "thigh":
+        if t < 0.1:
+            return "pelvis"  # the seam is at the leg, not up on the hip
         if t > 0.86:
             return "pads"
+        if look["id"] == "remo" and t > 0.8:
+            return "skin"  # bare knees between the lederhosen and the pads
         if o.get("legStripe") and normal.x * side > 0.82:
             return "stripe"
         return "thigh"
@@ -313,6 +322,209 @@ def boot(rid, side, j, s, mat, sole_mat, steel):
     return lib.join(parts, f"boot_{rid}_{side}")
 
 
+
+# ---------- Remo's kit, in detail: a cable-knit sweater and real lederhosen ----------
+
+from mathutils.bvhtree import BVHTree
+
+
+class Surface:
+    """Rays and nearest points on the body, to lay details on it."""
+
+    def __init__(self, body):
+        self.bvh = BVHTree.FromObject(body, bpy.context.evaluated_depsgraph_get())
+
+    def hit(self, origin, direction, offset):
+        loc, nor, _, _ = self.bvh.ray_cast(Vector(origin), Vector(direction).normalized())
+        if loc is None:
+            return None
+        return loc + nor * offset, nor
+
+
+def tube_along(name, pts, radius, mat, closed=False):
+    """A round cord through surface points (skin modifier)."""
+    me = bpy.data.meshes.new(name)
+    edges = [(i, i + 1) for i in range(len(pts) - 1)] + ([(len(pts) - 1, 0)] if closed else [])
+    me.from_pydata([tuple(p) for p in pts], edges, [])
+    obj = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.modifiers.new("skin", "SKIN")
+    for i in range(len(pts)):
+        obj.data.skin_vertices[0].data[i].radius = (radius, radius)
+    obj.data.skin_vertices[0].data[0].use_root = True
+    apply_all(obj)
+    obj.data.materials.append(mat)
+    return obj
+
+
+def ring_around(surf, centre, axis, offset, n=32, reach=0.16):
+    """Points round a limb or the trunk: rays from a circle about `axis` in towards it."""
+    axis = Vector(axis).normalized()
+    u = axis.cross(Vector((0, 0, 1)) if abs(axis.z) < 0.9 else Vector((1, 0, 0))).normalized()
+    v = axis.cross(u)
+    pts = []
+    for k in range(n):
+        a = k / n * math.tau
+        d = u * math.cos(a) + v * math.sin(a)
+        h = surf.hit(Vector(centre) + d * reach, -d, offset)
+        if h:
+            pts.append(h[0])
+    return pts
+
+
+def ribbon(name, path, width, mat, thickness=0.004):
+    """A flat strap following surface points [(point, normal)], `width` across."""
+    verts, faces = [], []
+    for i, (p, nrm) in enumerate(path):
+        nxt = path[min(i + 1, len(path) - 1)][0]
+        prv = path[max(i - 1, 0)][0]
+        side = (nxt - prv).cross(nrm).normalized() * width / 2
+        verts += [tuple(p - side), tuple(p + side)]
+        if i:
+            faces.append((2 * i - 2, 2 * i - 1, 2 * i + 1, 2 * i))
+    obj = lib.mesh_object(name, verts, faces, None, mat)
+    sol = obj.modifiers.new("thick", "SOLIDIFY")
+    sol.thickness = thickness
+    apply_all(obj)
+    return obj
+
+
+def weight_nearest(obj, j):
+    """All of each vertex's weight on the nearest bone."""
+    groups = {}
+    mw = obj.matrix_world
+    for v in obj.data.vertices:
+        p = mw @ v.co
+        best, best_d = None, 1e9
+        for name, a, b, _ in BONES:
+            A, B = Vector(j[a]), Vector(j[b])
+            ab = B - A
+            t = max(0, min(1, (p - A).dot(ab) / ab.length_squared))
+            d = (A + ab * t - p).length
+            if d < best_d:
+                best, best_d = name, d
+        groups.setdefault(best, []).append(v.index)
+    for name, idx in groups.items():
+        obj.vertex_groups.new(name=name).add(idx, 1.0, "REPLACE")
+
+
+def remo_kit(rid, j, s, look, body, mats):
+    surf = Surface(body)
+    b = look["build"]
+    embroidery = lib.material(f"{rid}_embroidery", (0.93, 0.89, 0.78), 0.7)
+    green = lib.material(f"{rid}_embroidery_green", (0.2, 0.42, 0.22), 0.7)
+    horn = lib.material(f"{rid}_horn", (0.85, 0.8, 0.68), 0.4)
+    dark_leather = lib.material(f"{rid}_leather_dark", (0.3, 0.2, 0.12), 0.65)
+    parts = []
+    waist = j["waist"][2] - 0.02 * s
+    top = j["upper_chest"][2] + 0.02 * s
+    half = 0.155 * s * b
+    # Cable-knit: twisted ropes of wool up the front and back of the sweater, ribbed cuffs where
+    # the sleeves are pushed up to the elbow, and a roll neck.
+    for face, origin_y in (("f", -1.0), ("b", 1.0)):
+        for f in (-0.62, -0.2, 0.2, 0.62):
+            for phase in (0, math.pi):
+                pts = []
+                for k in range(34):
+                    z = waist + 0.03 * s + (top - waist - 0.05 * s) * k / 33
+                    x = f * half + 0.009 * s * math.sin((z - waist) / (0.075 * s) * math.tau + phase)
+                    h = surf.hit((x, origin_y, z), (0, -origin_y, 0), 0.002)
+                    if h:
+                        pts.append(h[0])
+                if len(pts) > 3:
+                    parts.append(tube_along(f"cable_{rid}_{face}{f}_{phase:.0f}", pts, 0.0065 * s, mats["torso"]))
+    neck = Vector(j["neck"])
+    for dz, r in ((0.005, 0.013), (0.024, 0.012), (0.042, 0.011)):
+        pts = ring_around(surf, neck + Vector((0, 0, dz * s)), (0, 0, 1), 0.004, reach=0.075 * s)
+        if len(pts) > 8:
+            parts.append(tube_along(f"rollneck_{rid}_{dz}", pts, r * s, mats["torso"], closed=True))
+    for side in "LR":
+        e = Vector(j[f"elbow_{side}"])
+        d = (Vector(j[f"wrist_{side}"]) - e).normalized()
+        for dt, r in ((0.0, 0.019), (0.03, 0.017)):
+            pts = ring_around(surf, e + d * dt * s, d, 0.004, reach=0.14)
+            if len(pts) > 8:
+                parts.append(tube_along(f"sleeve_{rid}_{side}{dt}", pts, r * s, mats["torso"], closed=True))
+    # Lederhosen: the waistband, the front flap with its embroidery and horn buttons, braces with
+    # the embroidered chest bar, cuffs above the knees laced at the side, the knife pocket.
+    for dz in (0.0, 0.016):
+        pts = ring_around(surf, (0, 0, waist + dz * s), (0, 0, 1), 0.003, reach=0.45)
+        if len(pts) > 8:
+            parts.append(tube_along(f"waistband_{rid}_{dz}", pts, 0.011 * s, mats["pelvis"], closed=True))
+    fz0, fz1, fx = j["pelvis"][2] - 0.08 * s, waist - 0.015 * s, 0.085 * s
+    grid = []
+    for row in range(6):
+        z = fz0 + (fz1 - fz0) * row / 5
+        line = []
+        for col in range(7):
+            x = -fx + 2 * fx * col / 6
+            h = surf.hit((x, -1, z), (0, 1, 0), 0.006)
+            line.append(h[0] if h else Vector((x, -0.2, z)))
+        grid.append(line)
+    verts = [tuple(p) for line in grid for p in line]
+    faces = [(r * 7 + c, r * 7 + c + 1, (r + 1) * 7 + c + 1, (r + 1) * 7 + c) for r in range(5) for c in range(6)]
+    flap = lib.mesh_object(f"flap_{rid}", verts, faces, None, dark_leather)
+    sol = flap.modifiers.new("thick", "SOLIDIFY")
+    sol.thickness = 0.005
+    apply_all(flap)
+    parts.append(flap)
+    border = [grid[r][0] for r in range(6)] + grid[5][1:] + [grid[r][6] for r in range(4, -1, -1)]
+    parts.append(tube_along(f"flapstitch_{rid}", [p + Vector((0, -0.004, 0)) for p in border], 0.0035 * s, embroidery))
+    for p in (grid[5][1], grid[5][5], grid[2][3]):
+        parts.append(tube_along(f"button_{rid}_{p.x:.2f}_{p.z:.2f}", [p + Vector((0, -0.006, 0)), p + Vector((0, -0.012, 0))], 0.01 * s, horn))
+    bx = 0.075 * s * b
+    for sx in (-1, 1):
+        x = sx * bx
+        path = []
+        n = 14
+        for k in range(n):
+            z = waist + (top + 0.05 * s - waist) * k / (n - 1)
+            h = surf.hit((x, -1, z), (0, 1, 0), 0.005)
+            if h:
+                path.append(h)
+        for k in range(1, 6):
+            y = -0.08 * s + 0.16 * s * k / 6
+            h = surf.hit((x, y, top + 0.6), (0, 0, -1), 0.005)
+            if h:
+                path.append(h)
+        for k in range(n):
+            z = top + 0.05 * s - (top + 0.05 * s - waist) * k / (n - 1)
+            h = surf.hit((x, 1, z), (0, -1, 0), 0.005)
+            if h:
+                path.append(h)
+        parts.append(ribbon(f"brace_{rid}_{sx}", path, 0.04 * s, mats["braces"], 0.005))
+    zc = j["chest"][2] + 0.06 * s
+    bar = [surf.hit((-bx + 2 * bx * k / 10, -1, zc), (0, 1, 0), 0.009) for k in range(11)]
+    bar = [h for h in bar if h]
+    parts.append(ribbon(f"chestbar_{rid}", bar, 0.055 * s, embroidery, 0.004))
+    for k, h in enumerate(bar[2:-2:2]):
+        parts.append(tube_along(f"edelweiss_{rid}_{k}", [h[0] + h[1] * 0.004, h[0] + h[1] * 0.009], 0.009 * s, green))
+    for side, sx in (("L", 1), ("R", -1)):
+        hip, knee = Vector(j[f"hip_{side}"]), Vector(j[f"knee_{side}"])
+        c = hip + (knee - hip) * 0.79
+        pts = ring_around(surf, c, knee - hip, 0.003, reach=0.11)  # inside the gap to the other leg
+        if len(pts) > 8:
+            parts.append(tube_along(f"legcuff_{rid}_{side}", pts, 0.014 * s, mats["pelvis"], closed=True))
+        for k in range(3):
+            h = surf.hit((sx * 0.6, 0, c.z + (0.03 + k * 0.025) * s), (-sx, 0, 0), 0.004)
+            if h:
+                parts.append(tube_along(f"lace_{rid}_{side}{k}", [h[0] - Vector((0, 0.012, 0)), h[0] + Vector((0, 0.012, 0))], 0.0035 * s, embroidery))
+        knee_c = knee + (Vector(j[f"ankle_{side}"]) - knee) * 0.14
+        pts = ring_around(surf, knee_c, Vector(j[f"ankle_{side}"]) - knee, 0.003, reach=0.125)
+        if len(pts) > 8:
+            parts.append(tube_along(f"sockcuff_{rid}_{side}", pts, 0.017 * s, mats["shin"], closed=True))
+    # The knife in its pocket on the right thigh, the horn handle showing.
+    hip, knee = Vector(j["hip_R"]), Vector(j["knee_R"])
+    zk = hip.z + (knee.z - hip.z) * 0.4
+    pocket = [surf.hit((-0.6, 0.0, zk + dz), (1, 0, 0), 0.005) for dz in (-0.06 * s, -0.03 * s, 0.0, 0.03 * s)]
+    pocket = [h for h in pocket if h]
+    if len(pocket) > 1:
+        parts.append(ribbon(f"knifepocket_{rid}", pocket, 0.035 * s, dark_leather, 0.006))
+        handle = pocket[-1][0] + pocket[-1][1] * 0.008
+        parts.append(tube_along(f"knife_{rid}", [handle, handle + Vector((0, 0, 0.045 * s))], 0.007 * s, horn))
+    return parts
+
+
 def build(look):
     rid = look["id"]
     j = skeleton(look)
@@ -345,6 +557,7 @@ def build(look):
         "torso": o["torso"], "upperArm": o["upperArm"], "forearm": o["forearm"], "hands": o["hands"], "pelvis": o["pelvis"],
         "thigh": o["thigh"], "shin": o["shin"], "boots": o["boots"], "pads": o.get("pads", o["thigh"]),
         "stripe": o.get("legStripe", o["thigh"]), "braces": o.get("braces", o["torso"]), "skin": look["skin"],
+        "backstripe": o.get("backStripe", o["torso"]),
     }
     rough = {"torso": 0.95 if rid == "remo" else 0.45, "pelvis": 0.7 if rid == "remo" else 0.45, "thigh": 0.7 if rid == "remo" else 0.45,
              "boots": 0.5, "hands": 0.6, "skin": 0.6, "shin": 0.95 if rid == "remo" else 0.45}
@@ -362,10 +575,11 @@ def build(look):
     chest_y = -0.115 * s * (1.15 if rid == "remo" else 1)
     if o.get("lettering"):
         # "CRESTA RUN" across the chest.
-        letters = text_mesh("CRESTA RUN", 0.055 * s, lib.material(f"{rid}_lettering", hex_rgb(o["lettering"]), 0.5), f"letters_{rid}")
+        # Sized to the chest, so it never wraps round the sides.
+        letters = text_mesh("CRESTA RUN", min(0.055 * s, 0.8 * 2 * 0.155 * s * look["build"] / 6.2), lib.material(f"{rid}_lettering", hex_rgb(o["lettering"]), 0.5), f"letters_{rid}")
         letters.location = (0, chest_y - 0.012, j["chest"][2] + 0.06 * s)
         parts.append(letters)
-    if o.get("bib"):
+    if False:
         # The race number on a white bib on the back.
         bib_mat = lib.material(f"{rid}_bib", (0.9, 0.9, 0.88), 0.7)
         bib = lib.mesh_object(f"bib_{rid}", [(-0.085 * s, 0, -0.1 * s), (0.085 * s, 0, -0.1 * s), (0.085 * s, 0, 0.1 * s), (-0.085 * s, 0, 0.1 * s)], [(0, 3, 2, 1)], None, bib_mat)
@@ -382,6 +596,7 @@ def build(look):
     for side in "LR":
         extremities.append((glove(rid, side, j, s, mats["hands"]), f"hand.{side}"))
         extremities.append((boot(rid, side, j, s, mats["boots"], sole_mat, steel), f"foot.{side}"))
+    kit = remo_kit(rid, j, s, look, body, mats) if rid == "remo" else []
     mesh = body
 
     # Armature with named bones, the mesh bound with automatic weights.
@@ -412,7 +627,9 @@ def build(look):
     for obj, bone in extremities:
         group = obj.vertex_groups.new(name=bone)
         group.add(list(range(len(obj.data.vertices))), 1.0, "REPLACE")
-    mesh = lib.join([mesh, *decals, *(o for o, _ in extremities)], f"body_{rid}")
+    for obj in kit:
+        weight_nearest(obj, j)
+    mesh = lib.join([mesh, *decals, *(o for o, _ in extremities), *kit], f"body_{rid}")
     return rig, mesh
 
 
@@ -427,6 +644,7 @@ for i, rid in enumerate(("maximilian", "adelaide", "remo")):
 for i, rig in enumerate(rigs):
     rig.location = (i * 1.1 - 1.1, 0, 0)
 lib.preview("riders.png", (2.2, -4.2, 1.3), (0, 0, 0.95), size=(1200, 900), lens=45, sky=(0.35, 0.55, 0.9))
+lib.preview("riders_back.png", (-1.6, 4.4, 1.4), (0, 0, 0.95), size=(1200, 900), lens=45, sky=(0.35, 0.55, 0.9))
 for rig in rigs:
     rig.location = (0, 0, 0)
 weights = {m.name: len(m.vertex_groups) for m in meshes}

@@ -36,16 +36,16 @@ export interface RiderLook {
     braces?: string;
     /** Chest lettering colour, on the front. */
     lettering?: string;
-    /** Race number on the back. */
-    bib?: string;
+    /** A broad stripe down the middle of the back. */
+    backStripe?: string;
     /** A beer bottle tucked into the right sock. */
     bottle?: boolean;
   };
 }
 
 export const LOOKS: Record<RiderId, RiderLook> = {
-  // German, 20: thin and lanky, slicked-back black hair, a wide grin. Dark green leathers with
-  // white leg stripes, black pads, number 17 on the back, a dark green helmet.
+  // German, 20: thin and lanky, slicked-back black hair, a wide grin. A dark green suit with a broad
+  // white stripe down the middle of the back, black pads, a dark green helmet.
   maximilian: {
     id: 'maximilian',
     flag: 'de',
@@ -67,13 +67,12 @@ export const LOOKS: Record<RiderId, RiderLook> = {
       boots: '#151616',
       pads: '#18191a',
       shoulderPads: true,
-      legStripe: '#e8e8e2',
+      backStripe: '#ecece6',
       lettering: '#f2f2ee',
-      bib: '17',
     },
   },
-  // English, 25: blonde bun, rosy cheeks, a bright smile. Royal blue with white stripes and red
-  // lettering, number 12 and the Union Jack on the back, a blue helmet with a gold visor.
+  // English, 25: blonde bun, rosy cheeks, a bright smile. A royal blue suit with pink sleeves and
+  // legs, red lettering, a blue helmet with a gold visor.
   adelaide: {
     id: 'adelaide',
     flag: 'gb',
@@ -87,17 +86,15 @@ export const LOOKS: Record<RiderId, RiderLook> = {
     helmet: { shell: '#1f47a8', visor: '#c9a13d' },
     outfit: {
       torso: '#2147ad',
-      upperArm: '#2147ad',
-      forearm: '#2147ad',
+      upperArm: '#e88db3',
+      forearm: '#e88db3',
       hands: '#1c3170',
       pelvis: '#1d3f99',
-      thigh: '#2147ad',
-      shin: '#2147ad',
+      thigh: '#e88db3',
+      shin: '#e88db3',
       boots: '#1b2b63',
       pads: '#1b2f6e',
-      legStripe: '#f4f4f2',
       lettering: '#d9322e',
-      bib: '12',
     },
   },
   // Swiss, 50: burly, bearded, hairy, grinning. Cable-knit wool sweater, leather lederhosen with

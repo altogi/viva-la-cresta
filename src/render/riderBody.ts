@@ -55,6 +55,10 @@ const ZONES: Record<string, (l: RiderLook) => string | undefined> = {
   braces: (l) => l.outfit.braces,
   skin: (l) => l.skin,
   lettering: (l) => l.outfit.lettering,
+  backstripe: (l) => l.outfit.backStripe ?? l.outfit.torso,
+  sweater: (l) => l.outfit.torso,
+  leather: (l) => l.outfit.pelvis,
+  socks: (l) => l.outfit.shin,
 };
 
 const Y = new THREE.Vector3(0, 1, 0);
