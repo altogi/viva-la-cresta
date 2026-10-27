@@ -92,6 +92,8 @@ export class RideMode {
   private setup!: RideSetup;
   private stage: Stage = 'ready';
   private stageTime = 0;
+  /** Bankina hits so far this ride, to knock once per hit. */
+  private bankHits = 0;
   private cam: Cam = 'chase';
   private runPhase = 0;
   /** Seconds since diving onto the toboggan (for the jump-on animation). */
@@ -201,6 +203,7 @@ export class RideMode {
     const { rider, toboggan } = this.selection;
     this.model = new RiderModel(LOOKS[rider], toboggan);
     this.world.scene.add(this.model.root);
+    this.bankHits = 0;
     this.sim = new RideSim(this.track, RIDERS[rider], TOBOGGANS[toboggan], {
       startS: setup.startS,
       start: setup.start,
@@ -329,6 +332,12 @@ export class RideMode {
     this.updateCamera(realDt);
     this.updateHud();
     const st = this.sim.state;
+    // A knock and a shake each time the toboggan hits a bankina (and loses speed to it).
+    if (st.bankHits > this.bankHits) {
+      this.sound.knock();
+      navigator.vibrate?.(35);
+    }
+    this.bankHits = st.bankHits;
     this.sound.update({
       speed: this.stage === 'falling' || st.stopped ? 0 : st.v,
       posture: st.posture,

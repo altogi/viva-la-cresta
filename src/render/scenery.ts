@@ -11,7 +11,8 @@ import { OSM_BUILDINGS, OSM_IDS, OSM_NEAR, OSM_TREES, OSM_WOODS } from '../track
 import { buildTownBuildings, placeTown } from './buildings';
 import { buildClubhouse } from './clubhouse';
 import { buildTopHut } from './topHut';
-import { finishPlaces, pathBridge, platformFrame, PATH_BRIDGE } from './places';
+import { CUTTING, cuttingHeight, finishPlaces, pathBridge, platformFrame, PATH_BRIDGE } from './places';
+import { lips, surfaceAt } from '../sim/surface';
 import type { Terrain } from './terrain';
 import { colors, mulberry32, toThree } from './util';
 
@@ -35,7 +36,7 @@ export function buildScenery(track: Track, terrain: Terrain, assets: Assets): TH
   }
   group.add(buildFinish(ctx));
   group.add(buildShuttlecockRunoff(ctx));
-  group.add(buildFinishMat(ctx), buildRunOutBank(ctx), buildFinishExit(ctx));
+  group.add(buildFinishMat(ctx), buildRunOutBank(ctx), buildFinishExit(ctx), buildCutting(ctx));
   if (assets.models.props) group.add(...placeProps(track, terrain, assets.models.props));
   return group;
 }
@@ -171,25 +172,31 @@ function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group
       if (clearOfBuildings(x, y)) consider(x, y, 1);
     }
   }
-  // Dense forest close beside the run where the riders see it: left of the run from Junction down
-  // past the Rise, right of it at Brabazon, and both sides of the Bledisloe straight. Beyond the
+  // Dense forest close beside the run where the riders see it: both sides from Top down through
+  // Church Leap, left of the run from Junction down past the Rise, right of it at Brabazon, and both
+  // sides of the Bledisloe straight. Beyond the
   // first row the trees there are pictures (cheap on phones; they read the same at that distance).
   const dense: [number, number, number][] = [
+    [8, 100, 1],
+    [8, 100, -1],
+    [100, 180, 1],
+    [100, 180, -1],
     [322, 470, 1],
     [205, 258, -1],
     [688, 862, 1],
     [688, 862, -1],
   ];
-  const clearOfBigBuildings = (x: number, y: number) => buildings.every(([bx, by]) => Math.hypot(bx - x, by - y) > 20);
+  const clearOf = (x: number, y: number, gap: number) => buildings.every(([bx, by]) => Math.hypot(bx - x, by - y) > gap);
   for (const [s0, s1, side] of dense) {
     for (let s = s0; s < s1; s += 2.2) {
-      for (let k = 0; k < 6; k++) {
+      for (let k = 0; k < (s0 >= 100 && s0 < 200 ? 9 : 6); k++) {
         const at = Math.min(TRACK_LENGTH, s + (rng() - 0.5) * 2.2);
         const st = track.frame(at);
         const lateral = side * (13 + rng() * 58);
         const x = st.pos[0] + st.left[0] * lateral;
         const y = st.pos[1] + st.left[1] * lateral;
-        if (clearOfBigBuildings(x, y)) consider(x, y, 1, Math.abs(lateral) > 24);
+        // Round Church Leap the trees stand between the houses; elsewhere they keep their distance.
+        if (clearOf(x, y, s0 < 200 ? 13 : 20)) consider(x, y, 1, Math.abs(lateral) > 24);
       }
     }
   }
@@ -197,14 +204,14 @@ function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group
   const hut = OSM_NEAR.find((b) => b.id === OSM_IDS.topHut)!.c;
   const st0 = track.frame(0);
   const platform = [-st0.forward[0] * 12, -st0.forward[1] * 12];
-  for (let i = 0; i < 260; i++) {
+  for (let i = 0; i < 700; i++) {
     const a = rng() * Math.PI * 2;
-    const r = 10 + Math.sqrt(rng()) * 40;
+    const r = 9 + Math.sqrt(rng()) * 62;
     const x = hut[0] + Math.cos(a) * r;
     const y = hut[1] + Math.sin(a) * r;
     if (Math.hypot(x - platform[0], y - platform[1]) < 17) continue;
     if (!buildings.every(([bx, by]) => Math.hypot(bx - x, by - y) > 13)) continue;
-    consider(x, y, 1);
+    consider(x, y, 1, r > 28); // the outer ring as pictures
   }
   for (let i = 0; i < 2500; i++) {
     const x = minX + rng() * (maxX - minX);
@@ -355,7 +362,7 @@ function placeBridge(ctx: Placer, s: number, name: string, models: THREE.Object3
 
 /**
  * The visitors' path, carried on across the snow from both ends of the footbridge above Church
- * Leap: down from the deck to the ground, then on over the terrain. Built in the bridge's frame.
+ * Leap, level with the deck as the ground is. Built in the bridge's frame.
  */
 function footpathAcross(ctx: Placer): THREE.Object3D {
   const { frame, deck, span } = pathBridge(ctx.track);
@@ -369,11 +376,8 @@ function footpathAcross(ctx: Placer): THREE.Object3D {
       const z = dir * (span + d);
       for (const x of [-1.1, 1.1]) {
         v.set(x, 0, z).applyMatrix4(frame.matrixWorld);
-        const ground = ctx.terrain.height(v.x, -v.z) + 0.05;
-        // Down a ramp from the deck to the ground over the first few metres.
-        const t = Math.min(1, d / 6);
-        const worldY = (frame.position.y + deck + 0.01) * (1 - t) + ground * t;
-        v.y = Math.max(worldY, ground);
+        // The ground is level with the deck here (the run is in a cutting): the path just goes on.
+        v.y = Math.max(ctx.terrain.height(v.x, -v.z), frame.position.y + deck - 0.05) + 0.04;
         v.applyMatrix4(inv);
         positions.push(v.x, v.y, v.z);
       }
@@ -666,6 +670,90 @@ function buildFinishExit(ctx: Placer): THREE.Group {
   path.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
   path.receiveShadow = true;
   group.add(path);
+  return group;
+}
+
+/**
+ * The cutting at Stable Junction, as in the photograph from the run: tall snow walls straight up
+ * from the run's lips to the ground above (raised to the footbridge's level), and along the right
+ * a row of rough wooden posts with white cloth stretched between them.
+ */
+function buildCutting(ctx: Placer): THREE.Group {
+  const group = new THREE.Group();
+  const track = ctx.track;
+  const wallPos: number[] = [];
+  const wallIdx: number[] = [];
+  const v = (s: number, y: number, z: number) => toThree(track.toWorld(track.frame(s), y, z));
+  for (const side of [1, -1]) {
+    const base = wallPos.length / 3;
+    let row = 0;
+    for (let s = CUTTING.s0; s <= CUTTING.s1 + 1e-6; s += 1) {
+      const section = track.section(s);
+      const lip = surfaceAt(section, lips(section)[side > 0 ? 'left' : 'right']);
+      const top = Math.max(lip.z, cuttingHeight(s) - 0.25);
+      // Lip, top of the wall (a little back, a little rounded), and out over the ground.
+      const points = [
+        v(s, lip.y, lip.z - 0.02),
+        v(s, lip.y + side * 0.18, top),
+        v(s, lip.y + side * 0.6, top + 0.12),
+        v(s, side * 9, top + 0.02),
+      ];
+      for (const p of points) wallPos.push(p.x, p.y, p.z);
+      if (row > 0) {
+        const a = base + (row - 1) * 4;
+        const b = base + row * 4;
+        for (let k = 0; k < 3; k++) {
+          if (side > 0) wallIdx.push(a + k, b + k, b + k + 1, a + k, b + k + 1, a + k + 1);
+          else wallIdx.push(a + k, a + k + 1, b + k + 1, a + k, b + k + 1, b + k);
+        }
+      }
+      row++;
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(wallPos, 3));
+  geometry.setIndex(wallIdx);
+  geometry.computeVertexNormals();
+  const walls = new THREE.Mesh(geometry, mat(colors.snow, { flatShading: false, roughness: 0.9, side: THREE.DoubleSide }));
+  walls.castShadow = walls.receiveShadow = true;
+  group.add(walls);
+  // Posts and cloth along the right-hand wall, where the cutting is deep.
+  const postGeo = new THREE.CylinderGeometry(0.055, 0.07, 1.6, 7);
+  const postMat = mat('#b59a72', { roughness: 0.9 });
+  const cloth = mat('#f1efe9', { roughness: 0.95, side: THREE.DoubleSide, flatShading: false });
+  const deep = (s: number) => cuttingHeight(s) > 1.6;
+  let prev: THREE.Vector3 | null = null;
+  for (let s = CUTTING.s0; s <= CUTTING.s1; s += 1.7) {
+    if (!deep(s)) {
+      prev = null;
+      continue;
+    }
+    const section = track.section(s);
+    const lip = surfaceAt(section, lips(section).right);
+    const foot = v(s, lip.y - 0.35, cuttingHeight(s) - 0.15);
+    const post = new THREE.Mesh(postGeo, postMat);
+    post.position.copy(foot).add(new THREE.Vector3(0, 0.75, 0));
+    post.rotation.z = (Math.random() - 0.5) * 0.06;
+    post.castShadow = true;
+    group.add(post);
+    if (prev) {
+      // A sagging panel of cloth between this post and the last.
+      const panel = new THREE.PlaneGeometry(1, 1, 6, 1);
+      const pos = panel.attributes.position as THREE.BufferAttribute;
+      for (let i = 0; i < pos.count; i++) {
+        const t = pos.getX(i) + 0.5;
+        const up = pos.getY(i) + 0.5;
+        const p = prev.clone().lerp(foot, t);
+        const sag = Math.sin(t * Math.PI) * 0.12 * up;
+        pos.setXYZ(i, p.x, p.y + 0.2 + up * 1.15 - sag, p.z);
+      }
+      panel.computeVertexNormals();
+      const mesh = new THREE.Mesh(panel, cloth);
+      mesh.castShadow = mesh.receiveShadow = true;
+      group.add(mesh);
+    }
+    prev = foot;
+  }
   return group;
 }
 

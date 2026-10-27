@@ -77,6 +77,8 @@ export interface RideState {
   runSteps: number;
   /** Normal load in g, for effects. */
   load: number;
+  /** Times the rider has hit a bankina this ride (for the knock and the shake). */
+  bankHits: number;
   splits: Record<string, number>;
   fall: Fall | null;
 }
@@ -123,6 +125,7 @@ export class RideSim {
       tobogganS: null,
       topSpeed: 0,
       runSteps: 0,
+      bankHits: 0,
       load: 1,
       splits: {},
       fall: null,
@@ -354,7 +357,10 @@ export class RideSim {
         this.fall('wall', side);
       } else {
         const speed = Math.hypot(st.v, st.w - st.slide);
-        const loss = 1 - PHYSICS.glanceLoss * Math.abs(Math.sin(st.heading));
+        // Every real hit costs speed; a square one costs more.
+        const hit = impact > PHYSICS.bankHitSpeed;
+        if (hit) st.bankHits++;
+        const loss = 1 - (hit ? PHYSICS.bankHitLoss : 0) - PHYSICS.glanceLoss * Math.abs(Math.sin(st.heading));
         st.heading = -st.heading * 0.3;
         st.slide = 0;
         st.v = speed * loss * Math.cos(st.heading);

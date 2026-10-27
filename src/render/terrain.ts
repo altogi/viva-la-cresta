@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import type { Station, Track } from '../sim/track';
 import { TERRAIN_BASE } from './trackMesh';
 import { colors, valueNoise } from './util';
+import { cuttingHeight } from './places';
 
 const CELL = 6;
 const slopeTint = new THREE.Color('#c9d5e2');
@@ -108,7 +109,8 @@ export class Terrain {
     const far = this.hill(x, y);
     if (!station || distance >= BLEND_END) return far;
     // Sits just under the track's embankment skirts, which hide the corridor's ragged edge.
-    const near = station.pos[2] + TERRAIN_BASE - 0.6;
+    // At Stable Junction the ground rises to the footbridge: the run runs in a cutting there.
+    const near = station.pos[2] + Math.max(TERRAIN_BASE - 0.6, cuttingHeight(station.s) - 0.02);
     return near + (far - near) * THREE.MathUtils.smoothstep(distance, BLEND_START, BLEND_END);
   }
 

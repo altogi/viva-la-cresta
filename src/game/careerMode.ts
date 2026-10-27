@@ -74,15 +74,17 @@ export class CareerMode {
       const item = document.createElement('div');
       item.className = 'save';
       const best = Math.min(...Object.values(c.best).filter((t): t is number => t !== undefined));
-      const played = new Date(c.lastPlayed).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      const played = new Date(c.lastPlayed).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      // One card per career: the rider as the headline, the game and where it stands beneath,
+      // the best time on the right, and a small delete at the end.
       item.innerHTML = `
         <button class="save-open">
-          <span class="save-name">${c.name}</span>
-          <span class="save-rider"><img class="flag" src="${flagUrl(LOOKS[c.rider].flag)}" alt="" />${RIDERS[c.rider].name}${c.member ? '' : ' · SL'}</span>
-          <span class="save-best">${Number.isFinite(best) ? `Best ${best.toFixed(2)} s` : 'No time yet'}</span>
-          <span class="save-date">Last played ${played}</span>
+          <span class="save-who"><img class="flag" src="${flagUrl(LOOKS[c.rider].flag)}" alt="" />${RIDERS[c.rider].name}</span>
+          <span class="save-best">${Number.isFinite(best) ? `<b>${best.toFixed(2)}</b><small>best, s</small>` : '<small>No time yet</small>'}</span>
+          <span class="save-meta">${c.name} · ${played}</span>
+          <span class="save-status${c.member ? ' member' : ''}">${c.member ? 'Club member' : 'Supplementary List'}</span>
         </button>
-        <button class="save-delete" aria-label="Delete ${c.name}">✕</button>`;
+        <button class="save-delete" aria-label="Delete ${c.name}"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`;
       item.querySelector('.save-open')!.addEventListener('click', () => this.open(c));
       item.querySelector('.save-delete')!.addEventListener('click', () =>
         this.modal(`Delete ${c.name}?`, `${RIDERS[c.rider].name}'s career will be gone for good.`, [

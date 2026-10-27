@@ -222,35 +222,140 @@ export class Sound {
     }
   }
 
-  /** The crowd at the finish: a few seconds of applause and cheering. */
+  /**
+   * The crowd at the finish: about thirty people clapping, each at their own steady pace and with
+   * their own cupped-hands tone, in a little outdoor reverb, swelling then dying away; over it, a
+   * few cheers ("bravo!", "woo!") and a whistle or two.
+   */
   applause() {
     const ctx = this.ctx;
     if (!ctx) return;
     this.wake();
     if (this.playSample('applause', 0.8)) return;
-    const duration = 4.5;
     const rate = ctx.sampleRate;
-    const buffer = ctx.createBuffer(1, Math.ceil(rate * duration), rate);
-    const data = buffer.getChannelData(0);
-    // A crowd clapping: over a thousand claps at random times, swelling then fading.
-    for (let c = 0; c < 1400; c++) {
-      const start = Math.floor(Math.random() * (duration - 0.05) * rate);
-      const len = Math.floor(rate * (0.006 + Math.random() * 0.012));
-      const amp = 0.3 + Math.random() * 0.5;
-      for (let i = 0; i < len && start + i < data.length; i++) data[start + i] += (Math.random() * 2 - 1) * amp * (1 - i / len) ** 2;
-    }
-    for (let i = 0; i < data.length; i++) {
-      const t = i / rate;
-      data[i] *= Math.min(1, t / 0.25) * Math.min(1, (duration - t) / 1.5);
+    const duration = 5.5;
+    const buffer = ctx.createBuffer(2, Math.ceil(rate * duration), rate);
+    const left = buffer.getChannelData(0);
+    const right = buffer.getChannelData(1);
+    const clapLength = Math.floor(rate * 0.045);
+    for (let p = 0; p < 30; p++) {
+      // One person's clap: a burst of noise through a resonance (the cupped hands), quick decay.
+      const centre = 700 + Math.random() * 1700;
+      const q = 0.9 + Math.random() * 1.6;
+      const clap = new Float32Array(clapLength);
+      const w = (2 * Math.PI * centre) / rate;
+      const alpha = Math.sin(w) / (2 * q);
+      const b0 = alpha / (1 + alpha);
+      const a1 = (-2 * Math.cos(w)) / (1 + alpha);
+      const a2 = (1 - alpha) / (1 + alpha);
+      let x1 = 0;
+      let x2 = 0;
+      let y1 = 0;
+      let y2 = 0;
+      const decay = 0.006 + Math.random() * 0.01;
+      for (let i = 0; i < clapLength; i++) {
+        const t = i / rate;
+        const env = Math.min(1, t / 0.0015) * Math.exp(-t / decay);
+        const x = (Math.random() * 2 - 1) * env;
+        const y = b0 * x - b0 * x2 - a1 * y1 - a2 * y2;
+        x2 = x1;
+        x1 = x;
+        y2 = y1;
+        y1 = y;
+        clap[i] = y * 4;
+      }
+      // Their pace and where they stand (left or right of the listener).
+      const pace = 1 / (3.6 + Math.random() * 2.2);
+      const pan = Math.random();
+      const loud = 0.25 + Math.random() * 0.35;
+      let t = Math.random() * 0.35;
+      const stop = duration - 0.6 - Math.random() * 1.6;
+      while (t < stop) {
+        const start = Math.floor(t * rate);
+        // The crowd swells in, then thins out at the end.
+        const swell = Math.min(1, t / 0.5) * Math.min(1, (stop - t) / 1.2);
+        const gain = loud * swell * (0.8 + Math.random() * 0.4);
+        for (let i = 0; i < clapLength && start + i < left.length; i++) {
+          left[start + i] += clap[i] * gain * (1 - pan * 0.6);
+          right[start + i] += clap[i] * gain * (0.4 + pan * 0.6);
+        }
+        t += pace * (0.9 + Math.random() * 0.2);
+      }
     }
     const src = ctx.createBufferSource();
     src.buffer = buffer;
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'highpass';
-    filter.frequency.value = 600;
-    src.connect(filter).connect(this.crowdBus(1.1));
+    // The space: a short, bright outdoor reverb.
+    const verbBuffer = ctx.createBuffer(2, Math.ceil(rate * 0.9), rate);
+    for (let c = 0; c < 2; c++) {
+      const d = verbBuffer.getChannelData(c);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (rate * 0.18)) * 0.5;
+    }
+    const verb = ctx.createConvolver();
+    verb.buffer = verbBuffer;
+    const wet = ctx.createGain();
+    wet.gain.value = 0.25;
+    const out = this.crowdBus(0.9);
+    src.connect(out);
+    src.connect(verb).connect(wet).connect(out);
     src.start();
+    this.cheers(out);
   }
+
+  /** A few voices over the applause: rising "woo!"s and "bravo!"s, and a whistle or two. */
+  private cheers(out: AudioNode) {
+    const ctx = this.ctx!;
+    const now = ctx.currentTime;
+    for (let v = 0; v < 6; v++) {
+      const t = now + 0.2 + Math.random() * 2.2;
+      const man = Math.random() < 0.6;
+      const base = man ? 150 + Math.random() * 60 : 260 + Math.random() * 90;
+      const length = 0.5 + Math.random() * 0.5;
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(base, t);
+      osc.frequency.exponentialRampToValueAtTime(base * 1.7, t + length * 0.35);
+      osc.frequency.exponentialRampToValueAtTime(base * 1.1, t + length);
+      // Vowel formants: "oo" sliding to "ah".
+      const voice = ctx.createGain();
+      voice.gain.setValueAtTime(0, t);
+      voice.gain.linearRampToValueAtTime(0.09, t + 0.05);
+      voice.gain.setValueAtTime(0.09, t + length * 0.7);
+      voice.gain.exponentialRampToValueAtTime(0.0008, t + length);
+      for (const [f0, f1, g] of [[350, 750, 1], [800, 1200, 0.6], [2400, 2600, 0.25]]) {
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.Q.value = 6;
+        bp.frequency.setValueAtTime(f0, t);
+        bp.frequency.linearRampToValueAtTime(f1, t + length * 0.5);
+        const fg = ctx.createGain();
+        fg.gain.value = g;
+        osc.connect(bp).connect(fg).connect(voice);
+      }
+      voice.connect(out);
+      osc.start(t);
+      osc.stop(t + length + 0.05);
+    }
+    for (let w = 0; w < 2; w++) {
+      // A two-finger whistle: up, hold, down.
+      const t = now + 0.5 + Math.random() * 2.5;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      const f = 2100 + Math.random() * 700;
+      osc.frequency.setValueAtTime(f * 0.8, t);
+      osc.frequency.exponentialRampToValueAtTime(f, t + 0.12);
+      osc.frequency.setValueAtTime(f, t + 0.5);
+      osc.frequency.exponentialRampToValueAtTime(f * 0.7, t + 0.75);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.06, t + 0.04);
+      g.gain.setValueAtTime(0.06, t + 0.6);
+      g.gain.exponentialRampToValueAtTime(0.0005, t + 0.8);
+      osc.connect(g).connect(out);
+      osc.start(t);
+      osc.stop(t + 0.85);
+    }
+  }
+
 
   /** A crunching stride in the snow. */
   step() {
@@ -260,6 +365,12 @@ export class Sound {
   /** The thud of a fall. */
   thud() {
     this.burst(180, 0.35, 0.9, 'lowpass');
+  }
+
+  /** The toboggan knocking against a bankina: a hard wooden knock and a scrape of ice. */
+  knock() {
+    this.burst(260, 0.12, 0.8, 'lowpass');
+    this.burst(2600, 0.25, 0.3, 'bandpass');
   }
 
   private burst(freq: number, duration: number, amp: number, type: BiquadFilterType) {

@@ -1,6 +1,7 @@
 // Bot riders for headless calibration: each follows a version of the usual choreography
 // (when to go back on the knives, where and how hard to rake, how high to ride the banks).
 
+import { PHYSICS } from './rider';
 import { BENDS, JUNCTION_S, TRACK_LENGTH } from '../track/cresta';
 import { MAT_LENGTH, RideSim, type RideInput, type StartStyle } from './physics';
 import { lips } from './surface';
@@ -133,7 +134,7 @@ export const POLICIES: Record<string, Policy> = {
     steps: 7,
     startS: 0,
     knives: [[100, 320], [530, 636]],
-    rake: [[105, 320, 22], [535, 636, 16.2]],
+    rake: [[105, 320, 22], [535, 636, 17.2]],
     line: 1,
   },
   /** From Top with no brakes at all: into the wall at Curzon. */
@@ -180,10 +181,20 @@ export function lineSteer(track: Track, sim: RideSim, line: number): number {
     const u = Math.min(half + wall.radius * angle, (section.outerSide === 'left' ? lip.left : -lip.right) - 0.3);
     target = section.outerSide === 'left' ? u : -u;
   }
+  // A good rider keeps off the bankinas: near a square-cornered wall, aim back into the middle.
+  const here = track.section(st.s);
+  const side = st.u >= 0 ? 1 : -1;
+  const wallHere = side > 0 ? here.left : here.right;
+  if (wallHere.radius < 0.3) {
+    const barrier = here.floorWidth / 2 - PHYSICS.tobogganHalfWidth;
+    if (Math.abs(st.u) > barrier - 0.4) target = side * Math.max(0, barrier - 0.7);
+  }
   // Point the toboggan back towards the target line (gently at speed), then steer to hold that heading.
   const speed = Math.hypot(st.v, st.w);
   const limit = Math.min(0.16, 1.6 / Math.max(speed, 1));
-  const wantHeading = Math.max(-limit, Math.min(limit, (0.35 * (target - st.u)) / Math.max(1, speed / 8)));
+  // Damped by the sideways speed, so coming off a bank the rider doesn't swing across the narrow
+  // floor and into the other wall.
+  const wantHeading = Math.max(-limit, Math.min(limit, (0.35 * (target - st.u)) / Math.max(1, speed / 8) - (0.7 * st.w) / Math.max(speed, 1)));
   return Math.max(-1, Math.min(1, 9 * (wantHeading - st.heading)));
 }
 

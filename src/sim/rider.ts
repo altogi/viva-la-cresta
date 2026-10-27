@@ -120,8 +120,12 @@ export const PHYSICS = {
   impactSpeed: 2.2,
   /** Half the toboggan's width: how close its centre gets to a square-cornered wall (m). */
   tobogganHalfWidth: 0.28,
-  /** Share of speed lost glancing off a wall, at a 90° impact. */
+  /** Share of speed lost glancing off a wall, at a 90° impact… */
   glanceLoss: 0.6,
+  /** …on top of this share lost on every hit, however shallow: a bankina always costs time… */
+  bankHitLoss: 0.035,
+  /** …once the toboggan comes into it at least this fast across the run (m/s), not just brushing it. */
+  bankHitSpeed: 0.3,
   /** Speed added diving onto the toboggan after a running start (m/s). */
   diveBoost: 0.8,
   /** Friction when sliding on the near-vertical part of a wall. */

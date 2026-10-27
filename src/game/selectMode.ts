@@ -2,7 +2,7 @@
 // and the chosen rider shown in 3D beside their toboggan at the Top.
 
 import * as THREE from 'three';
-import { RIDERS, type RiderId, type RiderStats, type TobogganId } from '../sim/rider';
+import { RIDERS, TOBOGGANS, type RiderId, type RiderStats, type TobogganId } from '../sim/rider';
 import type { Track } from '../sim/track';
 import type { World } from '../render/world';
 import { RiderModel, type IdleAction } from '../render/riderModel';
@@ -11,22 +11,36 @@ import { toThree } from '../render/util';
 import { flagUrl } from '../ui/flags';
 import { saveSelection, type Selection } from './selection';
 
-const PROFILES: Record<RiderId, { flag: string; line: string; action: IdleAction }> = {
+const PROFILES: Record<RiderId, { flag: string; line: string; story: string; good: string; watch: string; action: IdleAction }> = {
   maximilian: {
     flag: 'Germany · 20',
     line: 'Light. Lanky. Lightning off the start.',
+    story: "Munich money, St Moritz manners, and a grin that gets him into every party at the Kulm. Out at Drakula till four, on the ice by nine. He came for the nightlife and stayed for the ice.",
+    good: 'Fastest off the start. Long reach for steering. Easy to slow for Shuttlecock.',
+    watch: "Too light to carry speed down the straights: he wins it at the top.",
     action: 'comb',
   },
   adelaide: {
     flag: 'England · 25',
     line: 'Balanced. Fearless. No weak spots.',
+    story: "Third generation on the Cresta: her grandfather's name is on a board in the clubhouse and she means to put hers above it. Cold plunge before breakfast, never once seen to hesitate at Shuttlecock.",
+    good: 'The all-rounder: no weak spot, and can win from any start.',
+    watch: 'No single gift to lean on either. Every course has to be clean.',
     action: 'flirt',
   },
   remo: {
     flag: 'Switzerland · 50',
     line: 'Heavy. Hairy. Hard to stop.',
+    story: 'Born in Celerina, at the bottom of the run, and has ridden it every winter since the old wooden toboggans. Thirty years of Shuttlecock stories, most of them true. Tower knows his laugh before they see him.',
+    good: 'All that weight: a rocket down Bledisloe and the fastest at the finish.',
+    watch: 'Slow to move about and heavy to stop. Rake early, or meet the straw.',
     action: 'burp',
   },
+};
+
+const TOBOGGAN_TEXT: Record<TobogganId, string> = {
+  traditional: 'Steel frame and sliding cushion. Forgiving. Every rider starts on one.',
+  flattop: 'Carbon, flexible, shoulders down when forward. Faster, and very sensitive to every movement.',
 };
 
 /** Seconds between idle gestures, and how long each takes. */
@@ -66,6 +80,8 @@ export class SelectMode {
   private readonly spot = new THREE.Vector3();
   private readonly heading: number;
   private readonly ids = Object.keys(RIDERS) as RiderId[];
+  /** Red arrows floating either side of the rider: swipe (or tap one) for the next rider. */
+  private readonly arrows: THREE.Group;
   onDone: (selection: Selection) => void = () => {};
 
   constructor(
@@ -81,9 +97,8 @@ export class SelectMode {
     this.anchor.compose(this.spot, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.heading), new THREE.Vector3(1, 1, 1));
     this.buildCards();
     $('select-done').addEventListener('click', () => this.onDone(this.selection));
-    for (const b of document.querySelectorAll<HTMLButtonElement>('.select-arrow')) {
-      b.addEventListener('click', () => this.step(Number(b.dataset.step)));
-    }
+    this.arrows = buildArrows();
+    this.listenOnScene();
     window.addEventListener('keydown', (e) => {
       if (!document.body.classList.contains('selecting')) return;
       if (e.key === 'ArrowLeft') this.step(-1);
@@ -106,6 +121,8 @@ export class SelectMode {
         <div class="rider-name"><img class="flag" src="${flagUrl(LOOKS[id].flag)}" alt="" />${r.name}</div>
         <div class="rider-flag">${p.flag}</div>
         <div class="rider-line">${p.line}</div>
+        <p class="rider-story">${p.story}</p>
+        <div class="rider-traits"><p><b>Strengths</b>${p.good}</p><p><b>Watch out</b>${p.watch}</p></div>
         <div class="rider-stats">${ratings(r)
           .map(([label, v]) => `<div class="stat"><span>${label}</span><i><b style="width:${Math.round(v * 100)}%"></b></i></div>`)
           .join('')}</div>`;
@@ -180,6 +197,7 @@ export class SelectMode {
   private refresh() {
     for (const dot of document.querySelectorAll<HTMLElement>('#select-dots button')) dot.classList.toggle('chosen', dot.dataset.rider === this.selection.rider);
     for (const b of document.querySelectorAll<HTMLElement>('[data-toboggan]')) b.classList.toggle('chosen', b.dataset.toboggan === this.selection.toboggan);
+    $('select-toboggan-text').textContent = `${TOBOGGANS[this.selection.toboggan].name}: ${TOBOGGAN_TEXT[this.selection.toboggan]}`;
     // Models are kept once built (and the others are built ahead, a frame at a time).
     const model = this.modelFor(this.selection.rider, this.selection.toboggan);
     if (model === this.preview) return;
@@ -219,11 +237,13 @@ export class SelectMode {
     if (career) this.selection = { ...this.selection, toboggan: 'traditional' };
     this.time = 0;
     this.savedFov = this.world.camera.fov;
+    this.world.scene.add(this.arrows);
     this.refresh();
     this.scrollToRider('instant');
   }
 
   close() {
+    this.arrows.removeFromParent();
     this.preview?.root.removeFromParent();
     this.outgoing?.model.root.removeFromParent();
     this.preview = null;
@@ -311,5 +331,88 @@ export class SelectMode {
     cam.position.copy(target).add(local).add(new THREE.Vector3(0, -0.12, 0));
     cam.up.set(0, 1, 0);
     cam.lookAt(target);
+    cam.updateMatrixWorld();
+    this.placeArrows(target, height);
   }
+
+  /**
+   * The arrows float at the two sides of the view, level with the middle of the rider and a little
+   * in front of them (so the rider and the toboggan never hide one), pulsing outward.
+   */
+  private placeArrows(target: THREE.Vector3, height: number) {
+    const cam = this.world.camera;
+    const toTarget = target.clone().sub(cam.position);
+    const depth = Math.max(1.5, toTarget.length() - 1.2);
+    const centre = cam.position.clone().addScaledVector(toTarget.normalize(), depth);
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0).normalize();
+    const halfWidth = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * depth * cam.aspect;
+    const pulse = 0.04 * Math.sin(this.time * 4) * depth;
+    const scale = depth / 6.5;
+    for (const arrow of this.arrows.children) {
+      const side = arrow.userData.side as number;
+      arrow.position.copy(centre).addScaledVector(right, side * (halfWidth * 0.66 + pulse));
+      arrow.position.y += height * 0.02;
+      arrow.quaternion.copy(cam.quaternion);
+      arrow.scale.setScalar(scale);
+      // Hidden mid-swap, so they don't sweep across with the riders.
+      arrow.visible = this.swap >= 1;
+    }
+  }
+
+  /** Swipe across the scene (or tap an arrow) for the next rider. */
+  private listenOnScene() {
+    const canvas = this.world.renderer.domElement;
+    let start: { x: number; y: number; t: number } | null = null;
+    canvas.addEventListener('pointerdown', (e) => {
+      if (document.body.classList.contains('selecting')) start = { x: e.clientX, y: e.clientY, t: performance.now() };
+    });
+    canvas.addEventListener('pointerup', (e) => {
+      if (!start || !document.body.classList.contains('selecting')) return;
+      const dx = e.clientX - start.x;
+      const dy = e.clientY - start.y;
+      start = null;
+      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+        this.step(dx < 0 ? 1 : -1);
+        return;
+      }
+      // A tap: on an arrow?
+      const rect = canvas.getBoundingClientRect();
+      const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, this.world.camera);
+      const hit = ray.intersectObjects(this.arrows.children, true)[0];
+      if (hit) {
+        let node: THREE.Object3D | null = hit.object;
+        while (node && node.userData.side === undefined) node = node.parent;
+        if (node) this.step(node.userData.side as number);
+      }
+    });
+  }
+}
+
+/** Two chunky red chevrons, a little glossy, with a hint of glow so they read against snow. */
+function buildArrows(): THREE.Group {
+  const group = new THREE.Group();
+  const shape = new THREE.Shape();
+  // A chevron pointing right (+x), about 0.34 m tall.
+  shape.moveTo(-0.08, 0.17);
+  shape.lineTo(0.06, 0.17);
+  shape.lineTo(0.2, 0);
+  shape.lineTo(0.06, -0.17);
+  shape.lineTo(-0.08, -0.17);
+  shape.lineTo(0.06, 0);
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: 0.05, bevelEnabled: true, bevelThickness: 0.015, bevelSize: 0.012, bevelSegments: 2 });
+  geometry.center();
+  const material = new THREE.MeshStandardMaterial({ color: '#c0181a', emissive: '#7a0606', emissiveIntensity: 0.6, roughness: 0.35, metalness: 0.1 });
+  for (const side of [-1, 1]) {
+    const holder = new THREE.Group();
+    holder.userData.side = side;
+    const mesh = new THREE.Mesh(geometry, material);
+    if (side < 0) mesh.rotation.y = Math.PI; // pointing left
+    mesh.castShadow = true;
+    holder.add(mesh);
+    group.add(holder);
+  }
+  return group;
 }

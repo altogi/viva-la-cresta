@@ -70,3 +70,18 @@ export function pathBridge(track: Track) {
   // Must match stable_junction() in blender/bridges.py.
   return { frame, deck: Math.max(wall, 0.75) + 1.65 + 0.6, span: (left - right) / 2 + 3.6 };
 }
+
+/**
+ * The cutting at Stable Junction: the run passes deep between snow walls there, the road and the
+ * ground level with the footbridge's deck above it (as in the photograph from the run). Height of
+ * the ground above the run's floor, by distance down the run.
+ */
+export const CUTTING = { s0: 38, s1: 112, ramp: 16, height: 3.0 };
+
+export function cuttingHeight(s: number): number {
+  const { s0, s1, ramp, height } = CUTTING;
+  if (s <= s0 || s >= s1) return 0;
+  const up = THREE.MathUtils.smoothstep(s, s0, s0 + ramp);
+  const down = 1 - THREE.MathUtils.smoothstep(s, s1 - ramp, s1);
+  return height * Math.min(up, down);
+}

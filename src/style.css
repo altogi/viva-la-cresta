@@ -883,42 +883,6 @@ body.selecting #select {
   letter-spacing: 0.02em;
 }
 
-/* Below the rider's card: a clear way to the next rider (swiping the card works too). */
-.switch-rider {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 10px 0;
-  padding: 6px;
-  border-radius: 12px;
-  background: #f3ede0;
-}
-
-.switch-rider > div {
-  text-align: center;
-}
-
-.switch-rider span {
-  font-family: var(--display);
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-size: 13px;
-  color: var(--accent);
-}
-
-.select-arrow {
-  width: 52px;
-  height: 44px;
-  border-radius: 10px;
-  border: 0;
-  background: var(--accent);
-  color: #fff;
-  font-size: 30px;
-  line-height: 1;
-  padding: 0 0 4px;
-}
-
 .select-panel h3 {
   font-family: var(--display);
   font-size: 13px;
@@ -956,7 +920,7 @@ body.selecting #select {
   display: flex;
   justify-content: center;
   gap: 8px;
-  margin-top: 6px;
+  margin: 2px 0 10px;
 }
 
 #select-dots button {
@@ -1226,67 +1190,132 @@ body.screen-hub #hub {
 }
 
 .badge-small {
-  width: 54px;
+  width: 48px;
   float: right;
+  margin-top: -4px;
 }
 
+/* A saved career: one card, the rider and best time large, the rest quiet, a small delete. */
 .save {
   display: flex;
-  gap: 6px;
   align-items: stretch;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(147, 3, 3, 0.18);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(36, 40, 42, 0.06);
+  overflow: hidden;
 }
 
 .screen .save button {
   margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  min-height: 0;
 }
 
 .screen .save .save-open {
   flex: 1;
+  min-width: 0;
   display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 2px 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'who best'
+    'meta best'
+    'status best';
+  align-items: center;
+  gap: 3px 12px;
+  padding: 13px 4px 13px 16px;
   text-align: left;
-  padding: 10px 12px;
   text-transform: none;
   color: var(--charcoal);
-  font-weight: 500;
 }
 
-.save-name {
+.save-who {
+  grid-area: who;
+  font-family: var(--display);
   font-weight: 800;
+  font-size: 18px;
+  color: var(--charcoal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.save-meta {
+  grid-area: meta;
+  font-family: var(--serif);
+  font-size: 13px;
+  font-weight: 400;
+  color: #6b6b6b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.save-status {
+  grid-area: status;
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: #9a9a9a;
+}
+
+.save-status.member {
+  color: var(--gold);
 }
 
 .save-best {
-  text-align: right;
-  font-weight: 700;
+  grid-area: best;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.05;
 }
 
-.save-rider,
-.save-date {
+.save-best b {
+  font-family: var(--display);
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.save-best small {
   font-family: var(--serif);
-  font-size: 13px;
-  color: #555;
+  font-size: 11px;
+  font-weight: 400;
+  color: #8a8a8a;
 }
 
-.save-date {
-  text-align: right;
-}
-
-.save-rider .flag,
+.save-who .flag,
 #hub-rider .flag {
-  height: 12px;
-  margin-right: 6px;
+  height: 14px;
+  margin-right: 8px;
   vertical-align: -1px;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 
 .screen .save .save-delete {
-  width: 44px;
+  width: 48px;
   flex: none;
-  color: #999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a7a7a7;
+  border-left: 1px solid rgba(147, 3, 3, 0.1);
+}
+
+.screen .save .save-delete:active {
+  color: var(--accent);
+  background: rgba(147, 3, 3, 0.05);
+}
+
+#saves .panel h2 {
+  margin-bottom: 16px;
 }
 
 .hub-head {
@@ -1577,5 +1606,50 @@ body.screen-hub #hub {
   font-family: var(--serif);
   font-size: 17px;
   color: var(--charcoal);
-  margin: 2px 0 10px;
+  margin: 2px 0 6px;
+}
+
+.rider-story {
+  font-family: var(--serif);
+  font-size: 13.5px;
+  line-height: 1.35;
+  color: #4a4a4a;
+  margin: 0 0 8px;
+}
+
+.rider-traits {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 0 0 10px;
+}
+
+.rider-traits p {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: #4a4a4a;
+}
+
+.rider-traits b {
+  display: block;
+  font-family: var(--display);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+#select-toboggan-text {
+  font-family: var(--serif);
+  font-size: 12.5px;
+  line-height: 1.3;
+  color: #6b6b6b;
+  margin: 6px 0 8px;
+}
+
+#select.career #select-toboggan-text {
+  display: none;
 }
