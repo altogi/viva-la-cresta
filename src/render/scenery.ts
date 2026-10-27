@@ -26,7 +26,7 @@ export function buildScenery(track: Track, terrain: Terrain, assets: Assets): TH
   group.add(buildTrees(track, terrain, assets));
   group.add(assets.models.town ? placeTown(terrain, assets.models.town) : buildTownBuildings(terrain));
   group.add(buildTopArea(ctx));
-  group.add(buildClubhouse(track, terrain));
+  group.add(assets.models.junction ? placeJunction(assets.models.junction) : buildClubhouse(track, terrain));
   for (const lm of LANDMARKS) {
     // The Junction walkway is part of the clubhouse model.
     if (lm.kind === 'bridge' && lm.name !== 'Junction walkway') group.add(buildBridge(ctx, lm.s, lm.name));
@@ -36,6 +36,18 @@ export function buildScenery(track: Track, terrain: Terrain, assets: Assets): TH
   group.add(buildShuttlecockRunoff(ctx));
   group.add(buildFinishMat(ctx), buildRunOutBank(ctx));
   return group;
+}
+
+/** The clubhouse, the walkway and the Junction hut made in Blender (blender/junction.py), built in place. */
+function placeJunction(model: THREE.Object3D): THREE.Object3D {
+  model.name = 'clubhouse';
+  model.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return model;
 }
 
 /** Positions objects relative to the run. */
@@ -186,18 +198,41 @@ function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group
   const pick = () => (rng() < 0.3 ? NEAR[3 + Math.floor(rng() * 2)] : NEAR[Math.floor(rng() * 3)]);
   const CHUNK = 160;
   const byModel = new Map<string, { name: string; shadow: boolean; matrices: THREE.Matrix4[] }>();
+  const add = (name: string, shadow: boolean, x: number, y: number, matrix: THREE.Matrix4) => {
+    const key = `${name}|${shadow}|${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)}`;
+    if (!byModel.has(key)) byModel.set(key, { name, shadow, matrices: [] });
+    byModel.get(key)!.matrices.push(matrix);
+  };
+  const heights = new Map<string, number>();
+  const height = (name: string) => {
+    if (!heights.has(name)) {
+      let h = 1;
+      for (const p of assets.trees[name] ?? []) {
+        p.geometry.computeBoundingBox();
+        h = Math.max(h, p.geometry.boundingBox!.max.y);
+      }
+      heights.set(name, h);
+    }
+    return heights.get(name)!;
+  };
+  const fill = new THREE.Matrix4();
   for (const t of spots) {
     const kind = pick();
-    const near = t.distance < 80;
-    const name = near ? kind : kind.startsWith('larch') ? 'larch_far' : 'spruce_far';
-    const shadow = t.distance < 35;
-    const key = `${name}|${shadow}|${Math.floor(t.x / CHUNK)},${Math.floor(t.y / CHUNK)}`;
+    const far = kind.startsWith('larch') ? 'larch_far' : 'spruce_far';
     q.setFromAxisAngle(up, rng() * Math.PI * 2);
     // Real heights 9-20 m: the models are 13-21 m tall.
     const s = (0.5 + rng() * 0.45) * t.scale;
     m.compose(new THREE.Vector3(t.x, terrain.height(t.x, t.y) - 0.3, -t.y), q, new THREE.Vector3(s, s * (0.92 + rng() * 0.16), s));
-    if (!byModel.has(key)) byModel.set(key, { name, shadow, matrices: [] });
-    byModel.get(key)!.matrices.push(m.clone());
+    if (t.distance < 35) {
+      // Close to the run: the modelled tree, with its own picture inside it. The boughs are near
+      // level, so seen side-on from a little way off they thin to nothing; the picture keeps the
+      // crown's outline from every angle.
+      add(kind, true, t.x, t.y, m.clone());
+      const k = height(kind) / height(far);
+      add(far, false, t.x, t.y, m.clone().multiply(fill.makeScale(k * 0.8, k * 0.97, k * 0.8)));
+    } else {
+      add(far, false, t.x, t.y, m.clone());
+    }
   }
   for (const { name, shadow, matrices } of byModel.values()) {
     for (const part of assets.trees[name] ?? []) {

@@ -90,6 +90,64 @@ export function clubhouseTerrace(track: Track): { ring: P[]; z: number } {
   return { ring: offset(ring, -0.55), z: floorZ + 2 * FLOOR + 0.4 };
 }
 
+/**
+ * Where the pieces at Junction stand, as in the photographs: the clubhouse on its footprint, the
+ * walkway leaving its first floor straight across the run, and the Junction hut on the far side,
+ * on its footprint right at the run's edge, its roof terrace level with the walkway.
+ */
+export function junctionLayout(track: Track) {
+  const club = OSM_NEAR.find((b) => b.id === OSM_IDS.clubhouse)!;
+  const clubRing: P[] = club.p.map(([x, y]) => [club.c[0] + x, club.c[1] + y] as P).reverse();
+  const floorZ = trackFloorNear(track, club.c) - 0.2;
+  const osmHut = OSM_NEAR.find((x) => x.id === OSM_IDS.junctionHut)!;
+  const hutRing: P[] = osmHut.p.map(([x, y]) => [osmHut.c[0] + x, osmHut.c[1] + y] as P);
+  if (signedArea(hutRing) < 0) hutRing.reverse();
+  const walk = OSM_NEAR.find((x) => x.id === OSM_IDS.junctionWalkway)!;
+  // The station the walkway crosses.
+  let cross = track.stations[0];
+  for (const st of track.stations) {
+    if (Math.hypot(st.pos[0] - walk.c[0], st.pos[1] - walk.c[1]) < Math.hypot(cross.pos[0] - walk.c[0], cross.pos[1] - walk.c[1])) cross = st;
+  }
+  const st = track.frame(cross.s);
+  const side = -(Math.sign((club.c[0] - st.pos[0]) * st.left[0] + (club.c[1] - st.pos[1]) * st.left[1]) || 1);
+  // The walkway: square across the run from the clubhouse wall to the hut's.
+  const reach = (dir: P, ring: P[]): P => {
+    for (let d = 0; d < 40; d += 0.1) {
+      const p: P = [st.pos[0] + dir[0] * d, st.pos[1] + dir[1] * d];
+      if (insideRing(p, ring)) return p;
+    }
+    return [st.pos[0] + dir[0] * 8, st.pos[1] + dir[1] * 8];
+  };
+  const toHut: P = [side * st.left[0], side * st.left[1]];
+  const deckZ = floorZ + FLOOR;
+  return {
+    clubRing,
+    floorZ,
+    /** Outward direction of the clubhouse's run side. */
+    runNormal: toHut,
+    side,
+    hut: { ring: hutRing, ground: trackFloorNear(track, osmHut.c) - 0.3, roof: deckZ, toRun: [-toHut[0], -toHut[1]] as P, forward: [st.forward[0], st.forward[1]] as P },
+    walkway: { a: reach([-toHut[0], -toHut[1]], clubRing), b: reach(toHut, hutRing), deckZ, width: 1.8 },
+  };
+}
+
+function signedArea(ring: P[]): number {
+  return ring.reduce((sum, p, i) => {
+    const q = ring[(i + 1) % ring.length];
+    return sum + p[0] * q[1] - q[0] * p[1];
+  }, 0) / 2;
+}
+
+function insideRing([x, y]: P, ring: P[]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
 /** Elevation of the track floor nearest to a point. */
 function trackFloorNear(track: Track, [x, y]: P): number {
   let best = track.stations[0];

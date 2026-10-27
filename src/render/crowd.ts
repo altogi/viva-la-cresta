@@ -397,8 +397,9 @@ export class Crowd {
     // Riders get ready on the side of the run opposite the clubhouse.
     const side = -(Math.sign((club[0] - st.pos[0]) * st.left[0] + (club[1] - st.pos[1]) * st.left[1]) || 1);
     const colors = ['#b3261e', '#d9a21a', '#1f4fa8', '#1d1d1f', '#b3261e', '#2f7d4a', '#d9a21a', '#7a1d1d'];
+    // Uphill of the Junction hut, which stands at the run's edge from just above the start.
     for (let k = 0; k < 8; k++) {
-      const s = s0 - 10 + k * 1.6;
+      const s = s0 - 25 + k * 1.6;
       const f = this.track.frame(s);
       const u = side * (lips(this.track.section(s))[side > 0 ? 'left' : 'right'] * side + 1.6);
       const at = this.ground(s, u);
@@ -414,7 +415,7 @@ export class Crowd {
       [LOOKS.remo, '#e9e4d6', '#1f4fa8'],
     ];
     kit.forEach(([look, suit, helmet], k) => {
-      const s = s0 - 6 + k * 4.5;
+      const s = s0 - 20 + k * 4.5;
       const u = side * (lips(this.track.section(s))[side > 0 ? 'left' : 'right'] * side + 3.6 + (k % 2) * 1.2);
       const at = this.ground(s, u);
       const f = this.track.frame(s);

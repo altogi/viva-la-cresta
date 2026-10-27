@@ -23,7 +23,7 @@ import { POLICIES } from './sim/autopilot';
 import { createTuningPanel } from './ui/tuning';
 
 /** Extra Blender models (public/models/<name>.glb) the scenery uses. */
-const MODELS: string[] = ['town', 'balloon', 'riders'];
+const MODELS: string[] = ['town', 'balloon', 'riders', 'junction'];
 
 registerSW({ immediate: true });
 
