@@ -1,8 +1,8 @@
-// Choosing who rides and on what: three rider cards with their strengths, a toboggan switch,
-// and the chosen rider shown in 3D beside their toboggan at the Top.
+// Choosing who rides and on what, in two steps: first the rider (one card at a time, the rider
+// shown in 3D beside their toboggan at the Top), then the toboggan.
 
 import * as THREE from 'three';
-import { RIDERS, TOBOGGANS, type RiderId, type RiderStats, type TobogganId } from '../sim/rider';
+import { RIDERS, type RiderId, type RiderStats, type TobogganId } from '../sim/rider';
 import type { Track } from '../sim/track';
 import type { World } from '../render/world';
 import { RiderModel, type IdleAction } from '../render/riderModel';
@@ -11,29 +11,23 @@ import { toThree } from '../render/util';
 import { flagUrl } from '../ui/flags';
 import { saveSelection, type Selection } from './selection';
 
-const PROFILES: Record<RiderId, { flag: string; line: string; story: string; good: string; watch: string; action: IdleAction }> = {
+const PROFILES: Record<RiderId, { flag: string; line: string; story: string; action: IdleAction }> = {
   maximilian: {
     flag: 'Germany · 20',
     line: 'Light. Lanky. Lightning off the start.',
     story: "Munich money, St Moritz manners, and a grin that gets him into every party at the Kulm. Out at Drakula till four, on the ice by nine. He came for the nightlife and stayed for the ice.",
-    good: 'Fastest off the start. Long reach for steering. Easy to slow for Shuttlecock.',
-    watch: "Too light to carry speed down the straights: he wins it at the top.",
     action: 'comb',
   },
   adelaide: {
     flag: 'England · 25',
     line: 'Balanced. Fearless. No weak spots.',
     story: "Third generation on the Cresta: her grandfather's name is on a board in the clubhouse and she means to put hers above it. Cold plunge before breakfast, never once seen to hesitate at Shuttlecock.",
-    good: 'The all-rounder: no weak spot, and can win from any start.',
-    watch: 'No single gift to lean on either. Every course has to be clean.',
     action: 'flirt',
   },
   remo: {
     flag: 'Switzerland · 50',
     line: 'Heavy. Hairy. Hard to stop.',
     story: 'Born in Celerina, at the bottom of the run, and has ridden it every winter since the old wooden toboggans. Thirty years of Shuttlecock stories, most of them true. Tower knows his laugh before they see him.',
-    good: 'All that weight: a rocket down Bledisloe and the fastest at the finish.',
-    watch: 'Slow to move about and heavy to stop. Rake early, or meet the straw.',
     action: 'burp',
   },
 };
@@ -82,6 +76,11 @@ export class SelectMode {
   private readonly ids = Object.keys(RIDERS) as RiderId[];
   /** Red arrows floating either side of the rider: swipe (or tap one) for the next rider. */
   private readonly arrows: THREE.Group;
+  /** Which step of the choice is showing: the rider, then (for a free ride) the toboggan. */
+  private stage: 'rider' | 'toboggan' = 'rider';
+  private career = false;
+  /** Share of the screen height above the panel, eased as the panel changes height between steps. */
+  private visible = 0;
   onDone: (selection: Selection) => void = () => {};
 
   constructor(
@@ -96,11 +95,18 @@ export class SelectMode {
     this.heading = track.heading(0);
     this.anchor.compose(this.spot, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.heading), new THREE.Vector3(1, 1, 1));
     this.buildCards();
-    $('select-done').addEventListener('click', () => this.onDone(this.selection));
+    $('select-done').addEventListener('click', () => {
+      if (this.stage === 'rider' && !this.career) this.setStage('toboggan');
+      else this.onDone(this.selection);
+    });
+    $('select-back').addEventListener('click', () => this.setStage('rider'));
+    for (const button of document.querySelectorAll<HTMLElement>('[data-toboggan] span')) {
+      button.textContent = TOBOGGAN_TEXT[button.parentElement!.dataset.toboggan as TobogganId];
+    }
     this.arrows = buildArrows();
     this.listenOnScene();
     window.addEventListener('keydown', (e) => {
-      if (!document.body.classList.contains('selecting')) return;
+      if (!document.body.classList.contains('selecting') || this.stage !== 'rider') return;
       if (e.key === 'ArrowLeft') this.step(-1);
       else if (e.key === 'ArrowRight') this.step(1);
     });
@@ -122,7 +128,6 @@ export class SelectMode {
         <div class="rider-flag">${p.flag}</div>
         <div class="rider-line">${p.line}</div>
         <p class="rider-story">${p.story}</p>
-        <div class="rider-traits"><p><b>Strengths</b>${p.good}</p><p><b>Watch out</b>${p.watch}</p></div>
         <div class="rider-stats">${ratings(r)
           .map(([label, v]) => `<div class="stat"><span>${label}</span><i><b style="width:${Math.round(v * 100)}%"></b></i></div>`)
           .join('')}</div>`;
@@ -163,6 +168,15 @@ export class SelectMode {
     }
   }
 
+  private setStage(stage: 'rider' | 'toboggan') {
+    this.stage = stage;
+    const select = $('select');
+    select.classList.toggle('stage-toboggan', stage === 'toboggan');
+    $('select-done').textContent = this.career ? 'Begin' : stage === 'rider' ? 'Next' : 'Done';
+    $('select-back-name').textContent = RIDERS[this.selection.rider].name;
+    if (stage === 'rider') this.scrollToRider('instant');
+  }
+
   private step(by: number) {
     const i = (this.ids.indexOf(this.selection.rider) + by + this.ids.length) % this.ids.length;
     this.choose({ ...this.selection, rider: this.ids[i] }, true);
@@ -197,7 +211,6 @@ export class SelectMode {
   private refresh() {
     for (const dot of document.querySelectorAll<HTMLElement>('#select-dots button')) dot.classList.toggle('chosen', dot.dataset.rider === this.selection.rider);
     for (const b of document.querySelectorAll<HTMLElement>('[data-toboggan]')) b.classList.toggle('chosen', b.dataset.toboggan === this.selection.toboggan);
-    $('select-toboggan-text').textContent = `${TOBOGGANS[this.selection.toboggan].name}: ${TOBOGGAN_TEXT[this.selection.toboggan]}`;
     // Models are kept once built (and the others are built ahead, a frame at a time).
     const model = this.modelFor(this.selection.rider, this.selection.toboggan);
     if (model === this.preview) return;
@@ -228,14 +241,16 @@ export class SelectMode {
 
   /**
    * Show the selection. For a new career there's no toboggan to choose (everyone starts on a
-   * traditional), so the rider's card gets the room.
+   * traditional), so choosing the rider is the only step.
    */
   open(options: { career?: boolean } = {}) {
     const career = !!options.career;
+    this.career = career;
     $('select').classList.toggle('career', career);
-    $('select-done').textContent = career ? 'Begin' : 'Done';
     if (career) this.selection = { ...this.selection, toboggan: 'traditional' };
     this.time = 0;
+    this.visible = 0;
+    this.setStage('rider');
     this.savedFov = this.world.camera.fov;
     this.world.scene.add(this.arrows);
     this.refresh();
@@ -314,7 +329,9 @@ export class SelectMode {
     cam.fov = PORTRAIT_FOV;
     // On a phone, the slice above the panel (whatever its height); beside the side panel, all of it.
     const panel = document.querySelector<HTMLElement>('#select .select-panel')?.offsetHeight ?? h * 0.5;
-    const visible = side ? 1 : THREE.MathUtils.clamp((h - panel) / h, 0.3, 1);
+    const wantedVisible = side ? 1 : THREE.MathUtils.clamp((h - panel) / h, 0.3, 1);
+    this.visible = this.visible ? this.visible + (wantedVisible - this.visible) * (1 - Math.exp(-dt * 6)) : wantedVisible;
+    const visible = this.visible;
     if (side) cam.setViewOffset(w, h, 200, 0, w, h);
     else cam.setViewOffset(w, h, 0, h * (0.5 - visible / 2), w, h);
     // Ease the framing between riders of different heights.
@@ -350,12 +367,12 @@ export class SelectMode {
     const scale = depth / 6.5;
     for (const arrow of this.arrows.children) {
       const side = arrow.userData.side as number;
-      arrow.position.copy(centre).addScaledVector(right, side * (halfWidth * 0.66 + pulse));
+      arrow.position.copy(centre).addScaledVector(right, side * (halfWidth * 0.74 + pulse));
       arrow.position.y += height * 0.02;
       arrow.quaternion.copy(cam.quaternion);
       arrow.scale.setScalar(scale);
       // Hidden mid-swap, so they don't sweep across with the riders.
-      arrow.visible = this.swap >= 1;
+      arrow.visible = this.swap >= 1 && this.stage === 'rider';
     }
   }
 
@@ -364,7 +381,7 @@ export class SelectMode {
     const canvas = this.world.renderer.domElement;
     let start: { x: number; y: number; t: number } | null = null;
     canvas.addEventListener('pointerdown', (e) => {
-      if (document.body.classList.contains('selecting')) start = { x: e.clientX, y: e.clientY, t: performance.now() };
+      if (document.body.classList.contains('selecting') && this.stage === 'rider') start = { x: e.clientX, y: e.clientY, t: performance.now() };
     });
     canvas.addEventListener('pointerup', (e) => {
       if (!start || !document.body.classList.contains('selecting')) return;

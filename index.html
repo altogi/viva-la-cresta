@@ -93,15 +93,20 @@
     <!-- Choosing a rider and toboggan -->
     <section id="select">
       <div class="select-panel">
-        <h2>Choose your rider</h2>
-        <div id="select-riders"></div>
-        <div id="select-dots"></div>
-        <div class="toboggan-switch">
-          <button data-toboggan="traditional">Traditional</button>
-          <button data-toboggan="flattop">Flat-top</button>
+        <div class="select-step rider-step">
+          <h2>Choose your rider</h2>
+          <div id="select-riders"></div>
+          <div id="select-dots"></div>
         </div>
-        <p id="select-toboggan-text"></p>
-        <button id="select-done" class="primary">Done</button>
+        <div class="select-step toboggan-step">
+          <button id="select-back" class="select-back">‹ <span id="select-back-name">Rider</span></button>
+          <h2>Choose your toboggan</h2>
+          <div class="toboggan-switch">
+            <button data-toboggan="traditional"><b>Traditional</b><span></span></button>
+            <button data-toboggan="flattop"><b>Flat-top</b><span></span></button>
+          </div>
+        </div>
+        <button id="select-done" class="primary">Next</button>
       </div>
     </section>
 
