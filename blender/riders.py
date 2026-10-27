@@ -210,14 +210,117 @@ def text_mesh(body, size, color_mat, name):
     return obj
 
 
+# Hands and feet are modelled on their own (gloves with fingers and a thumb, boots with a heel,
+# a sole and the toe rakes) and joined to the body: the body's skin skeleton stops at the wrists
+# and ankles.
+BODY_EDGES = [e for e in EDGES if not any(k in n for n in e for k in ("hand_", "fingers_", "toe_"))]
+
+
+def skin_chains(name, chains, radius, mat):
+    """Round tubes along chains of points (a skin modifier, smoothed)."""
+    verts, edges = [], []
+    for chain in chains:
+        base = len(verts)
+        verts += [tuple(p) for p, _ in chain]
+        edges += [(base + i, base + i + 1) for i in range(len(chain) - 1)]
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, edges, [])
+    obj = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(obj)
+    obj.modifiers.new("skin", "SKIN")
+    k = 0
+    for chain in chains:
+        for i, (_, r) in enumerate(chain):
+            obj.data.skin_vertices[0].data[k].radius = (r * radius, r * radius)
+            if i == 0:
+                obj.data.skin_vertices[0].data[k].use_root = True
+            k += 1
+    obj.modifiers.new("smooth", "SUBSURF").levels = 1
+    apply_all(obj)
+    obj.data.materials.append(mat)
+    return obj
+
+
+def rounded_box(name, centre, axes, half, mat, bevel=0.4):
+    """A box on three axes (unit vectors) with half-sizes `half`, its edges rounded."""
+    c = Vector(centre)
+    a = [Vector(v) * h for v, h in zip(axes, half)]
+    verts = [tuple(c + a[0] * sx + a[1] * sy + a[2] * sz) for sz in (-1, 1) for sy in (-1, 1) for sx in (-1, 1)]
+    faces = [(0, 1, 3, 2), (4, 6, 7, 5), (0, 4, 5, 1), (2, 3, 7, 6), (0, 2, 6, 4), (1, 5, 7, 3)]
+    obj = lib.mesh_object(name, verts, faces, None, mat)
+    bm = bmesh.new()
+    bm.from_mesh(obj.data)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(obj.data)
+    bm.free()
+    bev = obj.modifiers.new("bevel", "BEVEL")
+    bev.width = min(half) * bevel * 2
+    bev.segments = 3
+    obj.modifiers.new("smooth", "SUBSURF").levels = 1
+    apply_all(obj)
+    return obj
+
+
+def apply_all(obj):
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    for m in list(obj.modifiers):
+        bpy.ops.object.modifier_apply(modifier=m.name)
+    bpy.ops.object.shade_smooth()
+
+
+def glove(rid, side, j, s, mat):
+    """A leather glove: the palm, four fingers curling a little, and the thumb in front."""
+    sx = 1 if side == "L" else -1
+    a = math.radians(38)
+    u = Vector((sx * math.sin(a), 0, -math.cos(a)))  # along the fingers
+    w = Vector((-sx * math.cos(a), 0, -math.sin(a)))  # out of the palm, towards the thigh
+    v = Vector((0, -1, 0))  # across the palm, thumb side (the rider faces -y)
+    wrist = Vector(j[f"wrist_{side}"])
+    palm = rounded_box(f"palm_{rid}_{side}", wrist + u * 0.05 * s, (u, v, w), (0.05 * s, 0.043 * s, 0.017 * s), mat, bevel=0.6)
+    knuckles = wrist + u * 0.095 * s
+    chains = []
+    for off, length in ((0.03, 0.07), (0.01, 0.08), (-0.01, 0.076), (-0.029, 0.062)):
+        k = knuckles + v * off * s
+        chains.append([(k, 1.0), (k + u * length * 0.55 * s + w * 0.008 * s, 0.95), (k + u * length * s + w * 0.022 * s, 0.85)])
+    t0 = wrist + u * 0.035 * s + v * 0.032 * s
+    chains.append([(t0, 1.15), (t0 + u * 0.03 * s + v * 0.022 * s + w * 0.012 * s, 1.0), (t0 + u * 0.055 * s + v * 0.028 * s + w * 0.028 * s, 0.9)])
+    cuff = [[(wrist - u * 0.03 * s, 3.1), (wrist + u * 0.015 * s, 2.9)]]
+    fingers = skin_chains(f"fingers_{rid}_{side}", chains, 0.0105 * s, mat)
+    cuffs = skin_chains(f"cuff_{rid}_{side}", cuff, 0.0105 * s, mat)
+    return lib.join([palm, fingers, cuffs], f"glove_{rid}_{side}")
+
+
+def boot(rid, side, j, s, mat, sole_mat, steel):
+    """A Cresta boot: a laced shaft above the ankle, heel and toe box on a thick sole, and the steel
+    rakes on the toe that the rider digs in to slow down."""
+    sx = 1 if side == "L" else -1
+    ankle = Vector(j[f"ankle_{side}"])
+    x = ankle.x
+    X, Y, Z = Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1))
+    shaft = skin_chains(f"shaft_{rid}_{side}", [[(ankle + Z * 0.11 * s, 1.0), (ankle + Z * 0.02 * s + Y * 0.005 * s, 1.08)]], 0.05 * s, mat)
+    # The foot: from the heel (behind the ankle, +y) to the toe (-y), lower and narrower at the toe.
+    foot = rounded_box(f"foot_{rid}_{side}", (x, -0.045 * s, 0.05 * s), (X, Y, Z), (0.047 * s, 0.13 * s, 0.04 * s), mat, bevel=0.75)
+    toe = rounded_box(f"toebox_{rid}_{side}", (x, -0.15 * s, 0.037 * s), (X, Y, Z), (0.044 * s, 0.045 * s, 0.03 * s), mat, bevel=0.9)
+    sole = rounded_box(f"sole_{rid}_{side}", (x, -0.05 * s, 0.009 * s), (X, Y, Z), (0.05 * s, 0.145 * s, 0.009 * s), sole_mat, bevel=0.5)
+    parts = [shaft, foot, toe, sole]
+    # Rakes: a steel plate over the toe with a row of teeth along its front edge.
+    parts.append(rounded_box(f"rakeplate_{rid}_{side}", (x, -0.18 * s, 0.03 * s), (X, Y, Z), (0.04 * s, 0.022 * s, 0.004 * s), steel, bevel=0.3))
+    for k in range(5):
+        tx = x + (k - 2) * 0.017 * s
+        parts.append(lib.mesh_object(f"tooth_{rid}_{side}_{k}", [(tx - 0.005 * s, -0.198 * s, 0.03 * s), (tx + 0.005 * s, -0.198 * s, 0.03 * s), (tx, -0.212 * s, 0.012 * s), (tx, -0.19 * s, 0.026 * s)], [(0, 1, 2), (1, 3, 2), (3, 0, 2), (0, 3, 1)], None, steel))
+    return lib.join(parts, f"boot_{rid}_{side}")
+
+
 def build(look):
     rid = look["id"]
     j = skeleton(look)
     rr = radii(look)
-    names = list(j)
+    names = [n for n in j if any(n in e for e in BODY_EDGES)]
     # Skin-modifier skeleton.
     me = bpy.data.meshes.new(f"skel_{rid}")
-    me.from_pydata([j[n] for n in names], [(names.index(a), names.index(b)) for a, b in EDGES], [])
+    me.from_pydata([j[n] for n in names], [(names.index(a), names.index(b)) for a, b in BODY_EDGES], [])
     me.update()
     body = bpy.data.objects.new(f"body_{rid}", me)
     bpy.context.scene.collection.objects.link(body)
@@ -272,6 +375,13 @@ def build(look):
         num.location = (0, -chest_y + 0.016, j["chest"][2] + 0.0)
         parts += [bib, num]
     decals = parts[1:]
+    # Gloves and boots, each riding on its own bone.
+    sole_mat = lib.material(f"{rid}_sole", (0.05, 0.045, 0.04), 0.8)
+    steel = lib.material(f"{rid}_rakes", (0.7, 0.72, 0.75), 0.3, metallic=0.9)
+    extremities = []
+    for side in "LR":
+        extremities.append((glove(rid, side, j, s, mats["hands"]), f"hand.{side}"))
+        extremities.append((boot(rid, side, j, s, mats["boots"], sole_mat, steel), f"foot.{side}"))
     mesh = body
 
     # Armature with named bones, the mesh bound with automatic weights.
@@ -299,8 +409,10 @@ def build(look):
     for d in decals:
         group = d.vertex_groups.new(name="chest")
         group.add(list(range(len(d.data.vertices))), 1.0, "REPLACE")
-    if decals:
-        mesh = lib.join([mesh, *decals], f"body_{rid}")
+    for obj, bone in extremities:
+        group = obj.vertex_groups.new(name=bone)
+        group.add(list(range(len(obj.data.vertices))), 1.0, "REPLACE")
+    mesh = lib.join([mesh, *decals, *(o for o, _ in extremities)], f"body_{rid}")
     return rig, mesh
 
 

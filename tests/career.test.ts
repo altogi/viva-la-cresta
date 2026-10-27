@@ -10,7 +10,7 @@ describe('career progression', () => {
     expect(nextPractice(c)).toMatchObject({ start: 'junction', toboggan: 'traditional', style: 'lying', first: true });
   });
 
-  it('practises lying starts, then converts to a running start step by step', () => {
+  it('rides one lying start, then a short 1-2-flop running start, then the full running start', () => {
     const c = newCareer('x', 'Game 1', 'adelaide');
     const styles: string[] = [];
     for (let i = 0; i < 7; i++) {
@@ -18,7 +18,7 @@ describe('career progression', () => {
       styles.push(s.style === 'lying' ? 'L' : `R${s.steps}`);
       ride(c, 80);
     }
-    expect(styles).toEqual(['L', 'L', 'L', 'R2', 'R4', 'R7', 'R7']);
+    expect(styles).toEqual(['L', 'R2', 'R7', 'R7', 'R7', 'R7', 'R7']);
   });
 
   it('never moves a rider on after a fall: the first ride and lying starts repeat', () => {
@@ -26,11 +26,10 @@ describe('career progression', () => {
     ride(c, null);
     expect(nextPractice(c).first).toBe(true);
     ride(c, 80);
-    ride(c, 80);
     ride(c, null);
-    expect(nextPractice(c).style).toBe('lying');
-    ride(c, 80);
     expect(nextPractice(c)).toMatchObject({ style: 'running', steps: 2 });
+    ride(c, 80);
+    expect(nextPractice(c)).toMatchObject({ style: 'running', steps: 7 });
   });
 
   it('makes the rider a member after five finishes under 50 s, not before', () => {
@@ -55,6 +54,16 @@ describe('career progression', () => {
     expect(goal(c)).toMatch(/Choose/);
   });
 
+  it('offers flat-top or Top to a beginner already fast enough in the first three rides', () => {
+    const c = newCareer('x', 'G', 'maximilian');
+    ride(c, 47.9);
+    ride(c, 47.5);
+    const out = ride(c, 47.7);
+    expect(out.choice).toBe(true);
+    expect(out.joined).toBe(true);
+    expect(c.member).toBe(true);
+  });
+
   it('converts to the flat-top with three lying starts then a running conversion', () => {
     const c = newCareer('x', 'G', 'maximilian');
     c.member = true;
@@ -65,7 +74,7 @@ describe('career progression', () => {
       seen.push(`${s.toboggan[0]}${s.style === 'lying' ? 'L' : s.steps}`);
       ride(c, 47);
     }
-    expect(seen).toEqual(['fL', 'fL', 'fL', 'f2', 'f4', 'f7']);
+    expect(seen).toEqual(['fL', 'fL', 'fL', 'f2', 'f7']);
     expect(c.flattop).toBe('yes');
   });
 

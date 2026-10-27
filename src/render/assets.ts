@@ -57,11 +57,30 @@ function prepareFoliage(parts: Record<string, Part[]>) {
         // Light comes through the needles: without this the boughs on the shaded side go black.
         m.emissive = new THREE.Color('#ffffff');
         m.emissiveMap = m.map;
-        m.emissiveIntensity = 0.22;
+        m.emissiveIntensity = 0.18;
         if (name.endsWith('_far')) billboard(p);
+        else softCrown(p);
       }
     }
   }
+}
+
+/**
+ * Bough cards lit by their own flat normals go black whenever they face away from the sun. Lit
+ * instead as if the crown were one soft volume (normals out from the trunk and a little up), a tree
+ * shades round, light on the sunny side and bluish in shadow, as a snowy spruce does.
+ */
+function softCrown(part: Part) {
+  part.material.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <beginnormal_vertex>',
+      `vec3 objectNormal = normalize(vec3(position.x, 1.6 + position.y * 0.02, position.z));
+      #ifdef USE_TANGENT
+        vec3 objectTangent = vec3(tangent.xyz);
+      #endif`,
+    );
+  };
+  part.material.customProgramCacheKey = () => 'soft-crown';
 }
 
 /**

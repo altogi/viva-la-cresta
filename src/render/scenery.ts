@@ -11,6 +11,7 @@ import { OSM_BUILDINGS, OSM_IDS, OSM_NEAR, OSM_TREES, OSM_WOODS } from '../track
 import { buildTownBuildings, placeTown } from './buildings';
 import { buildClubhouse } from './clubhouse';
 import { buildTopHut } from './topHut';
+import { finishPlaces, platformFrame } from './places';
 import type { Terrain } from './terrain';
 import { colors, mulberry32, toThree } from './util';
 
@@ -29,12 +30,13 @@ export function buildScenery(track: Track, terrain: Terrain, assets: Assets): TH
   group.add(assets.models.junction ? placeJunction(assets.models.junction) : buildClubhouse(track, terrain));
   for (const lm of LANDMARKS) {
     // The Junction walkway is part of the clubhouse model.
-    if (lm.kind === 'bridge' && lm.name !== 'Junction walkway') group.add(buildBridge(ctx, lm.s, lm.name));
+    if (lm.kind === 'bridge' && lm.name !== 'Junction walkway') group.add(assets.models.bridges ? placeBridge(ctx, lm.s, lm.name, assets.models.bridges) : buildBridge(ctx, lm.s, lm.name));
     if (lm.kind === 'timing' || lm.kind === 'start') group.add(buildTimingEye(ctx, lm.s));
   }
   group.add(buildFinish(ctx));
   group.add(buildShuttlecockRunoff(ctx));
-  group.add(buildFinishMat(ctx), buildRunOutBank(ctx));
+  group.add(buildFinishMat(ctx), buildRunOutBank(ctx), buildFinishExit(ctx));
+  if (assets.models.props) group.add(...placeProps(track, terrain, assets.models.props));
   return group;
 }
 
@@ -305,6 +307,96 @@ function buildTopArea(ctx: Placer): THREE.Group {
   return group;
 }
 
+/**
+ * A bridge made in Blender (blender/bridges.py), in the run's frame: x down the run, across it, up
+ * from the floor. The Road Bridge near Bulpetts carries the railway, and now and then the red train.
+ */
+function placeBridge(ctx: Placer, s: number, name: string, models: THREE.Object3D): THREE.Object3D {
+  const slug = name.toLowerCase().replace(/[^a-z]+/g, '_');
+  const model = models.getObjectByName(`bridge_${slug}`);
+  if (!model) return buildBridge(ctx, s, name);
+  const holder = new THREE.Group();
+  const bridge = model.clone();
+  bridge.position.set(0, 0, 0);
+  holder.add(bridge);
+  const ext = ctx.extent(s);
+  holder.position.copy(ctx.local(s, (ext.left + ext.right) / 2, 0));
+  holder.rotation.y = ctx.heading(s);
+  holder.traverse((o) => {
+    if (o instanceof THREE.Mesh) o.castShadow = o.receiveShadow = true;
+  });
+  const train = models.getObjectByName('rhb_train');
+  if (name === 'Road Bridge' && train) holder.add(...railwayLine(ctx, holder, ext.height, (ext.left - ext.right) / 2 + 3.6, train.clone()));
+  return holder;
+}
+
+/** Must match blender/bridges.py: the Road Bridge's deck, and where its track lies. */
+const ROAD_BRIDGE = { clearance: 1.8, railTop: 0.77, trackX: 1.6 };
+
+/**
+ * The railway across the Road Bridge: an embankment of snow carrying the line out either side, and
+ * the red train crossing every minute or so, one way then the other.
+ */
+function railwayLine(ctx: Placer, holder: THREE.Object3D, wall: number, span: number, train: THREE.Object3D): THREE.Object3D[] {
+  const rail = Math.max(wall, 0.75) + ROAD_BRIDGE.clearance + ROAD_BRIDGE.railTop;
+  const reach = 160;
+  // Embankment: in the bridge's frame, from the ground (sampled from the terrain) up to the line.
+  holder.updateMatrixWorld(true);
+  const inv = holder.matrixWorld.clone().invert();
+  const positions: number[] = [];
+  const index: number[] = [];
+  const samples = 128;
+  for (let i = 0; i <= samples; i++) {
+    const z = -reach + (2 * reach * i) / samples;
+    for (const dx of [-2.6, 2.6]) {
+      const world = new THREE.Vector3(ROAD_BRIDGE.trackX + dx, 0, z).applyMatrix4(holder.matrixWorld);
+      const ground = ctx.terrain.height(world.x, -world.z);
+      const below = new THREE.Vector3(world.x, ground - 1.5, world.z).applyMatrix4(inv);
+      positions.push(ROAD_BRIDGE.trackX + dx * 1.8, below.y, z, ROAD_BRIDGE.trackX + dx, rail - 0.2, z);
+    }
+    // No bank across the run itself, where the bridge carries the line.
+    const prevZ = -reach + (2 * reach * (i - 1)) / samples;
+    if (i > 0 && Math.min(Math.abs(z), Math.abs(prevZ)) > span && Math.sign(z) === Math.sign(prevZ)) {
+      const a = (i - 1) * 4;
+      const b = i * 4;
+      // Two sloping sides and the top, as quads between this row and the last.
+      for (const [p, q] of [[0, 1], [1, 3], [3, 2]]) index.push(a + p, b + p, b + q, a + p, b + q, a + q);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(index);
+  geometry.computeVertexNormals();
+  const bank = new THREE.Mesh(geometry, mat(colors.snow, { flatShading: false, side: THREE.DoubleSide, roughness: 0.95 }));
+  bank.receiveShadow = true;
+
+  const carrier = new THREE.Group();
+  carrier.add(train);
+  train.rotation.y = Math.PI / 2; // its length (x) along the line (z)
+  const length = 72;
+  const period = 70;
+  const speed = 13;
+  const start = performance.now() / 1000 - 20;
+  train.traverse((o) => {
+    if (o instanceof THREE.Mesh) o.castShadow = true;
+  });
+  // Driven from the embankment, which is always drawn (the train itself may be hidden).
+  bank.frustumCulled = false;
+  bank.onBeforeRender = () => {
+    const t = performance.now() / 1000 - start;
+    const lap = Math.floor(t / period);
+    const travel = (t - lap * period) * speed;
+    const dir = lap % 2 === 0 ? 1 : -1;
+    const run = 2 * reach + length;
+    carrier.visible = travel < run;
+    const front = -reach + Math.min(travel, run);
+    carrier.position.set(ROAD_BRIDGE.trackX, rail, dir * front);
+    carrier.rotation.y = dir > 0 ? Math.PI : 0;
+  };
+  carrier.position.set(ROAD_BRIDGE.trackX, rail, -reach);
+  return [bank, carrier];
+}
+
 function buildBridge(ctx: Placer, s: number, name: string): THREE.Group {
   const bridge = new THREE.Group();
   const ext = ctx.extent(s);
@@ -450,6 +542,66 @@ function buildFinishMat(ctx: Placer): THREE.Mesh {
   mat.name = 'finish-mat';
   mat.castShadow = mat.receiveShadow = true;
   return mat;
+}
+
+/** The observers' stand before Shuttlecock and the hut by the finish (blender/props.py). */
+function placeProps(track: Track, terrain: Terrain, models: THREE.Object3D): THREE.Object3D[] {
+  const out: THREE.Object3D[] = [];
+  const put = (name: string, frame: THREE.Object3D) => {
+    const model = models.getObjectByName(name);
+    if (!model) return;
+    const copy = model.clone();
+    copy.position.copy(frame.position);
+    copy.rotation.copy(frame.rotation);
+    copy.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.castShadow = o.receiveShadow = true;
+    });
+    out.push(copy);
+  };
+  put('shuttlecock_platform', platformFrame(track, terrain));
+  put('finish_hut', finishPlaces(track, terrain).hut);
+  return out;
+}
+
+/**
+ * The end of the mat, as at the real finish: the foam rolled up against the end, and a few steps
+ * of packed snow over the low left wall, where riders climb out with their toboggans, then a path.
+ */
+function buildFinishExit(ctx: Placer): THREE.Group {
+  const group = new THREE.Group();
+  const places = finishPlaces(ctx.track, ctx.terrain);
+  const end = places.end - 0.4;
+  const st = ctx.track.frame(end - 0.45);
+  const width = ctx.track.section(end).floorWidth + 0.2;
+  const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, width, 20).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#f2c12e', roughness: 0.85 }));
+  roll.position.copy(ctx.local(end - 0.45, 0, 0.14 + 0.27));
+  roll.rotation.y = Math.atan2(st.forward[1], st.forward[0]);
+  roll.castShadow = roll.receiveShadow = true;
+  group.add(roll);
+  const snow = mat(colors.snow, { flatShading: false, roughness: 0.95 });
+  const steps = [
+    [0.95, 0.18],
+    [1.2, 0.36],
+    [1.45, 0.54],
+  ];
+  for (const [u, h] of steps) {
+    const step = new THREE.Mesh(new RoundedBoxGeometry(1.4, h, 0.4, 2, 0.06), snow);
+    step.position.copy(ctx.local(places.exitS, u, h / 2));
+    step.rotation.y = ctx.heading(places.exitS);
+    step.castShadow = step.receiveShadow = true;
+    group.add(step);
+  }
+  // A trodden path from the steps across to the hut.
+  const from = ctx.ground(places.exitS, places.lip + 0.6, 0.03);
+  const to = places.hut.position.clone();
+  const length = from.distanceTo(to);
+  const path = new THREE.Mesh(new THREE.PlaneGeometry(1.3, length).rotateX(-Math.PI / 2), mat('#d9dee6', { flatShading: false, roughness: 1 }));
+  path.position.copy(from).lerp(to, 0.5);
+  path.position.y = Math.max(from.y, to.y) + 0.03;
+  path.rotation.y = Math.atan2(to.x - from.x, to.z - from.z);
+  path.receiveShadow = true;
+  group.add(path);
+  return group;
 }
 
 /** A snow bank closing the end of the run-out, beyond the mat (and covering the cut in the ground). */

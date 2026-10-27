@@ -11,6 +11,7 @@ import { RiderModel, looseToboggan, type Prop, type StandPosture } from './rider
 import { clubhouseTerrace } from './clubhouse';
 import { JUNCTION_S } from '../track/cresta';
 import { OSM_IDS, OSM_NEAR } from '../track/osm';
+import { PLATFORM, finishPlaces, platformFrame } from './places';
 import { HUT_APOTHEM } from './topHut';
 import { TOP_PLATFORM } from './scenery';
 import { LOOKS, type RiderLook } from './riderLooks';
@@ -64,6 +65,81 @@ function bake(body: Body): Body {
 }
 
 const RUN_SPEED: Record<Kind, number> = { man: 4.6, mother: 3.8, child: 3.4, oldLady: 1.4, furGirl: 3.2, dog: 6.5 };
+
+/** The visitors' parts made in Blender (blender/people.py), once loaded. */
+let PEOPLE: THREE.Object3D | null = null;
+export function setPeopleTemplates(scene: THREE.Object3D | undefined) {
+  PEOPLE = scene ?? null;
+}
+
+type PersonOptions = Parameters<typeof person>[0];
+
+/**
+ * A person from the Blender parts: the same skeleton as the simple one (hips, torso, shoulders,
+ * head), so walking, running and looking work unchanged; every part coloured from the options.
+ */
+function modelledPerson(kind: string, o: PersonOptions): Body | null {
+  if (!PEOPLE?.getObjectByName(`${kind}_torso`)) return null;
+  const colours: Record<string, string> = { coat: o.coat, trousers: o.trousers, boots: o.boots, skin: o.skin, hair: o.hair, hat: o.hat ?? o.hair, scarf: o.scarf ?? o.coat, dark: '#141414' };
+  const part = (name: string): THREE.Object3D | null => {
+    const src = PEOPLE!.getObjectByName(name);
+    if (!src) return null;
+    const copy = src.clone();
+    copy.position.set(0, 0, 0);
+    copy.traverse((m) => {
+      if (m instanceof THREE.Mesh) {
+        const zone = (m.material as THREE.Material).name.replace(/^pp_/, '');
+        m.material = mat(colours[zone] ?? '#808080', zone === 'skin' ? 0.6 : o.fur && zone === 'coat' ? 1 : 0.8);
+        m.castShadow = true;
+      }
+    });
+    return copy;
+  };
+  const g = new THREE.Group();
+  const k = o.height / 1.75;
+  g.scale.set(k, k, (o.width ?? 1) * k);
+  const legs: THREE.Object3D[] = [];
+  const arms: THREE.Object3D[] = [];
+  for (const side of [-1, 1]) {
+    const hip = new THREE.Group();
+    hip.position.set(0, 0.92, side * 0.09);
+    const leg = part(`${kind}_leg`);
+    if (leg) hip.add(leg);
+    g.add(hip);
+    legs.push(hip);
+  }
+  const torso = new THREE.Group();
+  torso.position.y = 0.92;
+  torso.rotation.z = -(o.stoop ?? 0);
+  g.add(torso);
+  for (const name of [`${kind}_torso`, ...(o.scarf ? [`${kind}_scarf`] : [])]) {
+    const p = part(name);
+    if (p) torso.add(p);
+  }
+  for (const side of [-1, 1]) {
+    const shoulder = new THREE.Group();
+    shoulder.position.set(0, 0.47, side * 0.19);
+    shoulder.rotation.x = side * 0.08;
+    const arm = part(`${kind}_arm`);
+    if (arm) shoulder.add(arm);
+    if (o.stick && side > 0) {
+      const stick = part(`${kind}_stick`);
+      if (stick) shoulder.add(stick);
+    }
+    torso.add(shoulder);
+    arms.push(shoulder);
+  }
+  const head = new THREE.Group();
+  head.position.y = 0.66;
+  torso.add(head);
+  const face = part(`${kind}_head`);
+  if (face) head.add(face);
+  if (o.hat) {
+    const hat = part(`${kind}_hat`);
+    if (hat) head.add(hat);
+  }
+  return { group: g, legs, arms, head, hand: new THREE.Vector3(0.05, 0.36, 0.2) };
+}
 
 /** A person standing on the origin facing +X: legs, a coat, arms, a head with hair and a hat. */
 function person(o: {
@@ -180,6 +256,29 @@ function person(o: {
 function dog(): Body {
   const g = new THREE.Group();
   const coat = mat(['#6b4a2a', '#d9b479', '#222222', '#efe9df'][Math.floor(Math.random() * 4)], 0.9);
+  if (PEOPLE?.getObjectByName('dog_trunk')) {
+    // The Blender dog: trunk, head, four legs and the tail, in the same places as the simple one.
+    const part = (name: string, at: [number, number, number], parent: THREE.Object3D) => {
+      const copy = PEOPLE!.getObjectByName(name)!.clone();
+      copy.position.set(0, 0, 0);
+      copy.traverse((m) => {
+        if (m instanceof THREE.Mesh) {
+          m.material = (m.material as THREE.Material).name === 'pp_dark' ? mat('#141414', 0.4) : coat;
+          m.castShadow = true;
+        }
+      });
+      const holder = new THREE.Group();
+      holder.position.set(...at);
+      holder.add(copy);
+      parent.add(holder);
+      return holder;
+    };
+    part('dog_trunk', [0, 0, 0], g);
+    const head = part('dog_head', [0.36, 0.58, 0], g);
+    const legs = ([[0.2, 0.08], [0.2, -0.08], [-0.22, 0.08], [-0.22, -0.08]] as const).map(([x, z]) => part('dog_leg', [x, 0.38, z], g));
+    const tail = part('dog_tail', [-0.33, 0.47, 0], g);
+    return { group: g, legs, arms: [tail], head, hand: new THREE.Vector3(0.3, 0.5, 0) };
+  }
   const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.13, 0.42, 4, 10).rotateZ(Math.PI / 2), coat);
   body.position.y = 0.42;
   const head = new THREE.Group();
@@ -217,18 +316,23 @@ function makeBody(kind: Kind): Body {
   return bake(buildBody(kind));
 }
 
+/** The Blender person when its parts are loaded, the simple one otherwise. */
+function dressed(kind: Kind, o: PersonOptions): Body {
+  return modelledPerson(kind, o) ?? person(o);
+}
+
 function buildBody(kind: Kind): Body {
   switch (kind) {
     case 'man':
-      return person({ height: 1.8, coat: pick(['#2d3a4f', '#5a2a24', '#3b3f2e', '#1d1d20']), trousers: '#2a2a30', boots: '#3a2a1c', skin: pick(SKINS), hair: pick(['#3a2a1e', '#1a1716', '#8a6a48']), hat: pick(['#8a1c1c', '#20304e', '#d9d2c2']), coatLength: 0.1, scarf: pick(['#c9a13d', '#7c1b1b', '#e8e2d4']) });
+      return dressed('man', { height: 1.8, coat: pick(['#2d3a4f', '#5a2a24', '#3b3f2e', '#1d1d20']), trousers: '#2a2a30', boots: '#3a2a1c', skin: pick(SKINS), hair: pick(['#3a2a1e', '#1a1716', '#8a6a48']), hat: pick(['#8a1c1c', '#20304e', '#d9d2c2']), coatLength: 0.1, scarf: pick(['#c9a13d', '#7c1b1b', '#e8e2d4']) });
     case 'mother':
-      return person({ height: 1.68, coat: pick(['#b34a3a', '#e7e1d4', '#3d5f8a', '#6d4c7d']), trousers: '#2c2c34', boots: '#2b211a', skin: pick(SKINS), hair: pick(['#5b3a22', '#c9a26a', '#22191a']), hairLong: true, hat: pick(['#f2ede3', '#2d2d33']), coatLength: 0.5, width: 0.92 });
+      return dressed('mother', { height: 1.68, coat: pick(['#b34a3a', '#e7e1d4', '#3d5f8a', '#6d4c7d']), trousers: '#2c2c34', boots: '#2b211a', skin: pick(SKINS), hair: pick(['#5b3a22', '#c9a26a', '#22191a']), hairLong: true, hat: pick(['#f2ede3', '#2d2d33']), coatLength: 0.5, width: 0.92 });
     case 'child':
-      return person({ height: 1.1 + Math.random() * 0.25, coat: pick(['#e0402e', '#2f8ad8', '#f2c230', '#4fb35a', '#e86fa8']), trousers: pick(['#1f3f7a', '#303034']), boots: '#222', skin: pick(SKINS), hair: pick(['#c9a26a', '#5b3a22']), hat: pick(['#f2c230', '#e0402e', '#ffffff', '#2f8ad8']), coatLength: 0.1, width: 1.1 });
+      return dressed('child', { height: 1.1 + Math.random() * 0.25, coat: pick(['#e0402e', '#2f8ad8', '#f2c230', '#4fb35a', '#e86fa8']), trousers: pick(['#1f3f7a', '#303034']), boots: '#222', skin: pick(SKINS), hair: pick(['#c9a26a', '#5b3a22']), hat: pick(['#f2c230', '#e0402e', '#ffffff', '#2f8ad8']), coatLength: 0.1, width: 1.1 });
     case 'oldLady':
-      return person({ height: 1.58, coat: pick(['#6a5a4a', '#4a5a6a', '#7a3a4a']), trousers: '#3a3a3a', boots: '#2a2018', skin: '#ecc9b5', hair: '#d8d4cf', hat: pick(['#8a7a9a', '#5a2a3a', '#2a3a4a']), coatLength: 0.8, stick: true, stoop: 0.22, scarf: '#9a6a8a' });
+      return dressed('oldLady', { height: 1.58, coat: pick(['#6a5a4a', '#4a5a6a', '#7a3a4a']), trousers: '#3a3a3a', boots: '#2a2018', skin: '#ecc9b5', hair: '#d8d4cf', hat: pick(['#8a7a9a', '#5a2a3a', '#2a3a4a']), coatLength: 0.8, stick: true, stoop: 0.22, scarf: '#9a6a8a' });
     case 'furGirl':
-      return person({ height: 1.72, coat: pick(['#f2eadc', '#e8dcc6', '#c8a27a', '#1c1a18', '#efe6d8']), trousers: '#1a1a1c', boots: pick(['#efe6d8', '#1a1a1c', '#7a5a3a']), skin: '#f3d3be', hair: pick(['#ecd08a', '#e2c27a', '#f3dc9e']), hairLong: true, hat: Math.random() < 0.6 ? pick(['#f2eadc', '#c8a27a', '#1c1a18']) : undefined, coatLength: 0.85, width: 0.9, fur: true, glasses: true });
+      return dressed('furGirl', { height: 1.72, coat: pick(['#f2eadc', '#e8dcc6', '#c8a27a', '#1c1a18', '#efe6d8']), trousers: '#1a1a1c', boots: pick(['#efe6d8', '#1a1a1c', '#7a5a3a']), skin: '#f3d3be', hair: pick(['#ecd08a', '#e2c27a', '#f3dc9e']), hairLong: true, hat: Math.random() < 0.6 ? pick(['#f2eadc', '#c8a27a', '#1c1a18']) : undefined, coatLength: 0.85, width: 0.9, fur: true, glasses: true });
     case 'dog':
       return dog();
   }
@@ -289,6 +393,7 @@ export class Crowd {
     this.group.add(this.buildPath());
     this.buildWaitingRiders();
     this.buildJunction();
+    this.buildStandAndFinish();
     this.populate();
   }
 
@@ -458,6 +563,41 @@ export class Crowd {
         dir: new THREE.Vector2(), phase: Math.random() * 10, speed: 0, offset: new THREE.Vector2(), scared: new THREE.Vector3(), perch: true,
       });
     }
+  }
+
+  /** Someone who stays where they are put (on a stand, at work): they only turn to watch. */
+  private placeStill(body: Body, kind: Kind, home: THREE.Vector3, heading: number) {
+    body.group.position.copy(home);
+    body.group.rotation.y = heading;
+    this.group.add(body.group);
+    this.terraceCrowd.push({
+      kind, body, home: home.clone(), pos: home.clone(), heading, homeHeading: heading, mode: 'idle', timer: 0,
+      dir: new THREE.Vector2(), phase: Math.random() * 10, speed: 0, offset: new THREE.Vector2(), scared: new THREE.Vector3(), perch: true,
+    });
+  }
+
+  /**
+   * Spectators along the rail of the wooden stand before Shuttlecock, watching the riders come
+   * through; and a run technician by the finish mat, there to help riders off it.
+   */
+  private buildStandAndFinish() {
+    const frame = platformFrame(this.track, this.terrain);
+    const st = this.track.frame(PLATFORM.s);
+    // They stand on the run's right, facing left across it.
+    const towardRun = Math.atan2(st.left[1], st.left[0]);
+    for (let x = -PLATFORM.length / 2 + 0.7; x < PLATFORM.length / 2 - 0.5; x += 0.8 + Math.random() * 0.5) {
+      if (Math.random() < 0.15) continue;
+      const kind: Kind = pick(['man', 'man', 'mother', 'furGirl', 'oldLady']);
+      // Blender's (x, y, z) in the stand's frame is three's (x, z, -y).
+      const home = new THREE.Vector3(x, PLATFORM.deck, -(0.45 + Math.random() * 0.5)).applyMatrix4(frame.matrixWorld);
+      this.placeStill(makeBody(kind), kind, home, towardRun + (Math.random() - 0.5) * 0.7);
+    }
+    const finish = finishPlaces(this.track, this.terrain);
+    const tech = finish.technician;
+    const fst = this.track.frame(tech.s);
+    const staff = bake(dressed('man', { height: 1.8, coat: '#e0561b', trousers: '#23262e', boots: '#1d1a17', skin: pick(SKINS), hair: '#3a2a1e', hat: '#1d2433', coatLength: 0.1, scarf: '#1d2433' }));
+    // Facing back up the run-out, towards the riders coming in.
+    this.placeStill(staff, 'man', this.ground(tech.s, tech.u), Math.atan2(-fst.forward[1], -fst.forward[0]) + 0.5);
   }
 
   /** New visitors for a ride: a party every so often along the path. */

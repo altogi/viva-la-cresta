@@ -43,12 +43,15 @@ export function createWorld(canvas: HTMLCanvasElement): World {
   scene.add(new THREE.HemisphereLight('#cfe3ff', '#8796ab', 0.75));
   const sun = new THREE.DirectionalLight('#fff3e2', 3.0);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  // A wide shadow area, so houses and trees ahead are shaded well before the rider reaches them.
+  const big = renderer.capabilities.maxTextureSize >= 8192;
+  sun.shadow.mapSize.set(big ? 4096 : 2048, big ? 4096 : 2048);
   const sc = sun.shadow.camera;
-  sc.left = -30;
-  sc.right = 30;
-  sc.top = 30;
-  sc.bottom = -30;
+  const reach = big ? 70 : 50;
+  sc.left = -reach;
+  sc.right = reach;
+  sc.top = reach;
+  sc.bottom = -reach;
   sc.near = 1;
   sc.far = 400;
   // Small biases keep the rider's thin shadow; the track itself doesn't cast, so no acne to hide.
@@ -56,9 +59,14 @@ export function createWorld(canvas: HTMLCanvasElement): World {
   sun.shadow.normalBias = 0.03;
   scene.add(sun, sun.target);
 
+  const ahead = new THREE.Vector3();
   const followSun = (target: THREE.Vector3) => {
-    sun.target.position.copy(target);
-    sun.position.copy(target).addScaledVector(SUN_DIRECTION, 200);
+    // Centred a little ahead of the target, where the camera looks: what's coming is shaded first.
+    camera.getWorldDirection(ahead);
+    ahead.y = 0;
+    if (ahead.lengthSq() > 1e-6) ahead.normalize().multiplyScalar(reach * 0.55);
+    sun.target.position.copy(target).add(ahead);
+    sun.position.copy(sun.target.position).addScaledVector(SUN_DIRECTION, 200);
   };
 
   const resize = () => {

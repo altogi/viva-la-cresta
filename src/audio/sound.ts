@@ -22,6 +22,7 @@ export class Sound {
 
   /** Must be called from a user gesture (browsers block audio until then). */
   start() {
+    playThroughSilentSwitch();
     if (this.ctx) {
       void this.ctx.resume();
       return;
@@ -75,6 +76,11 @@ export class Sound {
     return true;
   }
 
+  /** Phones suspend the audio after an interruption (a call, the screen locking): pick it up again. */
+  private wake() {
+    if (this.ctx && this.ctx.state !== 'running') void this.ctx.resume();
+  }
+
   /** A limiter for the crowd: loud, but never clipping. */
   private crowdBus(gain: number): GainNode {
     const ctx = this.ctx!;
@@ -97,7 +103,9 @@ export class Sound {
    */
   gasp() {
     const ctx = this.ctx;
-    if (!ctx || this.playSample('gasp', 1)) return;
+    if (!ctx) return;
+    this.wake();
+    if (this.playSample('gasp', 1)) return;
     const t = ctx.currentTime + 0.12;
     const out = this.crowdBus(2.2);
     // Breath: a burst of airy noise, swelling then falling away.
@@ -217,7 +225,9 @@ export class Sound {
   /** The crowd at the finish: a few seconds of applause and cheering. */
   applause() {
     const ctx = this.ctx;
-    if (!ctx || this.playSample('applause', 0.8)) return;
+    if (!ctx) return;
+    this.wake();
+    if (this.playSample('applause', 0.8)) return;
     const duration = 4.5;
     const rate = ctx.sampleRate;
     const buffer = ctx.createBuffer(1, Math.ceil(rate * duration), rate);
@@ -269,4 +279,39 @@ export class Sound {
     src.connect(filter).connect(g).connect(this.master);
     src.start(t);
   }
+}
+
+let silentLoop: HTMLAudioElement | null = null;
+
+/**
+ * On iPhone, Web Audio stays silent while the ringer switch is on silent, unless the page is
+ * playing media. Ask for the playback audio session where Safari supports it, and otherwise keep
+ * a silent clip looping in an audio element, which puts the page in the same category.
+ */
+function playThroughSilentSwitch() {
+  const session = (navigator as unknown as { audioSession?: { type: string } }).audioSession;
+  if (session) session.type = 'playback';
+  if (silentLoop) return;
+  // Half a second of silence as an 8 kHz, 8-bit mono WAV.
+  const samples = 4000;
+  const bytes = new Uint8Array(44 + samples);
+  const view = new DataView(bytes.buffer);
+  const text = (at: number, str: string) => [...str].forEach((ch, i) => view.setUint8(at + i, ch.charCodeAt(0)));
+  text(0, 'RIFF');
+  view.setUint32(4, 36 + samples, true);
+  text(8, 'WAVEfmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, 8000, true);
+  view.setUint32(28, 8000, true);
+  view.setUint16(32, 1, true);
+  view.setUint16(34, 8, true);
+  text(36, 'data');
+  view.setUint32(40, samples, true);
+  bytes.fill(128, 44);
+  silentLoop = new Audio(URL.createObjectURL(new Blob([bytes], { type: 'audio/wav' })));
+  silentLoop.loop = true;
+  silentLoop.setAttribute('playsinline', '');
+  void silentLoop.play().catch(() => undefined);
 }

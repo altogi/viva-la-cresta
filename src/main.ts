@@ -14,7 +14,7 @@ import { loadSelection, type Selection } from './game/selection';
 import { SelectMode } from './game/selectMode';
 import { CareerMode } from './game/careerMode';
 import { clearBadgeBackground } from './ui/badge';
-import { Crowd } from './render/crowd';
+import { Crowd, setPeopleTemplates } from './render/crowd';
 import { RIDERS, TOBOGGANS } from './sim/rider';
 import { Viewer } from './viewer/viewer';
 import { RideMode, type RideSetup } from './game/rideMode';
@@ -23,7 +23,7 @@ import { POLICIES } from './sim/autopilot';
 import { createTuningPanel } from './ui/tuning';
 
 /** Extra Blender models (public/models/<name>.glb) the scenery uses. */
-const MODELS: string[] = ['town', 'balloon', 'riders', 'junction'];
+const MODELS: string[] = ['town', 'balloon', 'riders', 'junction', 'bridges', 'props', 'people'];
 
 registerSW({ immediate: true });
 
@@ -49,6 +49,7 @@ async function start() {
     const body = assets.models.riders?.getObjectByName(`rider_${id}`);
     if (body) RiderModel.templates[id] = body;
   }
+  setPeopleTemplates(assets.models.people);
   lap('models');
   const world = createWorld(document.getElementById('scene') as HTMLCanvasElement);
   const track = new Track();

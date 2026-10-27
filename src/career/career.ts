@@ -87,9 +87,9 @@ export const SEASON_DAYS = 66; // 26 December to 1 March
 export const MEMBER_RIDES = 5;
 export const MEMBER_TIME = 50;
 /** Clean lying starts before the running start comes in. */
-export const LYING_RIDES = 3;
-/** Running-start conversion: steps allowed on each converting ride, then a full running start. */
-export const CONVERSION_STEPS = [2, 4, 7];
+export const LYING_RIDES = 1;
+/** Running-start conversion: one short start (1-2-flop), then the full running start. */
+export const CONVERSION_STEPS = [2, 7];
 export const FULL_STEPS = 7;
 
 export function newCareer(id: string, name: string, rider: RiderId, now = Date.now()): Career {
@@ -156,8 +156,8 @@ export function nextPractice(c: Career): Setup {
 }
 
 /** Three of the last five clean rides matching `filter` under `limit`. */
-export function threeOfFive(c: Career, filter: (r: RideRecord) => boolean, limit: number): { count: number; done: boolean } {
-  const last = c.rides.filter((r) => filter(r) && r.style === 'running').slice(-5);
+export function threeOfFive(c: Career, filter: (r: RideRecord) => boolean, limit: number, anyStyle = false): { count: number; done: boolean } {
+  const last = c.rides.filter((r) => filter(r) && (anyStyle || r.style === 'running')).slice(-5);
   const count = last.filter((r) => r.time !== null && r.time < limit).length;
   return { count, done: count >= 3 };
 }
@@ -217,6 +217,14 @@ export function recordPractice(c: Career, setup: Setup, time: number | null, fal
     if (memberRides(c) >= MEMBER_RIDES) {
       c.member = true;
       out.joined = true;
+    }
+    // A rider fast enough for the flat-top or Top from the very first rides needn't finish the
+    // beginners' course first: Tower takes them on and offers the choice straight away.
+    if (threeOfFive(c, (r) => r.start === 'junction' && r.toboggan === 'traditional', 48, true).done) {
+      out.joined = !c.member;
+      c.member = true;
+      c.choicePending = true;
+      out.choice = true;
     }
     return out;
   }

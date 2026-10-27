@@ -1,0 +1,30 @@
+[
+ {
+  "name": "Stable Junction",
+  "slug": "stable_junction",
+  "s": 73.6,
+  "width": 2.6,
+  "wall": 0.75
+ },
+ {
+  "name": "Hanis Bridge",
+  "slug": "hanis_bridge",
+  "s": 499,
+  "width": 5.72842712474619,
+  "wall": 2
+ },
+ {
+  "name": "Road Bridge",
+  "slug": "road_bridge",
+  "s": 857,
+  "width": 3.75,
+  "wall": 1.175
+ },
+ {
+  "name": "Railway Bridge",
+  "slug": "railway_bridge",
+  "s": 993,
+  "width": 4.877371993328518,
+  "wall": 1.7
+ }
+]

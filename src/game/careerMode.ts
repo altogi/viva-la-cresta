@@ -233,14 +233,14 @@ export class CareerMode {
       this.save();
       const moments: (() => void)[] = [];
       if (setup.first && result.time !== null)
-        moments.push(() => this.modal('Your first ride!', `Down in ${result.time!.toFixed(2)} s. Two more clean lying starts, then the running start, a few steps at a time. Five rides under 50 s and the club will take you on.`, [{ label: 'Carry on', primary: true, run: next }]));
+        moments.push(() => this.modal('Your first ride!', `Down in ${result.time!.toFixed(2)} s. Next, a short running start: one, two, flop. Then the full running start. Five rides under 50 s and the club will take you on.`, [{ label: 'Carry on', primary: true, run: next }]));
       if (setup.first && result.fall)
         moments.push(() => this.modal('Back to Junction', 'Every Cresta rider has been where you are now. Your first ride starts again, and the guide picks up where you fell.', [{ label: 'Try again', primary: true, run: next }]));
       if (outcome.joined)
         moments.push(() =>
           this.modal(
             'Welcome to the club',
-            'Five rides under 50 seconds, and the President took a liking to you. You are now a member of the St Moritz Tobogganing Club: off the Supplementary List, and free to race. The Curzon Cup awaits.',
+            `${outcome.choice ? 'Three rides that quick, straight away: Tower noticed' : 'Five rides under 50 seconds'}, and the President took a liking to you. You are now a member of the St Moritz Tobogganing Club: off the Supplementary List, and free to race. The Curzon Cup awaits.`,
             [{ label: 'Splendid', primary: true, run: next }],
           ),
         );
