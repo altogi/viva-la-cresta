@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import type { Station, Track } from '../sim/track';
 import { TERRAIN_BASE } from './trackMesh';
 import { colors, valueNoise } from './util';
-import { CUTTING_EDGE, CUTTING_FLAT, cuttingHeight } from './places';
+import { CUTTING_EDGE, CUTTING_FLAT, cuttingHeight, lipAt } from './places';
 import { OSM_IDS, OSM_NEAR } from '../track/osm';
 
 const CELL = 6;
@@ -16,7 +16,7 @@ const MARGIN = 450;
 const CORRIDOR = 6;
 const BLEND_START = 16;
 const BLEND_END = 140;
-/** Round the Junction hut the ground is level with its door this far out, then eases back by PAD_EDGE. */
+/** Round the huts the ground is level with their doors this far out, then eases back by PAD_EDGE. */
 const PAD_FLAT = 5;
 const PAD_EDGE = 18;
 
@@ -75,8 +75,8 @@ export class Terrain {
   private readonly centre: [number, number];
   private readonly leftDir: [number, number];
   readonly bounds: { minX: number; maxX: number; minY: number; maxY: number };
-  /** The level ground round the Junction hut: its footprint and the height of the door's sill. */
-  private readonly pad: { ring: [number, number][]; z: number };
+  /** Level ground round the Junction hut and the finish hut: their footprints and the ground's height. */
+  private readonly pads: { ring: [number, number][]; z: number }[] = [];
 
   constructor(track: Track) {
     this.index = new TrackIndex(track);
@@ -100,7 +100,20 @@ export class Terrain {
       if (Math.hypot(st.pos[0] - hut.c[0], st.pos[1] - hut.c[1]) < Math.hypot(floor.pos[0] - hut.c[0], floor.pos[1] - hut.c[1])) floor = st;
     }
     // The hut's floor stands 0.3 m under the run's (as in clubhouse.ts), its door's sill 0.55 above that.
-    this.pad = { ring: hut.p.map(([x, y]) => [hut.c[0] + x, hut.c[1] + y]), z: floor.pos[2] - 0.3 + 0.5 };
+    this.pads.push({ ring: hut.p.map(([x, y]) => [hut.c[0] + x, hut.c[1] + y]), z: floor.pos[2] - 0.3 + 0.5 });
+    // The finish hut (see finishPlaces) stands on the run-out's bank: level the snow round it a little
+    // above the bank, so the hut and the riders gathered at it stand on it rather than in it.
+    const end = track.length;
+    const st = track.frame(end - 10);
+    const u = lipAt(track, end - 3, 'left') + 4.6;
+    const c = [st.pos[0] + st.left[0] * u, st.pos[1] + st.left[1] * u];
+    const ring: [number, number][] = [];
+    for (const [a, b] of [[-1.7, -1.8], [1.7, -1.8], [1.7, 1.3], [-1.7, 1.3]]) {
+      // x down the run, y away from it (towards the run is the hut's front, with the bench).
+      ring.push([c[0] + st.forward[0] * a + st.left[0] * b, c[1] + st.forward[1] * a + st.left[1] * b]);
+    }
+    if (signedArea(ring) < 0) ring.reverse();
+    this.pads.push({ ring, z: st.pos[2] + 0.72 });
     this.mesh = this.build();
   }
 
@@ -128,11 +141,13 @@ export class Terrain {
     return this.level(x, y, near + (far - near) * THREE.MathUtils.smoothstep(distance, BLEND_START, BLEND_END));
   }
 
-  /** Flatten the ground round the Junction hut, so its door opens onto level snow. */
+  /** Flatten the ground round the huts, so their doors open onto level snow. */
   private level(x: number, y: number, z: number) {
-    const d = distanceToRing(x, y, this.pad.ring);
-    if (d >= PAD_EDGE) return z;
-    return z + (this.pad.z - z) * (1 - THREE.MathUtils.smoothstep(d, PAD_FLAT, PAD_EDGE));
+    for (const pad of this.pads) {
+      const d = distanceToRing(x, y, pad.ring);
+      if (d < PAD_EDGE) z += (pad.z - z) * (1 - THREE.MathUtils.smoothstep(d, PAD_FLAT, PAD_EDGE));
+    }
+    return z;
   }
 
   /** Ground height at any horizontal point. */
@@ -200,6 +215,12 @@ export class Terrain {
     mesh.name = 'terrain';
     return mesh;
   }
+}
+
+function signedArea(ring: [number, number][]) {
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) a += ring[j][0] * ring[i][1] - ring[i][0] * ring[j][1];
+  return a / 2;
 }
 
 /** Distance from a point to a closed ring (0 inside it). */

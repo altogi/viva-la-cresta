@@ -9,11 +9,17 @@ import type { World } from '../render/world';
 import { toThree } from '../render/util';
 import type { Terrain } from '../render/terrain';
 import { Ghost } from './ghost';
+import { trackSurfaceHeight } from '../render/trackMesh';
 
-type CameraMode = 'chase' | 'helmet' | 'trackside' | 'orbit';
-const MODES: CameraMode[] = ['chase', 'helmet', 'trackside', 'orbit'];
+/** Front camera: how far ahead of the rider and how high above the run, tried in order until the view is clear. */
+const FRONT_AHEAD = [9, 7.5, 6, 4.5];
+const FRONT_HEIGHT = [3.6, 2.8, 2.1];
+
+type CameraMode = 'chase' | 'front' | 'helmet' | 'trackside' | 'orbit';
+const MODES: CameraMode[] = ['chase', 'front', 'helmet', 'trackside', 'orbit'];
 const MODE_LABELS: Record<CameraMode, string> = {
   chase: 'Chase',
+  front: 'Front',
   helmet: 'Helmet',
   trackside: 'Trackside',
   orbit: 'Orbit',
@@ -34,6 +40,9 @@ export class Viewer {
   private readonly camLook = new THREE.Vector3();
   private readonly riderPos = new THREE.Vector3();
   private snapCamera = true;
+  /** Things the front camera must see past: bridges, buildings, props (with their world bounds). */
+  private obstacles: { mesh: THREE.Mesh; sphere: THREE.Sphere }[] | null = null;
+  private readonly ray = new THREE.Raycaster();
   /** Background mode behind the title menu: a slow, endless descent from Junction. */
   attract = false;
   private readonly profileCanvas = $<HTMLCanvasElement>('profile');
@@ -181,6 +190,8 @@ export class Viewer {
       const ahead = this.track.frame(Math.min(TRACK_LENGTH, this.s + 4));
       const ga = this.ghost.state(Math.min(TRACK_LENGTH, this.s + 4));
       toThree(this.track.toWorld(ahead, (g.lateral + ga.lateral) / 2, 0.3 + g.height), desiredLook);
+    } else if (this.mode === 'front') {
+      this.frontView(g, desiredPos, desiredLook);
     } else if (this.mode === 'helmet') {
       const here = this.track.frame(Math.min(TRACK_LENGTH, this.s + 0.7));
       toThree(this.track.toWorld(here, g.lateral, g.height + 0.55), desiredPos);
@@ -208,6 +219,66 @@ export class Viewer {
     cam.position.copy(this.camPos);
     cam.up.set(0, 1, 0);
     cam.lookAt(this.camLook);
+  }
+
+  /**
+   * In front of the rider looking back at them, higher than the chase camera: the furthest and
+   * highest spot down the run from which nothing (ground, the run's walls, a bridge) is in the way.
+   */
+  private frontView(g: ReturnType<Ghost['state']>, pos: THREE.Vector3, look: THREE.Vector3) {
+    const head = this.riderPos.clone().add(new THREE.Vector3(0, 0.5, 0));
+    look.copy(head);
+    let chosen = false;
+    for (const ahead of FRONT_AHEAD) {
+      const sA = Math.min(TRACK_LENGTH, this.s + ahead);
+      const frame = this.track.frame(sA);
+      const extra = this.s + ahead - sA;
+      const ga = this.ghost.state(sA);
+      for (const up of FRONT_HEIGHT) {
+        const w = this.track.toWorld(frame, (g.lateral + ga.lateral) * 0.35, up + ga.height);
+        toThree([w[0] + frame.forward[0] * extra, w[1] + frame.forward[1] * extra, w[2]], pos);
+        if (this.clear(head, pos)) {
+          chosen = true;
+          break;
+        }
+      }
+      if (chosen) break;
+    }
+  }
+
+  /** Whether the line from a to b (three.js coordinates) passes clear of the ground, the run and the buildings. */
+  private clear(a: THREE.Vector3, b: THREE.Vector3): boolean {
+    const p = new THREE.Vector3();
+    for (let i = 2; i <= 12; i++) {
+      p.lerpVectors(a, b, i / 12);
+      const x = p.x;
+      const y = -p.z;
+      if (p.y < this.terrain.height(x, y) + 0.3) return false;
+      const { station } = this.terrain.distanceToTrack(x, y);
+      if (station) {
+        const lateral = (x - station.pos[0]) * station.left[0] + (y - station.pos[1]) * station.left[1];
+        const surface = trackSurfaceHeight(this.track, station.s, lateral);
+        if (surface !== null && p.y < station.pos[2] + surface + 0.25) return false;
+      }
+    }
+    if (!this.obstacles) {
+      this.obstacles = [];
+      this.world.scene.getObjectByName('scenery')?.traverse((o) => {
+        if (!(o instanceof THREE.Mesh) || o instanceof THREE.InstancedMesh) return;
+        const geo = o.geometry as THREE.BufferGeometry;
+        if (!geo.boundingSphere) geo.computeBoundingSphere();
+        const sphere = geo.boundingSphere!.clone().applyMatrix4(o.matrixWorld);
+        if (sphere.radius < 150) this.obstacles!.push({ mesh: o, sphere });
+      });
+    }
+    const dir = b.clone().sub(a);
+    const far = dir.length();
+    const mid = a.clone().add(b).multiplyScalar(0.5);
+    const near = this.obstacles.filter((o) => o.sphere.center.distanceTo(mid) < o.sphere.radius + far / 2 + 1).map((o) => o.mesh);
+    if (!near.length) return true;
+    this.ray.set(a, dir.normalize());
+    this.ray.far = far + 0.6;
+    return this.ray.intersectObjects(near, false).length === 0;
   }
 
   private updateHud() {

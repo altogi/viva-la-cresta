@@ -367,13 +367,20 @@ function addCanopy(roofs: MeshBuilder, spec: Spec, ground: number, snow: THREE.C
 /** Nave with a steep roof and a bell tower with a spire at one end. */
 function addChurch(walls: MeshBuilder, roofs: MeshBuilder, spec: Spec, terrain: Terrain, snow: THREE.Color) {
   const white = new THREE.Color('#f2efe8');
+  const dark = new THREE.Color('#25272b');
   const nave: Spec = { ...spec, length: spec.length * 0.78, levels: 3, roof: 'gabled' };
   const ca = Math.cos(spec.angle);
   const sa = Math.sin(spec.angle);
   const shift = spec.length * 0.11;
   nave.x = spec.x + shift * ca;
   nave.y = spec.y + shift * sa;
-  addBuilding(walls, roofs, nave, terrain, white, snow, new THREE.Color('#5b4c42'));
+  const naveTop = addPlain(walls, roofs, nave, terrain, white, snow, new THREE.Color('#5b4c42'));
+  // Three tall round-headed windows down each long side of the nave.
+  const nc = corners(nave);
+  const naveGround = naveTop - 0.6 - nave.levels * FLOOR;
+  for (const i of [0, 2]) {
+    for (const t of [0.25, 0.5, 0.75]) openingOn(roofs, nc[i], nc[(i + 1) % 4], t, naveGround + 3, 1.2, 4.2, dark);
+  }
   const side = Math.min(spec.width * 0.55, 7);
   const tower: Spec = {
     ...spec,
@@ -381,8 +388,104 @@ function addChurch(walls: MeshBuilder, roofs: MeshBuilder, spec: Spec, terrain: 
     y: spec.y - (spec.length / 2 - side / 2) * sa,
     length: side,
     width: side,
-    levels: 7,
-    roof: 'spire',
   };
-  addBuilding(walls, roofs, tower, terrain, white, snow, new THREE.Color('#5b4c42'));
+  addBellTower(walls, roofs, tower, terrain);
 }
+
+/** Plain plaster walls (the blank band of the facade texture) under the usual roof. */
+function addPlain(walls: MeshBuilder, roofs: MeshBuilder, spec: Spec, terrain: Terrain, colour: THREE.Color, snow: THREE.Color, eave: THREE.Color): number {
+  const before = walls.uvs.length;
+  const top = addBuilding(walls, roofs, spec, terrain, colour, snow, eave);
+  for (let k = before; k < walls.uvs.length; k += 2) walls.uvs[k + 1] = 0.03 + (walls.uvs[k + 1] % 1 + 1) % 1 * 0.15;
+  return top;
+}
+
+/**
+ * A dark opening on the wall from a to b (world x, y), centred `t` of the way along it, from z0 up
+ * `height` metres, round-headed, standing just proud of the wall.
+ */
+function openingOn(builder: MeshBuilder, a: [number, number], b: [number, number], t: number, z0: number, width: number, height: number, colour: THREE.Color) {
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const tx = (b[0] - a[0]) / len;
+  const ty = (b[1] - a[1]) / len;
+  // Outward normal of a counter-clockwise ring.
+  const nx = ty * 0.04;
+  const ny = -tx * 0.04;
+  const cx = a[0] + (b[0] - a[0]) * t + nx;
+  const cy = a[1] + (b[1] - a[1]) * t + ny;
+  const at = (u: number, z: number) => v3(cx + tx * u, cy + ty * u, z);
+  const r = width / 2;
+  const spring = z0 + height - r;
+  const uv = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  builder.quad(at(-r, z0), at(r, z0), at(r, spring), at(-r, spring), uv, colour);
+  const steps = 6;
+  for (let k = 0; k < steps; k++) {
+    const a0 = Math.PI - (k / steps) * Math.PI;
+    const a1 = Math.PI - ((k + 1) / steps) * Math.PI;
+    builder.tri(at(0, spring), at(Math.cos(a1) * r, spring + Math.sin(a1) * r), at(Math.cos(a0) * r, spring + Math.sin(a0) * r), [0, 0], [1, 0], [0.5, 1], colour);
+  }
+}
+
+/**
+ * The Engadin bell tower: a plain square shaft of grey stone, a pair of round-headed belfry
+ * openings high on each face and little else, under a tall octagonal slate spire that flares out
+ * over the eaves, a ball and a rod at the tip.
+ */
+function addBellTower(walls: MeshBuilder, roofs: MeshBuilder, spec: Spec, terrain: Terrain) {
+  const stone = new THREE.Color('#a29d94');
+  const slate = new THREE.Color('#3f444b');
+  const dark = new THREE.Color('#202226');
+  const c = corners(spec);
+  const ground = Math.min(...c.map(([x, y]) => terrain.height(x, y)));
+  const side = spec.width;
+  const top = ground + side * 2.3;
+  for (let i = 0; i < 4; i++) {
+    const [ax, ay] = c[i];
+    const [bx, by] = c[(i + 1) % 4];
+    const u1 = side / 3;
+    walls.quad(v3(ax, ay, ground - 0.5), v3(bx, by, ground - 0.5), v3(bx, by, top), v3(ax, ay, top), [[0, 0.03], [u1, 0.03], [u1, 0.18], [0, 0.18]], stone);
+    // The belfry pair, a small square opening between them and the spire, a slit lower down.
+    openingOn(roofs, c[i], c[(i + 1) % 4], 0.38, top - side * 0.62, side * 0.13, side * 0.3, dark);
+    openingOn(roofs, c[i], c[(i + 1) % 4], 0.62, top - side * 0.62, side * 0.13, side * 0.3, dark);
+    if (i % 2 === 0) openingOn(roofs, c[i], c[(i + 1) % 4], 0.5, top - side * 0.2, side * 0.08, side * 0.08, dark);
+    else openingOn(roofs, c[i], c[(i + 1) % 4], 0.5, ground + side * 0.9, side * 0.05, side * 0.22, dark);
+  }
+  // The spire: square eaves standing out from the walls, a short flared skirt up to an octagon, then
+  // the tall octagonal needle.
+  const ca = Math.cos(spec.angle);
+  const sa = Math.sin(spec.angle);
+  const local = (u: number, v: number, z: number) => v3(spec.x + u * ca - v * sa, spec.y + u * sa + v * ca, z);
+  const half = side / 2 + 0.45;
+  const eaves = [0, 1, 2, 3].map((i) => {
+    const a = Math.PI / 4 + (i * Math.PI) / 2;
+    return local(Math.cos(a) * half * Math.SQRT2, Math.sin(a) * half * Math.SQRT2, top - 0.25);
+  });
+  const ring = side * 0.42;
+  const skirtTop = top + side * 0.32;
+  const oct = [0, 1, 2, 3, 4, 5, 6, 7].map((j) => {
+    const a = Math.PI / 8 + (j * Math.PI) / 4;
+    return local(Math.cos(a) * ring, Math.sin(a) * ring, skirtTop);
+  });
+  const tipZ = skirtTop + side * 1.95;
+  const tip = local(0, 0, tipZ);
+  const uv = [[0, 0], [1, 0], [1, 1], [0, 1]];
+  for (let i = 0; i < 4; i++) {
+    roofs.quad(eaves[i], eaves[(i + 1) % 4], oct[(2 * i + 2) % 8], oct[2 * i + 1], uv, slate);
+    roofs.tri(eaves[(i + 1) % 4], oct[(2 * i + 3) % 8], oct[(2 * i + 2) % 8], [0, 0], [1, 0], [0.5, 1], slate);
+    // Soffit under the eaves.
+    const below = (p: THREE.Vector3) => p.clone().setY(top - 0.25);
+    roofs.quad(eaves[(i + 1) % 4], eaves[i], below(c3(c[i], top)), below(c3(c[(i + 1) % 4], top)), uv, slate);
+  }
+  for (let j = 0; j < 8; j++) roofs.tri(oct[j], oct[(j + 1) % 8], tip, [0, 0], [1, 0], [0.5, 1], slate);
+  // Ball and rod at the tip.
+  const ball = 0.28;
+  const pts = [0, 1, 2, 3, 4, 5].map((k) => local(Math.cos((k * Math.PI) / 3) * ball, Math.sin((k * Math.PI) / 3) * ball, tipZ + ball));
+  for (let k = 0; k < 6; k++) {
+    roofs.tri(pts[k], pts[(k + 1) % 6], local(0, 0, tipZ + ball * 2), [0, 0], [1, 0], [0.5, 1], slate);
+    roofs.tri(pts[(k + 1) % 6], pts[k], local(0, 0, tipZ), [0, 0], [1, 0], [0.5, 1], slate);
+  }
+  roofs.quad(local(-0.04, 0, tipZ + ball * 2), local(0.04, 0, tipZ + ball * 2), local(0.04, 0, tipZ + 2.2), local(-0.04, 0, tipZ + 2.2), uv, dark);
+  roofs.quad(local(0, -0.04, tipZ + ball * 2), local(0, 0.04, tipZ + ball * 2), local(0, 0.04, tipZ + 2.2), local(0, -0.04, tipZ + 2.2), uv, dark);
+}
+
+const c3 = ([x, y]: [number, number], z: number) => v3(x, y, z);

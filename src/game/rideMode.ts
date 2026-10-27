@@ -117,6 +117,10 @@ export class RideMode {
   private readonly riderPos = new THREE.Vector3();
   /** Visitors beside the run, who react to falls. */
   crowd: Crowd | null = null;
+  /** Where the rider celebrates by the finish hut, once in (null until then). */
+  private finishSpot: ReturnType<Crowd['finishSpot']> | null = null;
+  /** This ride beat a best that already stood: Hello Hello! */
+  private hello = false;
 
   /** Where the rider is now, for the visitors to watch (null when not on the ice). */
   get riderPosition(): THREE.Vector3 | null {
@@ -195,6 +199,9 @@ export class RideMode {
   begin(setup: RideSetup) {
     this.setup = setup;
     this.crowd?.populate();
+    this.crowd?.endFinish();
+    this.finishSpot = null;
+    this.hello = false;
     this.ragdoll.clear();
     this.replayModel?.root.removeFromParent();
     this.replayModel = null;
@@ -363,12 +370,33 @@ export class RideMode {
     });
   }
 
-  /** Came to rest at Celerina: up on their feet, arms raised, to applause. */
+  /** The key for this rider's best time on this toboggan from this start. */
+  private bestKey() {
+    return `vlc-best-${this.selection.rider}-${this.selection.toboggan}-${this.setup.label}`;
+  }
+
+  private storedBest(): number | null {
+    try {
+      return Number(localStorage.getItem(this.bestKey())) || null;
+    } catch {
+      return null; // storage unavailable: no personal best
+    }
+  }
+
+  /**
+   * Came to rest at Celerina: then up by the finish hut among the riders already in, on their feet,
+   * arms raised, to applause. On a Hello Hello everyone there celebrates with them.
+   */
   private celebrate() {
     this.stage = 'celebrate';
     this.stageTime = 0;
     this.applyCam();
-    this.snap = false;
+    const best = this.storedBest();
+    this.hello = best !== null && this.sim.state.finishTime! < best;
+    this.finishSpot = this.crowd?.finishSpot() ?? null;
+    this.crowd?.celebrateFinish(this.hello);
+    // Cut straight to the hut.
+    this.snap = !!this.finishSpot;
     this.sound.applause();
     navigator.vibrate?.([20, 60, 20]);
   }
@@ -399,6 +427,21 @@ export class RideMode {
 
   private placeRider() {
     const celebrating = this.stage === 'celebrate' || (this.stage === 'done' && this.sim.state.phase === 'finished');
+    if (celebrating && this.finishSpot) {
+      // By the finish hut, cheering, the toboggan beside them. Their body stands 0.62 m to the
+      // left of the model's origin and a little behind it.
+      const { at, heading } = this.finishSpot;
+      const root = this.model.root;
+      root.matrixAutoUpdate = false;
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading);
+      root.matrix.compose(at.clone().add(new THREE.Vector3(0.25, 0, 0.62).applyQuaternion(q)), q, new THREE.Vector3(1, 1, 1));
+      root.matrixWorldNeedsUpdate = true;
+      this.riderPos.copy(at);
+      this.riderVel.set(0, 0, 0);
+      this.model.toboggan.position.x = 0;
+      this.model.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, cheer: 1, cheerTime: performance.now() / 1000 });
+      return;
+    }
     const cheer = celebrating ? Math.min(1, this.stageTime / 0.8) : 0;
     this.placeModel(this.model, this.snapshot(), { cheer: this.stage === 'done' ? 1 : cheer, cheerTime: performance.now() / 1000 });
   }
@@ -560,16 +603,14 @@ export class RideMode {
     this.stage = 'done';
     const st = this.sim.state;
     const time = st.finishTime!;
-    const key = `vlc-best-${this.selection.rider}-${this.selection.toboggan}-${this.setup.label}`;
-    let best: number | null = null;
+    const best = this.storedBest();
     try {
-      best = Number(localStorage.getItem(key)) || null;
-      if (!best || time < best) localStorage.setItem(key, time.toFixed(2));
+      if (!best || time < best) localStorage.setItem(this.bestKey(), time.toFixed(2));
     } catch {
       /* storage unavailable: no personal best */
     }
     // "Hello Hello!" only when beating a best that already stood.
-    const beaten = best !== null && time < best;
+    const beaten = this.hello;
     this.result = { time, fall: null, speed: (st.finishSpeed ?? 0) * MPH };
     const lines: string[] = [];
     if (beaten) lines.push(`New best · previous ${best!.toFixed(2)}`);
@@ -607,11 +648,17 @@ export class RideMode {
       const subject = this.replayModel?.root.visible ? this.riderPos : this.ragdoll.focus();
       desiredLook.copy(subject ?? this.fallPoint);
     } else if (this.stage === 'celebrate' || (this.stage === 'done' && st.phase === 'finished')) {
-      // In front of the rider at Celerina, a little to the side, as they celebrate.
-      const s = Math.min(st.s, this.track.length);
-      const back = this.track.frame(Math.max(0, s - 7));
-      toThree(this.track.toWorld(back, -2.5, 2.2), desiredPos);
-      desiredLook.copy(this.riderPos).add(new THREE.Vector3(0, 0.9, 0));
+      if (this.finishSpot) {
+        // In front of the rider by the finish hut, the riders gathered round them.
+        desiredPos.copy(this.finishSpot.camera);
+        desiredLook.copy(this.finishSpot.look);
+      } else {
+        // In front of the rider at Celerina, a little to the side, as they celebrate.
+        const s = Math.min(st.s, this.track.length);
+        const back = this.track.frame(Math.max(0, s - 7));
+        toThree(this.track.toWorld(back, -2.5, 2.2), desiredPos);
+        desiredLook.copy(this.riderPos).add(new THREE.Vector3(0, 0.9, 0));
+      }
     } else if (this.stage === 'ready' || this.stage === 'countdown') {
       // The start, seen from a little way down the run looking back up: rider, start and hut.
       const s0 = this.setup.startS;

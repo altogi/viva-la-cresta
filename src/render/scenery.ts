@@ -9,13 +9,13 @@ import type { Track } from '../sim/track';
 import { BENDS, LANDMARKS, TRACK_LENGTH } from '../track/cresta';
 import { OSM_BUILDINGS, OSM_IDS, OSM_NEAR, OSM_TREES, OSM_WOODS } from '../track/osm';
 import { buildTownBuildings, placeTown } from './buildings';
-import { buildClubhouse } from './clubhouse';
+import { buildClubhouse, towerFlag } from './clubhouse';
 import { buildTopHut } from './topHut';
 import { CUTTING, cuttingHeight, finishPlaces, pathBridge, platformFrame, PATH_BRIDGE } from './places';
 import { lips, surfaceAt } from '../sim/surface';
 import type { Terrain } from './terrain';
 import { trackSurfaceHeight } from './trackMesh';
-import { colors, mulberry32, toThree } from './util';
+import { colors, mulberry32, toThree, valueNoise } from './util';
 
 const mat = (color: THREE.ColorRepresentation, opts: THREE.MeshStandardMaterialParameters = {}) =>
   new THREE.MeshStandardMaterial({ color, roughness: 0.8, flatShading: true, ...opts });
@@ -30,6 +30,7 @@ export function buildScenery(track: Track, terrain: Terrain, assets: Assets): TH
   group.add(assets.models.town ? placeTown(terrain, assets.models.town) : buildTownBuildings(terrain));
   group.add(buildTopArea(ctx));
   group.add(assets.models.junction ? placeJunction(assets.models.junction) : buildClubhouse(track, terrain));
+  group.add(towerFlag(track));
   for (const lm of LANDMARKS) {
     // The Junction walkway is part of the clubhouse model.
     if (lm.kind === 'bridge' && lm.name !== 'Junction walkway') group.add(assets.models.bridges ? placeBridge(ctx, lm.s, lm.name, assets.models.bridges) : buildBridge(ctx, lm.s, lm.name));
@@ -216,6 +217,40 @@ function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group
     if (!buildings.every(([bx, by]) => Math.hypot(bx - x, by - y) > 13)) continue;
     consider(x, y, 1, r > 28); // the outer ring as pictures
   }
+  // Celerina, round the finish: both sides of the last of the run, and the slopes about the village
+  // beyond it, among the houses.
+  for (let s = 960; s < TRACK_LENGTH; s += 2.2) {
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < 5; k++) {
+        const st = track.frame(Math.min(TRACK_LENGTH, s + (rng() - 0.5) * 2.2));
+        const lateral = side * (14 + rng() * 60);
+        const x = st.pos[0] + st.left[0] * lateral;
+        const y = st.pos[1] + st.left[1] * lateral;
+        if (clearOf(x, y, 15)) consider(x, y, 1, Math.abs(lateral) > 26);
+      }
+    }
+  }
+  const end = track.frame(TRACK_LENGTH).pos;
+  for (let i = 0; i < 1800; i++) {
+    const a = rng() * Math.PI * 2;
+    const r = 30 + Math.sqrt(rng()) * 320;
+    const x = end[0] + Math.cos(a) * r;
+    const y = end[1] + Math.sin(a) * r;
+    // In clumps, as the larch and spruce woods round the village grow.
+    if (woodNoise(x, y) < 0.42) continue;
+    if (clearOf(x, y, 14)) consider(x, y, 1, true);
+  }
+  // A belt of forest all round the edge of the map, so the near ground runs into the far mountains
+  // through trees rather than ending in bare snow. Pictures only: it's all far off.
+  for (let i = 0; i < 16000; i++) {
+    const edge = Math.floor(rng() * 4);
+    const depth = Math.pow(rng(), 0.7) * 170;
+    const along = rng();
+    const x = edge === 0 ? minX + depth : edge === 1 ? maxX - depth : minX + along * (maxX - minX);
+    const y = edge === 2 ? minY + depth : edge === 3 ? maxY - depth : minY + along * (maxY - minY);
+    if (woodNoise(x, y) < 0.35 - depth / 900) continue;
+    if (clearOf(x, y, 14)) consider(x, y, 1, true);
+  }
   for (let i = 0; i < 2500; i++) {
     const x = minX + rng() * (maxX - minX);
     const y = minY + rng() * (maxY - minY);
@@ -279,6 +314,12 @@ function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group
     }
   }
   return group;
+}
+
+/** 0…1 patchiness for woods: where it's high the trees stand in clumps. */
+const woodNoiseField = valueNoise(23);
+function woodNoise(x: number, y: number) {
+  return 0.5 + 0.5 * woodNoiseField(x / 90, y / 90);
 }
 
 function signTexture(text: string, bg: string, fg: string, width = 512, height = 96, font = 'bold 56px Georgia, serif') {

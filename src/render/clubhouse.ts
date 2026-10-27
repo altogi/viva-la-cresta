@@ -77,7 +77,6 @@ export function buildClubhouse(track: Track, terrain: Terrain): THREE.Group {
 
   group.add(...b.meshes());
   group.add(signs(cx, cy, roofZ));
-  group.add(flagpole(cx - 8.3, cy - 6.1, cabZ + 2.3));
   group.add(buildWalkwayAndHut(track, terrain, floorZ));
   return group;
 }
@@ -330,16 +329,6 @@ function signs(cx: number, cy: number, roofZ: number): THREE.Object3D {
   return sign;
 }
 
-function flagpole(x: number, y: number, z: number): THREE.Object3D {
-  const g = new THREE.Group();
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 6, 8), mats.steel);
-  pole.position.copy(v3(x, y, z + 3));
-  const bar = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.12, 0.12), mats.steel);
-  bar.position.copy(v3(x + 2.6, y + 2.4, z + 0.5));
-  g.add(pole, bar);
-  return g;
-}
-
 /** The steel walkway over the run just above Junction, and the hut on the far side. */
 function buildWalkwayAndHut(track: Track, terrain: Terrain, floorZ: number): THREE.Object3D {
   const group = new THREE.Group();
@@ -372,4 +361,82 @@ function buildWalkwayAndHut(track: Track, terrain: Terrain, floorZ: number): THR
   b.cap(roof, ground + 3.7, 'snow');
   group.add(...b.meshes());
   return group;
+}
+
+/**
+ * A large Union Jack on a tall white pole standing up out of Tower's cab roof (the Blender model's
+ * cab: see blender/junction.py), waving.
+ */
+export function towerFlag(track: Track): THREE.Object3D {
+  const layout = junctionLayout(track);
+  const club = OSM_NEAR.find((b) => b.id === OSM_IDS.clubhouse)!;
+  const [cx, cy] = club.c;
+  // Cab roof: two floors of 3.4 m, Tower's storey, the cab and its roof slab (as in junction.py).
+  const roof = layout.floorZ + 2 * 3.4 + 3.2 + 2.8;
+  const height = 10;
+  const group = new THREE.Group();
+  group.name = 'tower-flag';
+  group.position.copy(v3(cx - 1.4, cy - 1.6, roof));
+  const white = new THREE.MeshStandardMaterial({ color: '#f4f4f2', roughness: 0.5, metalness: 0.2 });
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, height, 10), white);
+  pole.position.y = height / 2;
+  const finial = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), new THREE.MeshStandardMaterial({ color: '#c9a640', roughness: 0.3, metalness: 0.8 }));
+  finial.position.y = height + 0.08;
+  pole.castShadow = finial.castShadow = true;
+  group.add(pole, finial);
+  const w = 5;
+  const h = 2.5;
+  const geo = new THREE.PlaneGeometry(w, h, 24, 8);
+  geo.translate(w / 2 + 0.06, height - h / 2 - 0.15, 0);
+  const rest = (geo.attributes.position.array as Float32Array).slice();
+  const flag = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: unionJack(), roughness: 0.8, side: THREE.DoubleSide }));
+  flag.castShadow = true;
+  // The flag streams away from the pole and ripples; the far edge moves most.
+  flag.onBeforeRender = () => {
+    const t = performance.now() / 1000;
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const x = rest[i * 3];
+      const y = rest[i * 3 + 1];
+      const k = Math.min(1, x / w);
+      const wave = Math.sin(x * 1.9 - t * 5.2 + y * 0.4) * 0.22 + Math.sin(x * 3.7 - t * 8.1) * 0.06;
+      pos.setXYZ(i, x - k * k * 0.25, y - k * 0.12, wave * k);
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+  };
+  group.add(flag);
+  return group;
+}
+
+/** The Union Flag, drawn to its proper 2:1 proportions (with the counterchanged red saltire). */
+function unionJack(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 600;
+  canvas.height = 300;
+  const g = canvas.getContext('2d')!;
+  g.scale(10, 10);
+  g.fillStyle = '#012169';
+  g.fillRect(0, 0, 60, 30);
+  const saltire = new Path2D('M0,0 L60,30 M60,0 L0,30');
+  g.strokeStyle = '#ffffff';
+  g.lineWidth = 6;
+  g.stroke(saltire);
+  g.save();
+  g.clip(new Path2D('M30,15 h30 v15 z v15 h-30 z h-30 v-15 z v-15 h30 z'));
+  g.strokeStyle = '#c8102e';
+  g.lineWidth = 4;
+  g.stroke(saltire);
+  g.restore();
+  const cross = new Path2D('M30,0 v30 M0,15 h60');
+  g.strokeStyle = '#ffffff';
+  g.lineWidth = 10;
+  g.stroke(cross);
+  g.strokeStyle = '#c8102e';
+  g.lineWidth = 6;
+  g.stroke(cross);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
 }

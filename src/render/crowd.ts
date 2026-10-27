@@ -527,6 +527,12 @@ export class Crowd {
   private readonly terraceCrowd: Agent[] = [];
   private leads: { line: THREE.Line; from: Agent; to: Agent }[] = [];
   private readonly waiting: { model: RiderModel; time: number; posture: StandPosture; look: number }[] = [];
+  /** Riders gathered by the finish hut, who cheer the one who's just come in on a Hello Hello. */
+  private readonly party: { model: RiderModel; time: number; posture: StandPosture; look: number; at: THREE.Vector3; heading: number }[] = [];
+  /** The technician and the hut's other worker, who join in on a Hello Hello. */
+  private readonly staff: Agent[] = [];
+  private partyCheer = false;
+  private hutFrame: THREE.Object3D | null = null;
   /** This ride's visitors are all fur coats (one ride in ten). */
   furDay = false;
 
@@ -711,14 +717,16 @@ export class Crowd {
   }
 
   /** Someone who stays where they are put (on a stand, at work): they only turn to watch. */
-  private placeStill(body: Body, kind: Kind, home: THREE.Vector3, heading: number) {
+  private placeStill(body: Body, kind: Kind, home: THREE.Vector3, heading: number): Agent {
     body.group.position.copy(home);
     body.group.rotation.y = heading;
     this.group.add(body.group);
-    this.terraceCrowd.push({
+    const agent: Agent = {
       kind, body, home: home.clone(), pos: home.clone(), heading, homeHeading: heading, mode: 'idle', timer: 0,
       dir: new THREE.Vector2(), phase: Math.random() * 10, speed: 0, offset: new THREE.Vector2(), scared: new THREE.Vector3(), perch: true,
-    });
+    };
+    this.terraceCrowd.push(agent);
+    return agent;
   }
 
   /**
@@ -756,7 +764,83 @@ export class Crowd {
     const fst = this.track.frame(tech.s);
     const staff = bake(dressed('man', { height: 1.8, coat: '#e0561b', trousers: '#23262e', boots: '#1d1a17', skin: pick(SKINS), hair: '#3a2a1e', hat: '#1d2433', coatLength: 0.1, scarf: '#1d2433' }));
     // Facing back up the run-out, towards the riders coming in.
-    this.placeStill(staff, 'man', this.ground(tech.s, tech.u), Math.atan2(-fst.forward[1], -fst.forward[0]) + 0.5);
+    this.staff.push(this.placeStill(staff, 'man', this.ground(tech.s, tech.u), Math.atan2(-fst.forward[1], -fst.forward[0]) + 0.5));
+    this.buildFinishParty(finish.hut);
+  }
+
+  /** A point on the ground in the finish hut's frame (Blender's: x down the run, y away from it). */
+  private atHut(x: number, y: number): THREE.Vector3 {
+    const p = new THREE.Vector3(x, 0, -y).applyMatrix4(this.hutFrame!.matrixWorld);
+    p.y = this.terrain.height(p.x, -p.z);
+    return p;
+  }
+
+  /**
+   * Riders who've come in already, hanging about the finish hut with their toboggans: one on the
+   * bench by the door, the others standing round where the rider who's just finished will stand.
+   * And the hut's worker by its corner.
+   */
+  private buildFinishParty(hut: THREE.Object3D) {
+    this.hutFrame = hut;
+    const spot = this.atHut(0.6, -2.6);
+    const facing = (from: THREE.Vector3, to: THREE.Vector3) => Math.atan2(-(to.z - from.z), to.x - from.x);
+    const cast: { look: RiderLook; toboggan: 'traditional' | 'flattop'; posture: StandPosture; x: number; y: number; helmet?: boolean }[] = [
+      { look: waitingLook(LOOKS.remo, '#2b3f6b', '#2b3f6b'), toboggan: 'traditional', posture: 'sit', x: -0.6, y: -1.47 },
+      { look: waitingLook(LOOKS.adelaide, '#c23b22', '#f4f4f0'), toboggan: 'traditional', posture: 'stand', x: -1.7, y: -2.5 },
+      { look: waitingLook(LOOKS.maximilian, '#1a1a1c', '#c9c9c9'), toboggan: 'flattop', posture: 'stand', x: 2.1, y: -1.9, helmet: true },
+      { look: waitingLook(LOOKS.remo, '#5a6b2b', '#5a6b2b'), toboggan: 'traditional', posture: 'stand', x: 2.7, y: -3.1 },
+    ];
+    for (const c of cast) {
+      const at = this.atHut(c.x, c.y);
+      // The one on the bench faces the run; the rest face the rider who's coming in.
+      const heading = c.posture === 'sit' ? facing(at, this.atHut(c.x, -6)) : facing(at, spot);
+      const model = new RiderModel(c.look, c.toboggan, { helmet: !!c.helmet });
+      this.group.add(model.root);
+      this.party.push({ model, time: Math.random() * 5, posture: c.posture, look: 0, at, heading });
+      this.placeParty(this.party[this.party.length - 1], false);
+    }
+    const worker = bake(dressed('man', { height: 1.76, coat: '#e0561b', trousers: '#23262e', boots: '#1d1a17', skin: pick(SKINS), hair: '#6b5a48', hat: '#e0561b', coatLength: 0.1, scarf: '#23262e' }));
+    const home = this.atHut(-3.1, -0.6);
+    this.staff.push(this.placeStill(worker, 'man', home, facing(home, spot)));
+  }
+
+  /** A rider's body stands 0.75 m to the left of the model's origin standing (0.62 cheering): put the body at `at`. */
+  private placeParty(p: (typeof this.party)[number], cheering: boolean) {
+    // Up off the bench to cheer, a step towards the run.
+    const offset = cheering ? new THREE.Vector3(0.25 + (p.posture === 'sit' ? 0.7 : 0), 0, 0.62) : new THREE.Vector3(0, 0, 0.75);
+    p.model.root.rotation.y = p.heading;
+    p.model.root.position.copy(p.at).add(offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), p.heading));
+  }
+
+  /**
+   * Where the rider who's just finished stands to celebrate, by the finish hut among the others,
+   * facing the camera; and where the camera stands, out over the run-out.
+   */
+  finishSpot(): { at: THREE.Vector3; heading: number; camera: THREE.Vector3; look: THREE.Vector3 } {
+    const at = this.atHut(0.6, -2.6);
+    const camera = this.atHut(1.6, -8.2).add(new THREE.Vector3(0, 1.9, 0));
+    camera.y = Math.max(camera.y, at.y + 1.6);
+    return { at, heading: Math.atan2(-(camera.z - at.z), camera.x - at.x), camera, look: at.clone().add(new THREE.Vector3(0, 1.15, 0)) };
+  }
+
+  /** A rider has come in: on a Hello Hello (a new best) everyone at the hut celebrates with them. */
+  celebrateFinish(hello: boolean) {
+    this.partyCheer = hello;
+    for (const p of this.party) {
+      if (p.posture !== 'sit' || hello) this.placeParty(p, hello);
+    }
+    for (const a of this.staff) {
+      a.cheer = hello ? 600 : 0;
+      a.cheerStyle = a === this.staff[0] ? 'wave' : 'clap';
+    }
+  }
+
+  /** Back to waiting, for the next rider. */
+  endFinish() {
+    if (!this.partyCheer) return;
+    this.partyCheer = false;
+    for (const p of this.party) this.placeParty(p, false);
+    for (const a of this.staff) a.cheer = 0;
   }
 
   /** New visitors for a ride: a party every so often along the path. */
@@ -949,6 +1033,11 @@ export class Crowd {
     for (const w of this.waiting) {
       w.time += dt;
       w.model.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, stand: { time: w.time, action: null, t: 0, posture: w.posture, look: w.look + Math.sin(w.time * 0.3) * 0.15 } });
+    }
+    for (const p of this.party) {
+      p.time += dt;
+      if (this.partyCheer) p.model.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, cheer: 1, cheerTime: p.time * 0.9 + p.at.x });
+      else p.model.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, stand: { time: p.time, action: null, t: 0, posture: p.posture, look: Math.sin(p.time * 0.3) * 0.2 } });
     }
     for (const a of this.agents) {
       this.step(a, dt, rider);
