@@ -141,10 +141,12 @@ BONES = [
 ]
 
 
-def zone_of(p, normal, j, look):
-    """Which part of the kit a point on the body belongs to."""
+def zone_of(p, normal, j, look, bone=None):
+    """Which part of the kit a point on the body belongs to (on `bone` if given, else the nearest)."""
     best, best_d = None, 1e9
     for name, a, b, _ in BONES:
+        if bone and name != bone:
+            continue
         A, B = Vector(j[a]), Vector(j[b])
         ab = B - A
         t = max(0, min(1, (p - A).dot(ab) / ab.length_squared))
@@ -158,6 +160,12 @@ def zone_of(p, normal, j, look):
     stripe = o.get("backStripe")
     if stripe and base in ("hips", "spine", "chest") and normal.y > 0.25 and abs(p.x) < 0.05 * look["scale"] and j["waist"][2] - 0.06 * look["scale"] < p.z < j["neck"][2] - 0.02:
         return "backstripe"
+    if look["id"] == "remo" and base in ("hips", "spine", "chest") and "belt" in j:
+        # Lederhosen up to the belt, which sits under his belly; the sweater hangs over it.
+        if p.z < j["belt"][2] + 0.004 * look["scale"]:
+            return "pelvis"
+        if base == "hips":
+            return "torso"
     if base in ("hips",):
         return "pelvis"
     if base in ("spine", "chest"):
@@ -191,6 +199,8 @@ def zone_of(p, normal, j, look):
     if base == "shin":
         if t < 0.1:
             return "pads"
+        if t > 0.86 and "belt" in j or (t > 0.86 and j.get("boots_from_feet")):
+            return "boots"  # the boot's shaft, up over the ankle
         if o.get("legStripe") and normal.x * side > 0.82:
             return "stripe"
         return "shin"
@@ -308,7 +318,7 @@ def boot(rid, side, j, s, mat, sole_mat, steel):
     ankle = Vector(j[f"ankle_{side}"])
     x = ankle.x
     X, Y, Z = Vector((1, 0, 0)), Vector((0, 1, 0)), Vector((0, 0, 1))
-    shaft = skin_chains(f"shaft_{rid}_{side}", [[(ankle + Z * 0.11 * s, 1.0), (ankle + Z * 0.02 * s + Y * 0.005 * s, 1.08)]], 0.05 * s, mat)
+    shaft = skin_chains(f"shaft_{rid}_{side}", [[(ankle + Z * 0.15 * s, 0.95), (ankle + Z * 0.02 * s + Y * 0.005 * s, 1.08)]], 0.05 * s, mat)
     # The foot: from the heel (behind the ankle, +y) to the toe (-y), lower and narrower at the toe.
     foot = rounded_box(f"foot_{rid}_{side}", (x, -0.045 * s, 0.05 * s), (X, Y, Z), (0.047 * s, 0.13 * s, 0.04 * s), mat, bevel=0.75)
     toe = rounded_box(f"toebox_{rid}_{side}", (x, -0.15 * s, 0.037 * s), (X, Y, Z), (0.044 * s, 0.045 * s, 0.03 * s), mat, bevel=0.9)
@@ -354,6 +364,17 @@ def tube_along(name, pts, radius, mat, closed=False):
     obj.data.skin_vertices[0].data[0].use_root = True
     apply_all(obj)
     obj.data.materials.append(mat)
+    return obj
+
+
+def sphere_at(name, centre, radius, mat):
+    """A small round stud (buttons, embroidery)."""
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=10, ring_count=6, radius=radius, location=tuple(centre))
+    obj = bpy.context.active_object
+    obj.name = name
+    obj.data.materials.append(mat)
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    bpy.ops.object.shade_smooth()
     return obj
 
 
@@ -414,9 +435,9 @@ def remo_kit(rid, j, s, look, body, mats):
     embroidery = lib.material(f"{rid}_embroidery", (0.93, 0.89, 0.78), 0.7)
     green = lib.material(f"{rid}_embroidery_green", (0.2, 0.42, 0.22), 0.7)
     horn = lib.material(f"{rid}_horn", (0.85, 0.8, 0.68), 0.4)
-    dark_leather = lib.material(f"{rid}_leather_dark", (0.3, 0.2, 0.12), 0.65)
+    dark_leather = lib.material(f"{rid}_leather_dark", (0.13, 0.07, 0.032), 0.6)  # linear: a deep brown
     parts = []
-    waist = j["waist"][2] - 0.02 * s
+    waist = j["belt"][2] if "belt" in j else j["waist"][2] - 0.02 * s
     top = j["upper_chest"][2] + 0.02 * s
     half = 0.155 * s * b
     # Cable-knit: twisted ropes of wool up the front and back of the sweater, ribbed cuffs where
@@ -451,27 +472,35 @@ def remo_kit(rid, j, s, look, body, mats):
         pts = ring_around(surf, (0, 0, waist + dz * s), (0, 0, 1), 0.003, reach=0.45)
         if len(pts) > 8:
             parts.append(tube_along(f"waistband_{rid}_{dz}", pts, 0.011 * s, mats["pelvis"], closed=True))
-    fz0, fz1, fx = j["pelvis"][2] - 0.08 * s, waist - 0.015 * s, 0.085 * s
+    # The front flap (Hosenlatz): a panel of the same leather from the waistband down over the fly,
+    # its top corners buttoned to the waistband with horn buttons, fine stitching round the edge and
+    # an embroidered edelweiss in the middle.
+    fz0, fz1, fx = j["pelvis"][2] - 0.03 * s, waist - 0.005 * s, 0.075 * s
     grid = []
     for row in range(6):
         z = fz0 + (fz1 - fz0) * row / 5
         line = []
         for col in range(7):
-            x = -fx + 2 * fx * col / 6
-            h = surf.hit((x, -1, z), (0, 1, 0), 0.006)
+            x = (-fx + 2 * fx * col / 6) * (0.82 + 0.18 * row / 5)  # narrowing a little to the bottom
+            h = surf.hit((x, -1, z), (0, 1, 0), 0.004)
             line.append(h[0] if h else Vector((x, -0.2, z)))
         grid.append(line)
     verts = [tuple(p) for line in grid for p in line]
     faces = [(r * 7 + c, r * 7 + c + 1, (r + 1) * 7 + c + 1, (r + 1) * 7 + c) for r in range(5) for c in range(6)]
     flap = lib.mesh_object(f"flap_{rid}", verts, faces, None, dark_leather)
     sol = flap.modifiers.new("thick", "SOLIDIFY")
-    sol.thickness = 0.005
+    sol.thickness = 0.004
     apply_all(flap)
     parts.append(flap)
-    border = [grid[r][0] for r in range(6)] + grid[5][1:] + [grid[r][6] for r in range(4, -1, -1)]
-    parts.append(tube_along(f"flapstitch_{rid}", [p + Vector((0, -0.004, 0)) for p in border], 0.0035 * s, embroidery))
-    for p in (grid[5][1], grid[5][5], grid[2][3]):
-        parts.append(tube_along(f"button_{rid}_{p.x:.2f}_{p.z:.2f}", [p + Vector((0, -0.006, 0)), p + Vector((0, -0.012, 0))], 0.01 * s, horn))
+    border = [grid[r][0] for r in range(5, -1, -1)] + grid[0][1:] + [grid[r][6] for r in range(1, 6)]
+    parts.append(tube_along(f"flapstitch_{rid}", [p + Vector((0, -0.003, 0)) for p in border], 0.0018 * s, embroidery))
+    for p in (grid[5][1], grid[5][5]):
+        parts.append(sphere_at(f"button_{rid}_{p.x:.2f}", p + Vector((0, -0.006, -0.008 * s)), 0.008 * s, horn))
+    mid = grid[2][3] + Vector((0, -0.006, 0))
+    for k in range(6):
+        a = k / 6 * math.tau
+        parts.append(sphere_at(f"petal_{rid}_{k}", mid + Vector((math.cos(a) * 0.011 * s, 0, math.sin(a) * 0.011 * s)), 0.0065 * s, embroidery))
+    parts.append(sphere_at(f"heart_{rid}", mid + Vector((0, -0.002, 0)), 0.005 * s, green))
     bx = 0.075 * s * b
     for sx in (-1, 1):
         x = sx * bx
@@ -633,19 +662,21 @@ def build(look):
     return rig, mesh
 
 
-lib.reset()
-rigs = []
-meshes = []
-for i, rid in enumerate(("maximilian", "adelaide", "remo")):
-    rig, mesh = build(LOOKS[rid])
-    rigs.append(rig)
-    meshes.append(mesh)
-# A look at all three side by side, three-quarter front.
-for i, rig in enumerate(rigs):
-    rig.location = (i * 1.1 - 1.1, 0, 0)
-lib.preview("riders.png", (2.2, -4.2, 1.3), (0, 0, 0.95), size=(1200, 900), lens=45, sky=(0.35, 0.55, 0.9))
-lib.preview("riders_back.png", (-1.6, 4.4, 1.4), (0, 0, 0.95), size=(1200, 900), lens=45, sky=(0.35, 0.55, 0.9))
-for rig in rigs:
-    rig.location = (0, 0, 0)
-weights = {m.name: len(m.vertex_groups) for m in meshes}
-result = {"export": lib.export_glb("riders.glb", rigs + meshes), "vertex_groups": weights, "verts": {m.name: len(m.data.vertices) for m in meshes}}
+# blender/riders_mpfb.py borrows the kit from this file without building these bodies.
+if not globals().get("RIDERS_LIBRARY"):
+    lib.reset()
+    rigs = []
+    meshes = []
+    for i, rid in enumerate(("maximilian", "adelaide", "remo")):
+        rig, mesh = build(LOOKS[rid])
+        rigs.append(rig)
+        meshes.append(mesh)
+    # A look at all three side by side, three-quarter front.
+    for i, rig in enumerate(rigs):
+        rig.location = (i * 1.1 - 1.1, 0, 0)
+    lib.preview("riders.png", (2.2, -4.2, 1.3), (0, 0, 0.95), size=(1200, 900), lens=45, sky=(0.35, 0.55, 0.9))
+    lib.preview("riders_back.png", (-1.6, 4.4, 1.4), (0, 0, 0.95), size=(1200, 900), lens=45, sky=(0.35, 0.55, 0.9))
+    for rig in rigs:
+        rig.location = (0, 0, 0)
+    weights = {m.name: len(m.vertex_groups) for m in meshes}
+    result = {"export": lib.export_glb("riders.glb", rigs + meshes), "vertex_groups": weights, "verts": {m.name: len(m.data.vertices) for m in meshes}}
