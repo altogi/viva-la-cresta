@@ -32,6 +32,12 @@ export default defineConfig({
             handler: 'CacheFirst',
             options: { cacheName: 'google-fonts', expiration: { maxEntries: 20, maxAgeSeconds: 31536000 } },
           },
+          {
+            // The Blender models: too big to precache, kept once fetched (refreshed in the background).
+            urlPattern: /\/models\/.*\.glb$/,
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'models', expiration: { maxEntries: 20 } },
+          },
         ],
       },
     }),

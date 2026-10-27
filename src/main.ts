@@ -7,6 +7,7 @@ import { createWorld } from './render/world';
 import { buildTrackMesh } from './render/trackMesh';
 import { Terrain } from './render/terrain';
 import { buildScenery } from './render/scenery';
+import { loadAssets } from './render/assets';
 import { RiderModel } from './render/riderModel';
 import { LOOKS } from './render/riderLooks';
 import { loadSelection, type Selection } from './game/selection';
@@ -21,6 +22,9 @@ import { Sound } from './audio/sound';
 import { POLICIES } from './sim/autopilot';
 import { createTuningPanel } from './ui/tuning';
 
+/** Extra Blender models (public/models/<name>.glb) the scenery uses. */
+const MODELS: string[] = ['town', 'balloon'];
+
 registerSW({ immediate: true });
 
 const params = new URLSearchParams(location.search);
@@ -34,17 +38,19 @@ const RIDES: Record<string, RideSetup> = {
   'top-running': { startS: 0, start: 'running', steps: 7, label: 'Top · running start' },
 };
 
-// Let the loading screen paint before the heavy geometry work.
-setTimeout(start, 50);
+// Let the loading screen paint, fetch the Blender models, then build the scene.
+setTimeout(() => void start(), 50);
 
-function start() {
+async function start() {
   const t0 = performance.now();
   const lap = (label: string) => debug && console.info(`${label}: ${(performance.now() - t0).toFixed(0)} ms`);
+  const assets = await loadAssets(MODELS);
+  lap('models');
   const world = createWorld(document.getElementById('scene') as HTMLCanvasElement);
   const track = new Track();
   const trackMesh = buildTrackMesh(track);
   const terrain = new Terrain(track);
-  world.scene.add(trackMesh, terrain.mesh, buildScenery(track, terrain));
+  world.scene.add(trackMesh, terrain.mesh, buildScenery(track, terrain, assets));
   lap('scene');
 
   // The ghost rider behind the menu and in the viewer wears the chosen rider's kit.

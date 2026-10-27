@@ -751,9 +751,9 @@ function blendTargets(a: Targets, b: Targets, t: number): Targets {
 }
 
 /** Traditional: a low red steel frame on round runners turned up at the front, a sliding cushion, knives at the back. */
-function buildTraditional(): { group: THREE.Group; seat: number; handleY: number } {
+function buildTraditional(color = '#b3261e'): { group: THREE.Group; seat: number; handleY: number } {
   const g = new THREE.Group();
-  const frame = m('#b3261e', 0.5);
+  const frame = m(color, 0.5);
   const steel = m('#c9ccd1', 0.25, 0.7);
   for (const z of [-0.21, 0.21]) {
     const runner = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 1.12, 8).rotateZ(Math.PI / 2), steel);
@@ -782,6 +782,13 @@ function buildTraditional(): { group: THREE.Group; seat: number; handleY: number
   cushion.name = 'cushion';
   g.add(plate, cushion);
   return { group: g, seat: 0.15, handleY: 0.085 };
+}
+
+/** A toboggan on its own (laid out on the snow at Junction), base on the ground, nose along +X. */
+export function looseToboggan(kind: TobogganId, color?: string): THREE.Group {
+  const g = (kind === 'flattop' ? buildFlatTop() : buildTraditional(color)).group;
+  g.traverse((o) => (o.castShadow = true));
+  return g;
 }
 
 /** Flat-top: a low carbon board on fine runners, side grips, no cushion. */

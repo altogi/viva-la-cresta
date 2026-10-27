@@ -245,6 +245,14 @@ Weather generator and friction model, snow (visual snowfall + physics), wind, ha
 **Done when** two race days feel different and the cards land.
 
 ### Visual upgrade (runs alongside Phases 3–4)
+*In progress, with Blender.* Models are now built in Blender by scripts in `blender/` (run with `python3 blender/run.py blender/<script>.py` while Blender's MCP add-on is listening) and exported to `public/models/*.glb`, which the game loads before building the scene:
+- **Trees** (`trees.py`): snow-laden spruces and early-winter larches from textured branch cards, with impostor billboards for the distance; a stand of trees round the Top hut.
+- **Mountains** (`mountains.py`): a textured panorama ring with the massifs roughly where the Engadin's peaks stand, forest to the treeline and snow above.
+- **Town** (`town.py`, from `blender/buildings.json` written by `scripts/export-buildings.ts`): every mapped building on its footprint, in Engadin style (shutters, stacked timber balconies, boarded gables), pastel blocks round Junction, chalets, and the yellow house by the finish.
+- **Balloon** (`balloon.py`): a hot-air balloon drifting over the valley.
+- **In the game:** a clear blue sky with cirrus and a sun glow, alpine haze, the sky's light on every material (environment map) and AgX tone mapping. Spectators line the clubhouse terrace, and toboggans and riders wait at the Junction start.
+*Next:* the riders themselves (sculpted, rigged), the clubhouse and Junction hut as Blender models, the run's ice and banks, and real terrain for the far mountains if wanted.
+
 Battle Drones builds its 3D models in TypeScript code (procedural Three.js geometry), with no external modelling, and so does this game so far. Code-built geometry can go a long way. The jump to *realistic* comes mostly from light, materials and post-processing, plus a few hand-made hero assets.
 
 1. **Light:** a physical sky (Three.js `Sky`) feeding an environment map, so ice and glass reflect the sky and snow gets proper ambient light. Sharper shadows near the camera (cascaded shadow maps). Low winter sun with long shadows.

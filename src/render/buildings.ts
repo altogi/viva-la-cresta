@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { OSM_BUILDINGS, OSM_IDS, OSM_NEAR, type BoxBuilding } from '../track/osm';
 import type { Terrain } from './terrain';
 import { mulberry32 } from './util';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 const FLOOR = 3;
 const TIMBER = new THREE.Color('#9b7450');
@@ -95,7 +96,7 @@ function facadeTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-interface Spec {
+export interface Spec {
   x: number;
   y: number;
   angle: number;
@@ -106,7 +107,7 @@ interface Spec {
   kind: string;
 }
 
-function specFromBox(b: BoxBuilding): Spec {
+export function specFromBox(b: BoxBuilding): Spec {
   const [x, y, angle, length, width, levelsTag, roofTag, kind] = b;
   const area = length * width;
   let levels = levelsTag > 0 ? levelsTag : 0;
@@ -124,7 +125,7 @@ function specFromBox(b: BoxBuilding): Spec {
 }
 
 /** Oriented box from an exact footprint (long axis along the longest edge). */
-function boxFromFootprint(c: [number, number], p: [number, number][]): BoxBuilding {
+export function boxFromFootprint(c: [number, number], p: [number, number][]): BoxBuilding {
   let best = { len: 0, a: 0 };
   for (let i = 0; i < p.length; i++) {
     const [ax, ay] = p[i];
@@ -143,6 +144,61 @@ function boxFromFootprint(c: [number, number], p: [number, number][]): BoxBuildi
   const uc = (u0 + u1) / 2;
   const vc = (v0 + v1) / 2;
   return [c[0] + uc * ca - vc * sa, c[1] + uc * sa + vc * ca, (best.a * 180) / Math.PI, u1 - u0, v1 - v0, 0, '', ''];
+}
+
+/**
+ * The buildings modelled in Blender (blender/town.py, from the same list in the same order), each set
+ * on its footprint and merged into one mesh per material. Churches keep their code-built model.
+ */
+export function placeTown(terrain: Terrain, town: THREE.Object3D): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'town';
+  const walls = new MeshBuilder();
+  const roofs = new MeshBuilder();
+  const snow = new THREE.Color('#f4f7fb');
+  const byName = new Map(town.children.map((c) => [c.name, c]));
+  const merged = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const up = new THREE.Vector3(0, 1, 0);
+  allBoxes().forEach((box, i) => {
+    const spec = specFromBox(box);
+    const { minX, maxX, minY, maxY } = terrain.bounds;
+    if (spec.x < minX || spec.x > maxX || spec.y < minY || spec.y > maxY) return;
+    if (overlapsRun(spec, terrain)) return;
+    if (spec.kind === 'church') return addChurch(walls, roofs, spec, terrain, snow);
+    const model = byName.get(`bld_${i}`);
+    if (!model) return;
+    const ground = Math.min(...corners(spec).map(([x, y]) => terrain.height(x, y)));
+    m.compose(new THREE.Vector3(spec.x, ground, -spec.y), q.setFromAxisAngle(up, spec.angle), new THREE.Vector3(1, 1, 1));
+    model.updateMatrixWorld(true);
+    model.traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return;
+      const geo = (o.geometry as THREE.BufferGeometry).clone().applyMatrix4(m.clone().multiply(o.matrixWorld));
+      const material = o.material as THREE.Material;
+      if (!merged.has(material)) merged.set(material, []);
+      merged.get(material)!.push(geo);
+    });
+  });
+  for (const [material, geos] of merged) {
+    const geo = mergeGeometries(geos.map((g) => (g.index ? g.toNonIndexed() : g)));
+    if (!geo) continue;
+    const mesh = new THREE.Mesh(geo, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+  if (walls.positions.length) {
+    group.add(walls.build(new THREE.MeshStandardMaterial({ map: facadeTexture(), vertexColors: true, roughness: 0.9 })));
+    group.add(roofs.build(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 })));
+  }
+  return group;
+}
+
+/** Every mapped building as an oriented box, in the order blender/buildings.json lists them. */
+export function allBoxes(): BoxBuilding[] {
+  const special = new Set<number>(Object.values(OSM_IDS));
+  return [...OSM_BUILDINGS, ...OSM_NEAR.filter((b) => !special.has(b.id)).map((b) => boxFromFootprint(b.c, b.p))];
 }
 
 export function buildTownBuildings(terrain: Terrain): THREE.Group {

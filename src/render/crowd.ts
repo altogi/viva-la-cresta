@@ -7,7 +7,9 @@ import * as THREE from 'three';
 import type { Track } from '../sim/track';
 import type { Terrain } from './terrain';
 import { lips } from '../sim/surface';
-import { RiderModel, type Prop, type StandPosture } from './riderModel';
+import { RiderModel, looseToboggan, type Prop, type StandPosture } from './riderModel';
+import { clubhouseTerrace } from './clubhouse';
+import { JUNCTION_S } from '../track/cresta';
 import { OSM_IDS, OSM_NEAR } from '../track/osm';
 import { HUT_APOTHEM } from './topHut';
 import { TOP_PLATFORM } from './scenery';
@@ -35,6 +37,8 @@ interface Agent {
   /** Faces the run when idle. */
   homeHeading: number;
   mode: 'idle' | 'flee' | 'look' | 'return';
+  /** Up on the clubhouse terrace: stays put (no fleeing, no ground to follow). */
+  perch?: boolean;
   timer: number;
   dir: THREE.Vector2;
   phase: number;
@@ -271,6 +275,7 @@ function waitingLook(base: RiderLook, suit: string, helmet: string): RiderLook {
 export class Crowd {
   readonly group = new THREE.Group();
   private agents: Agent[] = [];
+  private readonly terraceCrowd: Agent[] = [];
   private leads: { line: THREE.Line; from: Agent; to: Agent }[] = [];
   private readonly waiting: { model: RiderModel; time: number; posture: StandPosture; look: number }[] = [];
   /** This ride's visitors are all fur coats (one ride in ten). */
@@ -283,6 +288,7 @@ export class Crowd {
     this.group.name = 'crowd';
     this.group.add(this.buildPath());
     this.buildWaitingRiders();
+    this.buildJunction();
     this.populate();
   }
 
@@ -380,6 +386,78 @@ export class Crowd {
     }
   }
 
+  /**
+   * Junction, as in the photographs: toboggans laid out in a row beside the run on the clubhouse side,
+   * riders in helmets waiting by them, and the clubhouse terrace lined with spectators.
+   */
+  private buildJunction() {
+    const s0 = JUNCTION_S;
+    const st = this.track.frame(s0);
+    const club = OSM_NEAR.find((b) => b.id === OSM_IDS.clubhouse)!.c;
+    const side = Math.sign((club[0] - st.pos[0]) * st.left[0] + (club[1] - st.pos[1]) * st.left[1]) || 1;
+    const colors = ['#b3261e', '#d9a21a', '#1f4fa8', '#1d1d1f', '#b3261e', '#2f7d4a', '#d9a21a', '#7a1d1d'];
+    for (let k = 0; k < 8; k++) {
+      const s = s0 - 10 + k * 1.6;
+      const f = this.track.frame(s);
+      const u = side * (lips(this.track.section(s))[side > 0 ? 'left' : 'right'] * side + 1.6);
+      const at = this.ground(s, u);
+      const sled = looseToboggan(k % 4 === 3 ? 'flattop' : 'traditional', colors[k]);
+      sled.position.copy(at);
+      // Side by side, noses towards the run.
+      sled.rotation.y = Math.atan2(side * f.left[1], -side * f.left[0]) + (Math.random() - 0.5) * 0.15;
+      this.group.add(sled);
+    }
+    const kit: [RiderLook, string, string][] = [
+      [LOOKS.adelaide, '#1d1d1f', '#c9c9c9'],
+      [LOOKS.maximilian, '#9a1c1c', '#9a1c1c'],
+      [LOOKS.remo, '#e9e4d6', '#1f4fa8'],
+    ];
+    kit.forEach(([look, suit, helmet], k) => {
+      const s = s0 - 6 + k * 4.5;
+      const u = side * (lips(this.track.section(s))[side > 0 ? 'left' : 'right'] * side + 3.6 + (k % 2) * 1.2);
+      const at = this.ground(s, u);
+      const f = this.track.frame(s);
+      const model = new RiderModel(waitingLook(look, suit, helmet), 'traditional');
+      const toRun = new THREE.Vector3(-side * f.left[0], 0, side * f.left[1]).normalize();
+      const heading = Math.atan2(-toRun.z, toRun.x) + (k - 1) * 0.4;
+      model.root.rotation.y = heading;
+      model.root.position.copy(at).add(new THREE.Vector3(0, 0, 0.75).applyAxisAngle(new THREE.Vector3(0, 1, 0), heading));
+      model.bake();
+      this.group.add(model.root);
+      this.waiting.push({ model, time: Math.random() * 5, posture: 'stand', look: 0.3 * (k - 1) });
+    });
+    // Spectators along the terrace railing, on the sides that look over the run.
+    const terrace = clubhouseTerrace(this.track);
+    const ring = terrace.ring;
+    const spots: [number, number, number][] = [];
+    for (let i = 0; i < ring.length; i++) {
+      const [ax, ay] = ring[i];
+      const [bx, by] = ring[(i + 1) % ring.length];
+      const len = Math.hypot(bx - ax, by - ay);
+      const normal = Math.atan2(-(bx - ax), by - ay); // outward, for a counter-clockwise ring
+      for (let d = 0.6; d < len - 0.3; d += 0.75) {
+        const x = ax + ((bx - ax) * d) / len;
+        const y = ay + ((by - ay) * d) / len;
+        if (this.terrain.distanceToTrack(x, y).distance > 22) continue;
+        if (Math.random() < 0.35) continue;
+        spots.push([x, y, normal]);
+      }
+    }
+    for (const [x, y, normal] of spots.slice(0, 26)) {
+      const kind: Kind = pick(['man', 'mother', 'man', 'furGirl', 'oldLady']);
+      const body = makeBody(kind === 'oldLady' ? 'man' : kind);
+      const home = new THREE.Vector3(x, terrace.z, -y);
+      const heading = normal + (Math.random() - 0.5) * 0.6;
+      body.group.position.copy(home);
+      body.group.rotation.y = heading;
+      this.group.add(body.group);
+      this.terraceCrowd.push({
+        kind, body, home: home.clone(), pos: home.clone(), heading, homeHeading: heading, mode: 'idle', timer: 0,
+        dir: new THREE.Vector2(), phase: Math.random() * 10, speed: 0, offset: new THREE.Vector2(), scared: new THREE.Vector3(), perch: true,
+      });
+    }
+  }
+
   /** New visitors for a ride: a party every so often along the path. */
   populate() {
     for (const a of this.agents) a.body.group.removeFromParent();
@@ -468,6 +546,7 @@ export class Crowd {
       w.model.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, stand: { time: w.time, action: null, t: 0, posture: w.posture, look: w.look + Math.sin(w.time * 0.3) * 0.15 } });
     }
     for (const a of this.agents) this.step(a, dt, rider);
+    for (const a of this.terraceCrowd) this.step(a, dt, rider);
     for (const l of this.leads) {
       const p = l.line.geometry.attributes.position as THREE.BufferAttribute;
       const hand = l.from.body.hand!.clone().applyMatrix4(l.from.body.group.matrixWorld);
@@ -525,7 +604,7 @@ export class Crowd {
     a.speed += (speed - a.speed) * Math.min(1, dt * 6);
     a.pos.x += Math.cos(a.heading) * a.speed * dt;
     a.pos.z -= Math.sin(a.heading) * a.speed * dt;
-    a.pos.y = groundHeight(this.track, this.terrain, a.pos.x, a.pos.z);
+    if (!a.perch) a.pos.y = groundHeight(this.track, this.terrain, a.pos.x, a.pos.z);
     // Legs and arms swing with the pace; a gentle sway standing still.
     const pace = a.speed;
     a.phase += dt * (pace > 0.1 ? 2.2 + pace * 1.6 : 1.2);

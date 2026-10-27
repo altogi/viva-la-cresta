@@ -2,13 +2,13 @@
 // the Junction clubhouse, bridges, timing eyes, the straw and padding beyond Shuttlecock, the finish.
 
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type { Assets } from './assets';
 import { MAT_LENGTH } from '../sim/physics';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { Track } from '../sim/track';
 import { BENDS, LANDMARKS, TRACK_LENGTH } from '../track/cresta';
 import { OSM_BUILDINGS, OSM_IDS, OSM_NEAR, OSM_TREES, OSM_WOODS } from '../track/osm';
-import { buildTownBuildings } from './buildings';
+import { buildTownBuildings, placeTown } from './buildings';
 import { buildClubhouse } from './clubhouse';
 import { buildTopHut } from './topHut';
 import type { Terrain } from './terrain';
@@ -17,13 +17,14 @@ import { colors, mulberry32, toThree } from './util';
 const mat = (color: THREE.ColorRepresentation, opts: THREE.MeshStandardMaterialParameters = {}) =>
   new THREE.MeshStandardMaterial({ color, roughness: 0.8, flatShading: true, ...opts });
 
-export function buildScenery(track: Track, terrain: Terrain): THREE.Group {
+export function buildScenery(track: Track, terrain: Terrain, assets: Assets): THREE.Group {
   const group = new THREE.Group();
   group.name = 'scenery';
   const ctx = new Placer(track, terrain);
-  group.add(buildMountains(terrain));
-  group.add(buildTrees(track, terrain));
-  group.add(buildTownBuildings(terrain));
+  group.add(placeMountains(assets));
+  if (assets.models.balloon) group.add(driftingBalloon(assets.models.balloon));
+  group.add(buildTrees(track, terrain, assets));
+  group.add(assets.models.town ? placeTown(terrain, assets.models.town) : buildTownBuildings(terrain));
   group.add(buildTopArea(ctx));
   group.add(buildClubhouse(track, terrain));
   for (const lm of LANDMARKS) {
@@ -73,65 +74,36 @@ class Placer {
   }
 }
 
-function buildMountains(terrain: Terrain): THREE.Group {
-  const group = new THREE.Group();
-  const rng = mulberry32(42);
-  const { minX, maxX, minY, maxY } = terrain.bounds;
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
-  const material = new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1, fog: true });
-  const geos: THREE.BufferGeometry[] = [];
-  for (let i = 0; i < 46; i++) {
-    const angle = (i / 46) * Math.PI * 2 + rng() * 0.1;
-    const dist = 4800 + rng() * 3000;
-    const height = 450 + rng() * 800;
-    const radius = 900 + rng() * 900;
-    const geo = new THREE.ConeGeometry(radius, height, 7 + Math.floor(rng() * 3), 4);
-    const pos = geo.attributes.position as THREE.BufferAttribute;
-    const col = new Float32Array(pos.count * 3);
-    const c = new THREE.Color();
-    for (let k = 0; k < pos.count; k++) {
-      const yy = pos.getY(k);
-      const h01 = (yy + height / 2) / height;
-      if (h01 < 0.98) {
-        pos.setX(k, pos.getX(k) * (0.85 + rng() * 0.3));
-        pos.setZ(k, pos.getZ(k) * (0.85 + rng() * 0.3));
-        pos.setY(k, yy + (rng() - 0.5) * height * 0.08);
-      }
-      const snowLine = 0.45 + rng() * 0.1;
-      c.copy(h01 > snowLine ? colors.snow : colors.rock);
-      col.set([c.r, c.g, c.b], k * 3);
-    }
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    geo.translate(cx + Math.cos(angle) * dist, height / 2 - 120, -(cy + Math.sin(angle) * dist));
-    geos.push(geo.toNonIndexed());
-  }
-  const merged = mergeGeometries(geos);
-  merged.computeVertexNormals();
-  group.add(new THREE.Mesh(merged, material));
-  return group;
+/** The mountain ring made in Blender (blender/mountains.py), centred on the middle of the run. */
+function placeMountains(assets: Assets): THREE.Object3D {
+  const ring = assets.mountains;
+  ring.position.set(MOUNTAIN_CENTRE[0], 0, -MOUNTAIN_CENTRE[1]);
+  return ring;
 }
 
-/** A spruce: six drooping tiers tapering to a spire, the Engadin's commonest conifer. */
-function pineGeometry(): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [];
-  const tiers = 6;
-  for (let i = 0; i < tiers; i++) {
-    const t = i / (tiers - 1);
-    const radius = 2.5 * (1 - t) + 0.45;
-    const height = 2.6 - t * 0.9;
-    const y = 1.6 + t * 8.2;
-    const cone = new THREE.ConeGeometry(radius, height, 9, 1, true).translate(0, y + height / 2, 0);
-    // Pull the rim down a little so each tier droops like spruce boughs.
-    const pos = cone.attributes.position as THREE.BufferAttribute;
-    for (let k = 0; k < pos.count; k++) if (pos.getY(k) < y + 0.01) pos.setY(k, pos.getY(k) - 0.35);
-    parts.push(cone.toNonIndexed());
-  }
-  parts.push(new THREE.ConeGeometry(0.3, 1.6, 6).translate(0, 11.2, 0).toNonIndexed());
-  const geo = mergeGeometries(parts);
-  geo.computeVertexNormals();
-  return geo;
+/** A hot-air balloon drifting slowly round the valley, a few hundred metres up, as in the photographs. */
+function driftingBalloon(model: THREE.Object3D): THREE.Object3D {
+  const holder = new THREE.Group();
+  holder.add(model);
+  let mesh: THREE.Mesh | null = null;
+  model.traverse((o) => {
+    if (o instanceof THREE.Mesh && !mesh) mesh = o;
+  });
+  const start = performance.now();
+  // Moved each frame from its own render callback: no game logic needs to know it exists.
+  if (mesh)
+    (mesh as THREE.Mesh).onBeforeRender = () => {
+      const t = (performance.now() - start) / 1000;
+      const a = 0.9 + t * 0.004;
+      holder.position.set(MOUNTAIN_CENTRE[0] + Math.cos(a) * 1500, 340 + Math.sin(t * 0.05) * 25, -(MOUNTAIN_CENTRE[1] + Math.sin(a) * 1500));
+      holder.rotation.y = t * 0.02;
+    };
+  holder.position.set(MOUNTAIN_CENTRE[0] + Math.cos(0.9) * 1500, 340, -(MOUNTAIN_CENTRE[1] + Math.sin(0.9) * 1500));
+  return holder;
 }
+
+/** Must match CENTRE in blender/mountains.py. */
+const MOUNTAIN_CENTRE = [445, 455];
 
 function insidePolygon(x: number, y: number, poly: [number, number][]) {
   let inside = false;
@@ -144,17 +116,17 @@ function insidePolygon(x: number, y: number, poly: [number, number][]) {
 }
 
 /** Pines inside the woods mapped in OSM, the individually mapped trees, and a few strays on the meadows. */
-function buildTrees(track: Track, terrain: Terrain): THREE.Group {
+function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group {
   const group = new THREE.Group();
   const rng = mulberry32(1884);
   const { minX, maxX, minY, maxY } = terrain.bounds;
-  const spots: { x: number; y: number; scale: number; near: boolean }[] = [];
+  const spots: { x: number; y: number; scale: number; distance: number }[] = [];
   const consider = (x: number, y: number, keepFar: number) => {
     if (x < minX || x > maxX || y < minY || y > maxY) return;
     const { distance } = terrain.distanceToTrack(x, y);
     if (distance < 12) return;
     if (distance > 260 && rng() > keepFar) return;
-    spots.push({ x, y, scale: 0.75 + rng() * 0.8, near: distance < 140 });
+    spots.push({ x, y, scale: 0.75 + rng() * 0.8, distance });
   };
   for (const wood of OSM_WOODS) {
     const xs = wood.map((p) => p[0]);
@@ -185,34 +157,58 @@ function buildTrees(track: Track, terrain: Terrain): THREE.Group {
       if (clearOfBuildings(x, y)) consider(x, y, 1);
     }
   }
+  // The Top hut stands in a stand of trees: all round it, clear of the start platform.
+  const hut = OSM_NEAR.find((b) => b.id === OSM_IDS.topHut)!.c;
+  const st0 = track.frame(0);
+  const platform = [-st0.forward[0] * 12, -st0.forward[1] * 12];
+  for (let i = 0; i < 260; i++) {
+    const a = rng() * Math.PI * 2;
+    const r = 10 + Math.sqrt(rng()) * 40;
+    const x = hut[0] + Math.cos(a) * r;
+    const y = hut[1] + Math.sin(a) * r;
+    if (Math.hypot(x - platform[0], y - platform[1]) < 17) continue;
+    if (!buildings.every(([bx, by]) => Math.hypot(bx - x, by - y) > 13)) continue;
+    consider(x, y, 1);
+  }
   for (let i = 0; i < 2500; i++) {
     const x = minX + rng() * (maxX - minX);
     const y = minY + rng() * (maxY - minY);
     if (rng() < 0.12 && !OSM_WOODS.some((w) => insidePolygon(x, y, w))) consider(x, y, 0.5);
   }
 
-  const detailed = pineGeometry();
-  const simple = new THREE.ConeGeometry(2.3, 10.5, 7).translate(0, 5.8, 0);
-  const trunk = new THREE.CylinderGeometry(0.2, 0.32, 2.2, 6).translate(0, 1.1, 0);
+  // Near the run: the Blender trees (spruces, and a third larches), casting shadows only right
+  // beside it; further off, billboards of them. Instanced in chunks of the map, so whatever is off
+  // screen (or outside the sun's shadow area) is skipped.
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const up = new THREE.Vector3(0, 1, 0);
-  const build = (geo: THREE.BufferGeometry, list: typeof spots, withTrunks: boolean) => {
-    // Spruce tiers are open cones: draw both sides so they don't look hollow from below.
-    const leaves = new THREE.InstancedMesh(geo, mat('#ffffff', { side: THREE.DoubleSide }), list.length);
-    const trunks = withTrunks ? new THREE.InstancedMesh(trunk, mat(colors.trunk), list.length) : null;
-    list.forEach((t, i) => {
-      q.setFromAxisAngle(up, rng() * Math.PI * 2);
-      m.compose(new THREE.Vector3(t.x, terrain.height(t.x, t.y) - 0.2, -t.y), q, new THREE.Vector3(t.scale, t.scale * (0.9 + rng() * 0.35), t.scale));
-      leaves.setMatrixAt(i, m);
-      leaves.setColorAt(i, colors.pine.clone().lerp(colors.pineLight, rng()));
-      trunks?.setMatrixAt(i, m);
-    });
-    group.add(leaves);
-    if (trunks) group.add(trunks);
-  };
-  build(detailed, spots.filter((t) => t.near), true);
-  build(simple, spots.filter((t) => !t.near), false);
+  const NEAR = ['spruce_0', 'spruce_1', 'spruce_2', 'larch_0', 'larch_1'];
+  const pick = () => (rng() < 0.3 ? NEAR[3 + Math.floor(rng() * 2)] : NEAR[Math.floor(rng() * 3)]);
+  const CHUNK = 160;
+  const byModel = new Map<string, { name: string; shadow: boolean; matrices: THREE.Matrix4[] }>();
+  for (const t of spots) {
+    const kind = pick();
+    const near = t.distance < 80;
+    const name = near ? kind : kind.startsWith('larch') ? 'larch_far' : 'spruce_far';
+    const shadow = t.distance < 35;
+    const key = `${name}|${shadow}|${Math.floor(t.x / CHUNK)},${Math.floor(t.y / CHUNK)}`;
+    q.setFromAxisAngle(up, rng() * Math.PI * 2);
+    // Real heights 9-20 m: the models are 13-21 m tall.
+    const s = (0.5 + rng() * 0.45) * t.scale;
+    m.compose(new THREE.Vector3(t.x, terrain.height(t.x, t.y) - 0.3, -t.y), q, new THREE.Vector3(s, s * (0.92 + rng() * 0.16), s));
+    if (!byModel.has(key)) byModel.set(key, { name, shadow, matrices: [] });
+    byModel.get(key)!.matrices.push(m.clone());
+  }
+  for (const { name, shadow, matrices } of byModel.values()) {
+    for (const part of assets.trees[name] ?? []) {
+      const mesh = new THREE.InstancedMesh(part.geometry, part.material, matrices.length);
+      matrices.forEach((mm, i) => mesh.setMatrixAt(i, mm));
+      mesh.computeBoundingSphere();
+      mesh.castShadow = shadow;
+      mesh.receiveShadow = false;
+      group.add(mesh);
+    }
+  }
   return group;
 }
 

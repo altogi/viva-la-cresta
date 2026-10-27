@@ -6,3 +6,7 @@ dist/
 images/
 sample_data/
 my-times.csv
+
+# Blender preview renders
+blender/previews/
+blender/__pycache__/

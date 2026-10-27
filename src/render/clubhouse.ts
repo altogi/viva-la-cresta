@@ -82,6 +82,14 @@ export function buildClubhouse(track: Track, terrain: Terrain): THREE.Group {
   return group;
 }
 
+/** The roof terrace, where spectators stand: its edge (just inside the railing) and floor height. */
+export function clubhouseTerrace(track: Track): { ring: P[]; z: number } {
+  const club = OSM_NEAR.find((b) => b.id === OSM_IDS.clubhouse)!;
+  const ring: P[] = club.p.map(([x, y]) => [club.c[0] + x, club.c[1] + y] as P).reverse();
+  const floorZ = trackFloorNear(track, club.c) - 0.2;
+  return { ring: offset(ring, -0.55), z: floorZ + 2 * FLOOR + 0.4 };
+}
+
 /** Elevation of the track floor nearest to a point. */
 function trackFloorNear(track: Track, [x, y]: P): number {
   let best = track.stations[0];
