@@ -1,21 +1,23 @@
-// Names for the NPC riders: random initials with surnames (and their nations) taken from the
-// Tower's results sheets, so the fields read like the real thing without being real people.
+// Names for the NPC riders: random initials with surnames (and their nations) after those on the
+// Tower's results sheets, each one changed a little (Achenbach to Ochenbuch, Lloyd to Floyd), so the
+// fields read like the real thing without naming real people.
 
 export const SURNAMES: [string, string][] = [
-  ['Achenbach', 'USA'], ['Ahrens', 'D'], ['Albers-Schoenberg', 'ESP'], ['Barnes', 'GB'], ['Birdwood', 'GB'], ['Borromeo Arese', 'I'],
-  ['Bott', 'GB'], ['Brayn-Smith', 'GB'], ['Buelte', 'CH'], ['Buff', 'CH'], ['Carroll', 'GB'], ['Chauveau', 'IRL'], ['Clark', 'GB'],
-  ['Clive', 'GB'], ['Colclough', 'GB'], ['Creagh-Coen', 'GB'], ['Curtis-Donnelly', 'GB'], ['Diethelm', 'CH'], ['Edwards', 'GB'],
-  ['Evans', 'GB'], ['Ferrari', 'I'], ['Figgis', 'GB'], ['Fischer', 'I'], ['Foster', 'GB'], ['Froom', 'GB'], ['Gallagher', 'GB'],
-  ['Gallmann', 'CH'], ['Giardini', 'I'], ['Guerrini-Maraldi', 'I'], ['Harwood', 'GB'], ['Hilleary', 'GB'], ['Hitz', 'CH'],
-  ['Hitz-Vass', 'CH'], ['Holman-West', 'GB'], ['Hosch', 'CH'], ['Jacob', 'CDN'], ['Jankovich', 'ZA'], ['Jones', 'GB'], ['Kelly', 'GB'],
-  ['Kitson', 'GB'], ['Kriemler', 'CH'], ['Kueng', 'CH'], ['Lloyd', 'USA'], ['Luethi', 'CH'], ['Maag', 'CH'], ['MacDonald', 'GB'],
-  ['Mallinckrodt', 'GB'], ['Marenzi', 'CH'], ['Masterson', 'GB'], ['McNair', 'GB'], ['Mendelsohn', 'GB'], ['Morris', 'GB'],
-  ['Nakajima', 'J'], ['Nani', 'CH'], ['Oswald', 'CH'], ['Packe-Drury-Lowe', 'GB'], ['Payne', 'GB'], ['Penzo', 'I'], ['Peter', 'CH'],
-  ['Pirani', 'GT'], ['Pitsch', 'CH'], ['Pitto', 'GB'], ['Reid', 'GB'], ['Rentsch', 'CH'], ['Robinson', 'GB'], ['Roehling', 'D'],
-  ['Rowland-Rouse', 'GB'], ['Rusch', 'CH'], ['Schaer', 'CH'], ['Schlumberger', 'GT'], ['Schmid', 'D'], ['Schmidt', 'CH'],
-  ['Shepherd', 'GB'], ['Sheppard', 'GB'], ['Smalley', 'GB'], ['Sotto Mayor Matoso', 'P'], ['Spautz', 'L'], ['Spillmann', 'CH'],
-  ['Stuedi', 'CH'], ['Summers', 'GB'], ['Tempel', 'D'], ['Townley', 'GB'], ['Villiers-Smith', 'GB'], ['Vitalini', 'CH'],
-  ['Wakeham', 'GB'], ['Whetherly', 'GB'], ['Wickens', 'GB'], ['Zach', 'P'], ['Ziros', 'GR'],
+  ['Ochenbuch', 'USA'], ['Ohrens', 'D'], ['Albers-Scheinburg', 'ESP'], ['Bornes', 'GB'], ['Burdwold', 'GB'], ['Corromio-Odese', 'I'],
+  ['Boff', 'GB'], ['Brain-Smythe', 'GB'], ['Buelti', 'CH'], ['Puff', 'CH'], ['Corrall', 'GB'], ['Chovaux', 'IRL'],
+  ['Clarte', 'GB'], ['Clove', 'GB'], ['Colcleigh', 'GB'], ['Creech-Cowan', 'GB'], ['Curtin-Dunnolly', 'GB'], ['Diethalm', 'CH'],
+  ['Edmards', 'GB'], ['Evins', 'GB'], ['Forrari', 'I'], ['Figgle', 'GB'], ['Fascher', 'I'], ['Fester', 'GB'],
+  ['Groom', 'GB'], ['Gollagher', 'GB'], ['Gallmonn', 'CH'], ['Giordani', 'I'], ['Guerrino-Moraldi', 'I'], ['Harmood', 'GB'],
+  ['Hillery', 'GB'], ['Hutz', 'CH'], ['Hutz-Vess', 'CH'], ['Holmen-Weston', 'GB'], ['Hösch', 'CH'], ['Jacot', 'CDN'],
+  ['Jonkovich', 'ZA'], ['Jowns', 'GB'], ['Kelby', 'GB'], ['Kitsome', 'GB'], ['Briemler', 'CH'], ['Küeng', 'CH'],
+  ['Floyd', 'USA'], ['Luethy', 'CH'], ['Moag', 'CH'], ['MacDonnell', 'GB'], ['Mallingroth', 'GB'], ['Morenzi', 'CH'],
+  ['Mastersen', 'GB'], ['McNear', 'GB'], ['Mendelsham', 'GB'], ['Morrin', 'GB'], ['Nakamaji', 'J'], ['Noni', 'CH'],
+  ['Osmald', 'CH'], ['Pocke-Drewry-Lowell', 'GB'], ['Paine', 'GB'], ['Pinzo', 'I'], ['Pieter', 'CH'], ['Pirandi', 'GT'],
+  ['Patsch', 'CH'], ['Pittoni', 'GB'], ['Read', 'GB'], ['Rantsch', 'CH'], ['Robison', 'GB'], ['Röhlung', 'D'],
+  ['Rowling-Rose', 'GB'], ['Rasch', 'CH'], ['Schoer', 'CH'], ['Schlumbarger', 'GT'], ['Schmed', 'D'], ['Schmitt', 'CH'],
+  ['Sheperton', 'GB'], ['Shippard', 'GB'], ['Smelley', 'GB'], ['Cottomenor Matosa', 'P'], ['Spoutz', 'L'], ['Spellmann', 'CH'],
+  ['Stüdli', 'CH'], ['Sommers', 'GB'], ['Tampel', 'D'], ['Townsley', 'GB'], ['Villers-Smyth', 'GB'], ['Vitolini', 'CH'],
+  ['Wakeman', 'GB'], ['Witherly', 'GB'], ['Wickins', 'GB'], ['Zoch', 'P'], ['Zeros', 'GR'],
 ];
 
 const INITIALS = 'AABBCCDEEFGGHHIJJJKLLMMMNOPPRRSSTTVWXYZ';

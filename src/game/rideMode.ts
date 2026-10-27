@@ -17,6 +17,7 @@ import { Ragdoll } from '../render/ragdoll';
 import { FallDebris } from '../render/particles';
 import type { Crowd } from '../render/crowd';
 import type { WeatherView } from '../render/weather';
+import { STEINBOCK_S, type Steinbock } from '../render/steinbock';
 import { adjust, Lag, MOODS, rollMoods, WEATHER, weatherFor, type Mood, type Weather } from './conditions';
 import { groundHeight } from '../render/ground';
 import { toThree } from '../render/util';
@@ -38,6 +39,8 @@ export interface RideSetup {
     firstTop?: boolean;
     /** The day's weather (announced in the hub as the day began). */
     weather?: Weather | null;
+    /** No luck, good or bad, for beginners (the first rides, and learning the flat-top or Top). */
+    noLuck?: boolean;
     coach?: Coach;
     /** Extra lines on the fall card (advice after a first fall). */
     fallLines?: (kind: string, zone: string) => string[];
@@ -87,6 +90,7 @@ const FALL_TEXT: Record<string, string> = {
   'over-wall': 'went over the wall',
   crash: 'came down the wall too hard and lost the toboggan',
   wall: 'hit the wall too squarely and lost the toboggan',
+  steinbock: 'ran into a Steinbock standing on the ice',
 };
 
 export class RideMode {
@@ -125,6 +129,11 @@ export class RideMode {
   crowd: Crowd | null = null;
   /** The day's weather on screen. */
   weatherView: WeatherView | null = null;
+  /** The Steinbock that wanders onto the ice after Shuttlecock one ride in a hundred. */
+  steinbock: Steinbock | null = null;
+  /** Debug: always have him there (?steinbock). */
+  alwaysSteinbock = false;
+  private steinbockOut = false;
   /** The hangover's slow hands (no lag otherwise). */
   private lag = new Lag(0);
   /** This ride's own luck, good or bad. */
@@ -195,7 +204,7 @@ export class RideMode {
       else if (this.stage === 'replay') this.endReplay();
     });
     window.addEventListener('keydown', (e) => {
-      if (this.stage === 'ready' && (e.code === 'Space' || e.code === 'Enter')) this.countdown();
+      if (this.stage === 'ready' && !this.luckPending && (e.code === 'Space' || e.code === 'Enter')) this.countdown();
     });
     $('ride-again').addEventListener('click', () => this.begin(this.setup));
     $('ride-menu').addEventListener('click', () => this.exit());
@@ -240,7 +249,15 @@ export class RideMode {
     // The day's weather (free rides: the same all of today) and this ride's own luck.
     const weather = setup.career ? setup.career.weather ?? null : freeRideWeather();
     this.weatherView?.set(weather);
-    this.moods = rollMoods();
+    this.moods = setup.career?.noLuck ? [] : rollMoods();
+    // One ride in a hundred, a Steinbock on the ice below Shuttlecock (only for rides that get there).
+    this.steinbockOut = !!this.steinbock && setup.startS < STEINBOCK_S && (this.alwaysSteinbock || Math.random() < 0.01);
+    if (this.steinbock) {
+      if (this.steinbockOut) {
+        this.steinbock.place();
+        this.world.scene.add(this.steinbock.root);
+      } else this.steinbock.root.removeFromParent();
+    }
     const adjusted = adjust(RIDERS[rider], TOBOGGANS[toboggan], weather, this.moods);
     this.lag = new Lag(adjusted.lag);
     this.sim = new RideSim(this.track, adjusted.rider, adjusted.toboggan, {
@@ -263,13 +280,21 @@ export class RideMode {
     $('ride-card').hidden = true;
     const hint = setup.start === 'running' ? 'Tap to start · then tap RUN to run' : 'Tap to start · lying start';
     // Free rides announce the day's weather here; a career did so as the day began.
-    const notes = [
-      ...(weather && !setup.career ? [`<b>${WEATHER[weather].title}.</b> ${WEATHER[weather].text}`] : []),
-      ...this.moods.map((m) => `<b>${MOODS[m].title}.</b> ${MOODS[m].text}`),
-    ];
+    const notes = weather && !setup.career ? [`<b>${WEATHER[weather].title}.</b> ${WEATHER[weather].text}`] : [];
     const line = `${setup.career ? `${setup.career.title}<br>${hint}` : hint}${notes.map((n) => `<span class="ride-note">${n}</span>`).join('')}`;
-    if (firstTop) this.banner('Top is good!', `Your first ride from Top: everyone has come to watch.<br>${line}`);
-    else this.banner('Run Clear!', line);
+    const showBanner = () => {
+      if (firstTop) this.banner('Top is good!', `Your first ride from Top: everyone has come to watch.<br>${line}`);
+      else this.banner('Run Clear!', line);
+    };
+    // Any luck, good or bad, is told first: the start waits until it's been read.
+    if (this.moods.length) {
+      this.banner('', '');
+      this.luckPending = true;
+      this.tellLuck(0, () => {
+        this.luckPending = false;
+        showBanner();
+      });
+    } else showBanner();
     this.result = null;
     // In a career the card leads on; there's no riding again straight away.
     $('ride-again').hidden = !!setup.career;
@@ -313,6 +338,26 @@ export class RideMode {
     else this.onExit();
   }
 
+  /** A window for each piece of the rider's luck, in turn, then `done`. */
+  private tellLuck(i: number, done: () => void) {
+    if (i >= this.moods.length) return done();
+    const mood = MOODS[this.moods[i]];
+    $('modal-title').textContent = mood.title;
+    $('modal-body').innerHTML = `<p class="luck-text">${mood.text}</p>`;
+    const ok = document.createElement('button');
+    ok.className = 'primary';
+    ok.textContent = 'Okay';
+    ok.addEventListener('click', () => {
+      $('modal').hidden = true;
+      this.tellLuck(i + 1, done);
+    });
+    $('modal-buttons').replaceChildren(ok);
+    $('modal').hidden = false;
+  }
+
+  /** The rider's luck is on screen: the start waits. */
+  private luckPending = false;
+
   private banner(title: string, hint: string) {
     const el = $('ride-banner');
     el.hidden = !title;
@@ -344,6 +389,11 @@ export class RideMode {
         ? autopilotInput(this.track, this.sim, this.autopilot, this.simClock, this.lastStride)
         : this.lag.apply(this.controls.read(dt), dt);
       this.sim.update(dt, input);
+      // Into the Steinbock: he's about a metre long across the run, and the rider comes off.
+      if (this.steinbockOut && this.steinbock?.root.visible && Math.abs(this.sim.state.s - STEINBOCK_S) < 0.9 && Math.abs(this.sim.state.u - this.steinbock.u) < 0.6) {
+        this.sim.hitSteinbock();
+        this.steinbock.flee();
+      }
       this.setup.career?.coach?.update({ stage: this.stage, s: this.sim.state.s, steer: input.steer, knives: input.knives, rake: Math.max(input.rakeLeft, input.rakeRight) }, realDt);
       const st = this.sim.state;
       // Legs keep pace with the ground covered: one stride every ~1.7 m.
@@ -377,6 +427,7 @@ export class RideMode {
       this.placeRider();
       if (riding) this.sprayRakes(dt);
     }
+    if (this.steinbockOut) this.steinbock?.update(realDt, this.stage === 'live' || this.stage === 'runout' ? this.sim.state.s : null);
     this.updateCamera(realDt);
     this.updateHud();
     const st = this.sim.state;
@@ -480,6 +531,7 @@ export class RideMode {
       this.riderPos.copy(at);
       this.riderVel.set(0, 0, 0);
       this.model.toboggan.position.x = 0;
+      this.model.setHelmet(false);
       this.model.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, cheer: 1, cheerTime: performance.now() / 1000 });
       return;
     }

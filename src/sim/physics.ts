@@ -39,7 +39,7 @@ export type StartStyle = 'lying' | 'running';
 /** The highest a rider can ride up a bank's wall (radians from the floor): never vertical. */
 export const MAX_CLIMB = 1.22;
 export type Phase = 'waiting' | 'running' | 'riding' | 'finished' | 'fallen';
-export type FallKind = 'fly-out' | 'over-wall' | 'crash' | 'wall';
+export type FallKind = 'fly-out' | 'over-wall' | 'crash' | 'wall' | 'steinbock';
 
 export interface Fall {
   kind: FallKind;
@@ -388,6 +388,11 @@ export class RideSim {
       return true;
     }
     return surfaceAt(section, st.u).angle > PHYSICS.wallAngle;
+  }
+
+  /** Ran into a Steinbock standing on the ice: off the toboggan. */
+  hitSteinbock() {
+    if (this.state.phase === 'riding') this.fall('steinbock', this.state.u > 0 ? 'right' : 'left');
   }
 
   private fall(kind: FallKind, side: 'left' | 'right') {

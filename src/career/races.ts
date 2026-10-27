@@ -207,6 +207,24 @@ export function standings(race: Race, field: Entrant[], days: number): Standing[
   return rows;
 }
 
+/**
+ * Standings after the first `courses` courses of the race (across its days): totals of the courses
+ * ridden, net of one handicap per course in handicap races. Fallers come last, unranked.
+ */
+export function standingsAfter(race: Race, field: Entrant[], courses: number): Standing[] {
+  const rows: Standing[] = field.map((e) => {
+    const ridden = e.times.flat().slice(0, courses);
+    const fell = ridden.length < courses || ridden.some((t) => t === null || t === undefined);
+    const total = fell ? null : ridden.reduce<number>((a, t) => a + (t as number), 0);
+    const net = total === null ? null : race.kind === 'handicap' ? total - courses * e.handicap : total;
+    return { entrant: e, total: total === null ? null : round2(total), net: net === null ? null : round2(net), rank: null };
+  });
+  rows.sort((a, b) => (a.net === null ? 1 : 0) - (b.net === null ? 1 : 0) || (a.net ?? 0) - (b.net ?? 0));
+  let rank = 0;
+  for (const r of rows) if (r.net !== null) r.rank = ++rank;
+  return rows;
+}
+
 const round2 = (x: number) => Math.round(x * 100) / 100;
 
 /** The player as an entrant, from their race entry. */

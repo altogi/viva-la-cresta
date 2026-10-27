@@ -431,6 +431,12 @@ export class RiderModel {
     this.face.express(wink, open);
   }
 
+  /** Put the helmet on or take it off (off to celebrate). */
+  setHelmet(on: boolean) {
+    this.helmet.visible = on && this.look.helmet !== null;
+    if (this.face.bun) this.face.bun.visible = !this.helmet.visible;
+  }
+
   setPose(p: RiderPose) {
     this.holdToboggan(!!p.stand);
     // Sitting or leaning, the toboggan is left elsewhere.

@@ -6,6 +6,7 @@ import { RIDERS, TOBOGGANS } from '../sim/rider';
 import { LOOKS } from '../render/riderLooks';
 import { flagUrl } from '../ui/flags';
 import {
+  TOP_OPENS,
   dateOf,
   goal,
   handicap,
@@ -19,11 +20,11 @@ import {
   type Career,
   type Setup,
 } from '../career/career';
-import { CALENDAR, RACES, cannotEnter, fallCode, fastestOfDay, npcField, playerEntrant, raceOn, standings, upcoming, type Entrant, type Race } from '../career/races';
+import { CALENDAR, RACES, cannotEnter, fallCode, fastestOfDay, npcField, playerEntrant, raceOn, standings, standingsAfter, upcoming, type Entrant, type Race } from '../career/races';
 import { deleteCareer, loadSaves, newId, nextGameName, storeCareer } from '../career/saves';
 import { Coach, fallAdvice } from './coach';
 import type { RideMode, RideResult, RideSetup } from './rideMode';
-import { WEATHER, weatherFor } from './conditions';
+import { temperatureFor, WEATHER, weatherFor } from './conditions';
 import type { SelectMode } from './selectMode';
 import type { Selection } from './selection';
 
@@ -53,6 +54,7 @@ export class CareerMode {
     });
     $('hub-games').addEventListener('click', () => this.saves());
     $('hub-calendar').addEventListener('click', () => this.openCalendar());
+    $('day-go').addEventListener('click', () => ($('day').hidden = true));
     $('cal-close').addEventListener('click', () => document.body.classList.remove('calendar-open'));
     $('cal-prev').addEventListener('click', () => this.drawCalendar(this.calMonth - 1));
     $('cal-next').addEventListener('click', () => this.drawCalendar(this.calMonth + 1));
@@ -70,6 +72,34 @@ export class CareerMode {
   private weatherToday() {
     const c = this.career!;
     return weatherFor(`${c.id}-${c.season}-${c.day}`);
+  }
+
+  /** The morning screen: the date, the temperature and conditions, today's races, Top's opening. */
+  private showDay() {
+    const c = this.career!;
+    const d = dateOf(c.day, c.season);
+    const [weekday, ...rest] = d.label.split(' ');
+    $('day-weekday').textContent = weekday;
+    $('day-date').textContent = `${d.date.getUTCDate()} ${d.date.toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })}`;
+    $('day-year').textContent = `${rest.slice(1).join(' ')} ${d.year} · Season ${c.season}`;
+    const weather = this.weatherToday();
+    const temp = temperatureFor(`${c.id}-${c.season}-${c.day}`, c.day, weather);
+    $('day-temp').textContent = `${temp > 0 ? '+' : temp < 0 ? '−' : ''}${Math.abs(temp)}°C`;
+    $('day-condition').textContent = weather ? WEATHER[weather].title : 'Normal day';
+    $('day-condition-text').textContent = weather ? WEATHER[weather].text : 'Good ice, clear skies. A fair day for it.';
+    const events = CALENDAR.filter((e) => e.day === c.day);
+    $('day-races').innerHTML = events.length
+      ? events
+          .map((e) => {
+            const race = RACES.find((r) => r.name === e.name && c.day >= r.day && c.day < r.day + r.days);
+            const what = race ? `${race.start === 'top' ? 'Top' : 'Junction'} · ${race.kind === 'major' ? 'scratch' : 'handicap'}${race.days > 1 ? ` · day ${c.day - race.day + 1} of ${race.days}` : ''}` : 'Club event';
+            return `<div class="${race ? 'open' : ''}">${e.name}<b>${what}</b></div>`;
+          })
+          .join('')
+      : '<div>No races: practice day.</div>';
+    const toTop = TOP_OPENS - c.day;
+    $('day-top').textContent = toTop > 0 ? `Top opens in ${toTop} day${toTop > 1 ? 's' : ''}, on 11 January.` : toTop === 0 ? 'Top opens today!' : '';
+    $('day').hidden = false;
   }
 
   // ---------- The club's calendar ----------
@@ -207,6 +237,13 @@ export class CareerMode {
     $('hub-rider').innerHTML = `<img class="flag" src="${flagUrl(LOOKS[c.rider].flag)}" alt="" />${RIDERS[c.rider].name} <small>${c.member ? 'Member' : 'SL'}</small>`;
     $('hub-date').textContent = `${date.label} · Season ${c.season}`;
     $('hub-goal').textContent = goal(c);
+    // A new day opens with its own screen: the date, the weather, the races.
+    const dayKey = `${c.season}-${c.day}`;
+    if (c.dayShown !== dayKey) {
+      c.dayShown = dayKey;
+      this.save();
+      this.showDay();
+    }
     // The day's weather, announced as the run opens.
     const weather = this.weatherToday();
     this.ride.weatherView?.set(weather);
@@ -351,6 +388,7 @@ export class CareerMode {
         race,
         firstTop: setup.start === 'top' && !c.rides.some((r) => r.start === 'top'),
         weather: this.weatherToday(),
+        noLuck: !c.member || c.conversion !== null,
         coach,
         fallLines: c.seenFallHelp ? undefined : fallAdvice,
         onDone: (r) => onDone(r),
@@ -415,9 +453,51 @@ export class CareerMode {
       entry.course++;
       this.save();
       if (entry.course < 3)
-        this.modal(`Course ${entry.course}: ${time.toFixed(2)} s`, `${(result!.speed).toFixed(1)} mph at the finish.`, [{ label: `Course ${entry.course + 1}`, primary: true, run: () => this.course(race) }]);
+        this.modal(`Course ${entry.course}: ${time.toFixed(2)} s`, `${(result!.speed).toFixed(1)} mph at the finish.${this.standingsHtml(race)}`, [{ label: `Course ${entry.course + 1}`, primary: true, run: () => this.course(race) }]);
       else this.dayDone(race, null);
     }, true);
+  }
+
+  /**
+   * Where the rider stands after the courses ridden so far: the leaders, the riders round them, and
+   * what it will take to catch the one ahead.
+   */
+  private standingsHtml(race: Race): string {
+    const c = this.career!;
+    const entry = c.race!;
+    const courses = entry.raceDay * 3 + entry.course;
+    const field: Entrant[] = [...npcField(race, entry.seed), playerEntrant(entry, RIDERS[c.rider].name, NATIONS[c.rider], null)];
+    const rows = standingsAfter(race, field, courses);
+    const me = rows.findIndex((r) => r.entrant.player);
+    const ranked = rows.filter((r) => r.rank !== null).length;
+    const show = new Set<number>();
+    for (let i = 0; i < Math.min(3, rows.length); i++) show.add(i);
+    for (let i = Math.max(0, me - 2); i <= Math.min(rows.length - 1, me + 2); i++) show.add(i);
+    const fmt = (t: number | null) => (t === null ? '—' : t.toFixed(2));
+    const handicapRace = race.kind === 'handicap';
+    let html = `<table class="standings"><thead><tr><th></th><th>Rider</th>${handicapRace ? '<th>Hcp</th>' : ''}<th>${handicapRace ? 'Net' : 'Total'}</th></tr></thead><tbody>`;
+    let last = -1;
+    for (const i of [...show].sort((a, b) => a - b)) {
+      if (i > last + 1) html += `<tr class="gap"><td colspan="${handicapRace ? 4 : 3}">…</td></tr>`;
+      const row = rows[i];
+      const e = row.entrant;
+      html += `<tr class="${e.player ? 'me' : ''}"><td>${row.rank ?? 'Fall'}</td><td>${e.name} <small>${e.nation}</small></td>${handicapRace ? `<td>${e.handicap ? e.handicap.toFixed(1) : 'Scr'}</td>` : ''}<td>${fmt(row.net)}</td></tr>`;
+      last = i;
+    }
+    html += '</tbody></table>';
+    const mine = rows[me];
+    let note = '';
+    if (mine?.rank === 1) {
+      const second = rows.find((r) => r.rank === 2);
+      note = second ? `You lead by <b>${(second.net! - mine.net!).toFixed(2)} s</b>. Keep it clean.` : 'You lead.';
+    } else if (mine?.rank) {
+      const ahead = rows.find((r) => r.rank === mine.rank! - 1)!;
+      const leader = rows[0];
+      const left = 3 * race.days - courses;
+      const gap = mine.net! - ahead.net!;
+      note = `<b>${ordinal(mine.rank)}</b> of ${ranked}. ${gap.toFixed(2)} s behind ${ahead.entrant.name}${mine.rank > 2 ? `, ${(mine.net! - leader.net!).toFixed(2)} s off the lead` : ''}: about <b>${(gap / Math.max(1, left)).toFixed(2)} s</b> a course to find over the ${left} left.`;
+    }
+    return `<p class="standings-note">${note}</p>${html}`;
   }
 
   /** The day's courses are done (or the rider fell): the Tower's sheet, then on. */

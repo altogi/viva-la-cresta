@@ -10,10 +10,13 @@ import { toThree } from '../render/util';
 import type { Terrain } from '../render/terrain';
 import { Ghost } from './ghost';
 import { trackSurfaceHeight } from '../render/trackMesh';
+import type { TreeCrown } from '../render/scenery';
 
 /** Front camera: how far ahead of the rider and how high above the run, tried in order until the view is clear. */
 const FRONT_AHEAD = [9, 7.5, 6, 4.5];
 const FRONT_HEIGHT = [3.6, 2.8, 2.1];
+/** Trackside: one spectator's spot per this many metres of run. */
+const TRACKSIDE_EVERY = 50;
 
 type CameraMode = 'chase' | 'front' | 'helmet' | 'trackside' | 'orbit';
 const MODES: CameraMode[] = ['chase', 'front', 'helmet', 'trackside', 'orbit'];
@@ -43,6 +46,7 @@ export class Viewer {
   /** Things the front camera must see past: bridges, buildings, props (with their world bounds). */
   private obstacles: { mesh: THREE.Mesh; sphere: THREE.Sphere }[] | null = null;
   private readonly ray = new THREE.Raycaster();
+  private readonly people: THREE.Sphere[] = [];
   /** Background mode behind the title menu: a slow, endless descent from Junction. */
   attract = false;
   private readonly profileCanvas = $<HTMLCanvasElement>('profile');
@@ -148,7 +152,8 @@ export class Viewer {
   setAttract(on: boolean) {
     this.attract = on;
     if (on) {
-      this.setMode('chase');
+      // Behind the title: the rider seen going past from beside the run.
+      this.setMode('trackside');
       this.startFrom(JUNCTION_S, true);
     }
   }
@@ -200,21 +205,25 @@ export class Viewer {
       const ga = this.ghost.state(sAhead);
       toThree(this.track.toWorld(ahead, ga.lateral, ga.height + 0.3), desiredLook);
     } else {
-      // Trackside: a fixed spectator spot every 60 m, on the outside of the bend ahead.
-      const spot = Math.min(TRACK_LENGTH - 5, Math.floor((this.s + 20) / 60) * 60 + 25);
-      const sec = this.track.section(spot);
-      const pts = this.track.crossSection(spot, sec);
-      const side = sec.outerSide === 'right' ? pts[0].y - 11 : pts[pts.length - 1].y + 11;
-      const st = this.track.frame(spot);
-      const x = st.pos[0] + st.left[0] * side;
-      const y = st.pos[1] + st.left[1] * side;
-      desiredPos.set(x, this.terrain.height(x, y) + 4.5, -y);
-      desiredLook.copy(this.riderPos);
+      // Trackside: a spectator's spot every 50 m beside the run, chosen so that the rider can be seen
+      // coming the whole way past it (no tree, bank or building in between).
+      desiredPos.copy(this.tracksideSpot(Math.floor((this.s + 20) / TRACKSIDE_EVERY)));
+      desiredLook.copy(this.riderPos).add(new THREE.Vector3(0, 0.4, 0));
     }
     const k = this.snapCamera ? 1 : 1 - Math.exp(-dt * (this.mode === 'trackside' ? 4 : 8));
-    if (this.mode === 'trackside' && this.camPos.distanceTo(desiredPos) > 5) this.camPos.copy(desiredPos);
-    else this.camPos.lerp(desiredPos, k);
-    this.camLook.lerp(desiredLook, this.snapCamera ? 1 : 1 - Math.exp(-dt * 10));
+    let cut = false;
+    if (this.mode === 'trackside' && this.camPos.distanceTo(desiredPos) > 5) {
+      // A cut to the next spot: look straight at the rider from it.
+      this.camPos.copy(desiredPos);
+      cut = true;
+    } else this.camPos.lerp(desiredPos, k);
+    this.camLook.lerp(desiredLook, this.snapCamera || cut ? 1 : 1 - Math.exp(-dt * (this.mode === 'trackside' ? 16 : 10)));
+    // Trackside, the lens zooms to keep the rider about the same size however far off they are.
+    const fov = this.mode === 'trackside' ? THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(5 / Math.max(1, this.camPos.distanceTo(this.riderPos)))), 16, 55) : 62;
+    if (Math.abs(cam.fov - fov) > 0.05) {
+      cam.fov += (fov - cam.fov) * (cut || this.snapCamera ? 1 : 1 - Math.exp(-dt * 6));
+      cam.updateProjectionMatrix();
+    }
     this.snapCamera = false;
     cam.position.copy(this.camPos);
     cam.up.set(0, 1, 0);
@@ -246,11 +255,93 @@ export class Viewer {
     }
   }
 
-  /** Whether the line from a to b (three.js coordinates) passes clear of the ground, the run and the buildings. */
-  private clear(a: THREE.Vector3, b: THREE.Vector3): boolean {
+  private readonly spots = new Map<number, THREE.Vector3>();
+
+  /**
+   * The trackside camera for the stretch of run around k * 50 + 25 m: of spots either side of the
+   * run (the outside of the bend first), close and low first, the first with a clear view of the
+   * rider all the way past; else the one that sees most of it.
+   */
+  private tracksideSpot(k: number): THREE.Vector3 {
+    const cached = this.spots.get(k);
+    if (cached) return cached;
+    const s0 = Math.min(TRACK_LENGTH - 5, k * TRACKSIDE_EVERY + 25);
+    const sec = this.track.section(s0);
+    const pts = this.track.crossSection(s0, sec);
+    const sides = sec.outerSide === 'right' ? [-1, 1] : [1, -1];
+    // Where the ghost actually is on its line (up the banks on the bends), at toboggan height.
+    const rider = [-26, -12, 0, 12, 22].map((d) => {
+      const s = THREE.MathUtils.clamp(s0 + d, 0, TRACK_LENGTH);
+      const g = this.ghost.state(s);
+      return toThree(this.track.toWorld(this.track.frame(s), g.lateral, g.height + 0.25));
+    });
+    let best = { score: -1, pos: new THREE.Vector3() };
+    search: for (const out of [8, 11, 15, 20]) {
+      // High enough to see down into the run over its walls.
+      for (const up of [6, 8.5, 4.5, 11]) {
+        for (const side of sides) {
+          for (const along of [0, -10, 10]) {
+            const s = THREE.MathUtils.clamp(s0 + along, 0, TRACK_LENGTH);
+            const st = this.track.frame(s);
+            const lateral = side > 0 ? pts[pts.length - 1].y + out : pts[0].y - out;
+            const x = st.pos[0] + st.left[0] * lateral;
+            const y = st.pos[1] + st.left[1] * lateral;
+            // Up from the ground, or from the run's floor where the ground falls away below it.
+            const pos = new THREE.Vector3(x, Math.max(this.terrain.height(x, y), st.pos[2]) + up, -y);
+            const score = rider.filter((r) => this.clear(pos, r)).length;
+            if (score > best.score) best = { score, pos };
+            if (score === rider.length) break search;
+          }
+        }
+      }
+    }
+    this.spots.set(k, best.pos);
+    return best.pos;
+  }
+
+  /** The trees near the run, in 20 m cells. */
+  private crowns: Map<number, TreeCrown[]> | null = null;
+
+  /** Whether a tree stands in the way between a and b. */
+  private treeInWay(a: THREE.Vector3, b: THREE.Vector3): boolean {
+    if (!this.crowns) {
+      this.crowns = new Map();
+      const all = (this.world.scene.getObjectByName('trees')?.userData.crowns ?? []) as TreeCrown[];
+      for (const c of all) {
+        const key = Math.floor(c.x / 20) * 100003 + Math.floor(c.y / 20);
+        if (!this.crowns.has(key)) this.crowns.set(key, []);
+        this.crowns.get(key)!.push(c);
+      }
+    }
     const p = new THREE.Vector3();
-    for (let i = 2; i <= 12; i++) {
-      p.lerpVectors(a, b, i / 12);
+    const n = Math.max(8, Math.ceil(a.distanceTo(b) / 1.5));
+    for (let i = 1; i < n; i++) {
+      p.lerpVectors(a, b, i / n);
+      const x = p.x;
+      const y = -p.z;
+      const cx = Math.floor(x / 20);
+      const cy = Math.floor(y / 20);
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (const c of this.crowns.get((cx + dx) * 100003 + cy + dy) ?? []) {
+            const rel = (p.y - c.base) / c.height;
+            if (rel < 0 || rel > 1) continue;
+            if (Math.hypot(c.x - x, c.y - y) < c.radius * (1 - rel) + 0.4) return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /** Whether the line from a to b (three.js coordinates) passes clear of the ground, the run, the trees and the buildings. */
+  private clear(a: THREE.Vector3, b: THREE.Vector3): boolean {
+    if (this.treeInWay(a, b)) return false;
+    const p = new THREE.Vector3();
+    // Every half metre, so a wall's lip can't slip between two samples.
+    const n = Math.max(12, Math.ceil(a.distanceTo(b) / 0.5));
+    for (let i = 2; i < n - 1; i++) {
+      p.lerpVectors(a, b, i / n);
       const x = p.x;
       const y = -p.z;
       if (p.y < this.terrain.height(x, y) + 0.3) return false;
@@ -270,13 +361,22 @@ export class Viewer {
         const sphere = geo.boundingSphere!.clone().applyMatrix4(o.matrixWorld);
         if (sphere.radius < 150) this.obstacles!.push({ mesh: o, sphere });
       });
+      // The spectators too (their bounding boxes stand in for them).
+      this.world.scene.getObjectByName('crowd')?.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        const geo = o.geometry as THREE.BufferGeometry;
+        if (!geo.boundingSphere) geo.computeBoundingSphere();
+        const sphere = geo.boundingSphere!.clone().applyMatrix4(o.matrixWorld);
+        if (sphere.radius < 4) this.people.push(sphere);
+      });
     }
     const dir = b.clone().sub(a);
     const far = dir.length();
     const mid = a.clone().add(b).multiplyScalar(0.5);
     const near = this.obstacles.filter((o) => o.sphere.center.distanceTo(mid) < o.sphere.radius + far / 2 + 1).map((o) => o.mesh);
+    this.ray.set(a, dir.clone().normalize());
+    for (const p of this.people) if (p.center.distanceTo(mid) < p.radius + far / 2 && this.ray.ray.intersectsSphere(p) && p.center.distanceTo(b) > 1.5) return false;
     if (!near.length) return true;
-    this.ray.set(a, dir.normalize());
     this.ray.far = far + 0.6;
     return this.ray.intersectObjects(near, false).length === 0;
   }

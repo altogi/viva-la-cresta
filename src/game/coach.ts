@@ -108,6 +108,7 @@ export class Coach {
 
 /** What to say after a rider's first fall: what happened, and how not to do it again. */
 export function fallAdvice(kind: string, zone: string): string[] {
+  if (kind === 'steinbock') return ['A Steinbock on the ice! They come down from the Corviglia now and then.', 'Nothing to learn from that one, except to keep your eyes up after Shuttlecock.'];
   if (zone === 'Shuttlecock')
     return [
       'Shuttlecock throws out riders who arrive too fast: the bank is low and the straw waits beyond it.',

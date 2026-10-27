@@ -133,6 +133,15 @@ function insidePolygon(x: number, y: number, poly: [number, number][]) {
 }
 
 /** Pines inside the woods mapped in OSM, the individually mapped trees, and a few strays on the meadows. */
+/** A tree near the run as a cone: where it stands, the ground there, its height and its crown's radius at the foot. */
+export interface TreeCrown {
+  x: number;
+  y: number;
+  base: number;
+  height: number;
+  radius: number;
+}
+
 function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group {
   const group = new THREE.Group();
   const rng = mulberry32(1884);
@@ -285,6 +294,8 @@ function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group
     return heights.get(name)!;
   };
   const fill = new THREE.Matrix4();
+  // The trees near the run, as cones (for cameras that must see past them).
+  const crowns: TreeCrown[] = [];
   for (const t of spots) {
     const kind = pick();
     const far = kind.startsWith('larch') ? 'larch_far' : 'spruce_far';
@@ -292,6 +303,7 @@ function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group
     // Real heights 9-20 m: the models are 13-21 m tall.
     const s = (0.5 + rng() * 0.45) * t.scale;
     m.compose(new THREE.Vector3(t.x, terrain.height(t.x, t.y) - 0.3, -t.y), q, new THREE.Vector3(s, s * (0.92 + rng() * 0.16), s));
+    if (t.distance < 90) crowns.push({ x: t.x, y: t.y, base: terrain.height(t.x, t.y), height: height(kind) * s, radius: height(kind) * s * 0.27 });
     if (t.distance < 35 && !t.card) {
       // Close to the run: the modelled tree, with its own picture inside it. The boughs are near
       // level, so seen side-on from a little way off they thin to nothing; the picture keeps the
@@ -303,6 +315,8 @@ function buildTrees(track: Track, terrain: Terrain, assets: Assets): THREE.Group
       add(far, false, t.x, t.y, m.clone());
     }
   }
+  group.userData.crowns = crowns;
+  group.name = 'trees';
   for (const { name, shadow, matrices } of byModel.values()) {
     for (const part of assets.trees[name] ?? []) {
       const mesh = new THREE.InstancedMesh(part.geometry, part.material, matrices.length);
@@ -459,27 +473,38 @@ const ROAD_BRIDGE = { clearance: 1.8, railTop: 0.77, trackX: 1.6 };
 function railwayLine(ctx: Placer, holder: THREE.Object3D, wall: number, span: number, train: THREE.Object3D): THREE.Object3D[] {
   const rail = Math.max(wall, 0.75) + ROAD_BRIDGE.clearance + ROAD_BRIDGE.railTop;
   const reach = 160;
-  // Embankment: in the bridge's frame, from the ground (sampled from the terrain) up to the line.
+  // Embankment: in the bridge's frame, as wide as the bridge's deck and level with its road, from
+  // inside the abutments out either side, its slopes running down to the ground (sampled from the
+  // terrain) and burying the abutments' ends, so the bridge sits in the bank with no gap.
   holder.updateMatrixWorld(true);
   const inv = holder.matrixWorld.clone().invert();
   const positions: number[] = [];
   const index: number[] = [];
-  const samples = 128;
-  for (let i = 0; i <= samples; i++) {
-    const z = -reach + (2 * reach * i) / samples;
-    for (const dx of [-2.6, 2.6]) {
-      const world = new THREE.Vector3(ROAD_BRIDGE.trackX + dx, 0, z).applyMatrix4(holder.matrixWorld);
-      const ground = ctx.terrain.height(world.x, -world.z);
-      const below = new THREE.Vector3(world.x, ground - 1.5, world.z).applyMatrix4(inv);
-      positions.push(ROAD_BRIDGE.trackX + dx * 1.8, below.y, z, ROAD_BRIDGE.trackX + dx, rail - 0.2, z);
-    }
-    // No bank across the run itself, where the bridge carries the line.
-    const prevZ = -reach + (2 * reach * (i - 1)) / samples;
-    if (i > 0 && Math.min(Math.abs(z), Math.abs(prevZ)) > span && Math.sign(z) === Math.sign(prevZ)) {
-      const a = (i - 1) * 4;
-      const b = i * 4;
-      // Two sloping sides and the top, as quads between this row and the last.
-      for (const [p, q] of [[0, 1], [1, 3], [3, 2]]) index.push(a + p, b + p, b + q, a + p, b + q, a + q);
+  const top = rail - 0.02;
+  const halfTop = 4.9;
+  const groundAt = (x: number, z: number) => {
+    const world = new THREE.Vector3(x, 0, z).applyMatrix4(holder.matrixWorld);
+    return new THREE.Vector3(world.x, ctx.terrain.height(world.x, -world.z) - 0.6, world.z).applyMatrix4(inv).y;
+  };
+  let row = 0;
+  for (const dir of [-1, 1]) {
+    const steps = 64;
+    for (let i = 0; i <= steps; i++) {
+      // From just inside the abutment's back face out to the end of the line.
+      const z = dir * (span - 0.4 + ((reach - span) * i) / steps);
+      for (const side of [-1, 1]) {
+        // The foot spreads out with the bank's height, at about 1 in 1.5.
+        const ground = groundAt(side * (halfTop + 2), z);
+        const foot = halfTop + Math.max(0.5, (top - ground) * 1.5);
+        positions.push(side * foot, groundAt(side * foot, z), z, side * halfTop, top, z);
+      }
+      if (i > 0) {
+        const a = (row - 1) * 4;
+        const b = row * 4;
+        // Two sloping sides and the top, as quads between this row and the last.
+        for (const [p, q] of [[0, 1], [1, 3], [3, 2]]) index.push(a + p, b + p, b + q, a + p, b + q, a + q);
+      }
+      row++;
     }
   }
   const geometry = new THREE.BufferGeometry();

@@ -20,12 +20,31 @@ export const MOODS: Record<Mood, { title: string; text: string }> = {
   luck: { title: 'Liquid luck', text: "That last ice-cold Coca-Cola is kicking in. Go get 'em!" },
 };
 
-/** The day's weather, the same all day: from a key naming the day (a career's, or today's date). */
-export function weatherFor(key: string): Weather | null {
+/** A steady 0…1 number from a key (the same key, the same number). */
+function hash01(key: string): number {
   let h = 2166136261;
   for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
-  const r = ((h >>> 0) % 10000) / 10000;
+  return ((h >>> 0) % 10000) / 10000;
+}
+
+/** The day's weather, the same all day: from a key naming the day (a career's, or today's date). */
+export function weatherFor(key: string): Weather | null {
+  const r = hash01(key);
   return r < 0.1 ? 'hot' : r < 0.2 ? 'cold' : r < 0.3 ? 'snow' : null;
+}
+
+/**
+ * The temperature at the run in the morning (°C): St Moritz's winter, coldest in January, a
+ * couple of degrees above freezing on a hot day, near -20 on a cold one, just below freezing as it snows.
+ */
+export function temperatureFor(key: string, seasonDay: number, weather: Weather | null): number {
+  const r = hash01(`${key}-temp`);
+  if (weather === 'hot') return Math.round(1 + r * 6);
+  if (weather === 'cold') return Math.round(-22 + r * 6);
+  if (weather === 'snow') return Math.round(-5 + r * 4);
+  // Normal days: about -7 in December, -11 in mid-January, -6 by late February.
+  const mid = -7 - 4 * Math.sin(Math.min(1, seasonDay / 74) * Math.PI);
+  return Math.round(mid + (r - 0.5) * 8);
 }
 
 /** This ride's own luck, good and bad: each one in twenty. */

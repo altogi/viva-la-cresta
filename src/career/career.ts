@@ -81,6 +81,8 @@ export interface Career {
   gnWon: boolean;
   /** 2 once the season runs 17 December to 28 February (older saves started on 26 December). */
   calendar?: number;
+  /** The last day whose morning screen was shown ("season-day"). */
+  dayShown?: string;
 }
 
 export const RIDES_PER_DAY = 5;

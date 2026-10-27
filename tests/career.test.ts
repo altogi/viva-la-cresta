@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dateOf, goal, handicap, newCareer, nextDay, nextPractice, recordPractice, startConversion, SEASON_DAYS, TOP_OPENS, type Career } from '../src/career/career';
-import { RACES, cannotEnter, npcField, raceOn, standings } from '../src/career/races';
+import { RACES, cannotEnter, npcField, raceOn, standings, standingsAfter } from '../src/career/races';
 
 const ride = (c: Career, time: number | null) => recordPractice(c, nextPractice(c), time, time === null ? 'Shuttlecock' : null, 60);
 
@@ -156,6 +156,17 @@ describe('races', () => {
     const field = npcField(race, 11);
     const row = standings(race, field, 1).find((r) => r.net !== null)!;
     expect(row.net).toBeCloseTo(row.total! - 3 * row.entrant.handicap, 2);
+  });
+
+  it('ranks the field after each course, net of a handicap per course', () => {
+    const race = RACES.find((r) => r.id === 'bledisloe')!;
+    const field = npcField(race, 4);
+    const after1 = standingsAfter(race, field, 1);
+    const top = after1[0];
+    expect(top.rank).toBe(1);
+    expect(top.net).toBeCloseTo(top.total! - top.entrant.handicap, 2);
+    // After all three courses it agrees with the day's standings.
+    expect(standingsAfter(race, field, 3).map((r) => r.entrant.name)).toEqual(standings(race, field, 1).map((r) => r.entrant.name));
   });
 
   it('is the same field every time for the same entry', () => {

@@ -19,13 +19,14 @@ import { RIDERS, TOBOGGANS } from './sim/rider';
 import { Viewer } from './viewer/viewer';
 import { freeRideWeather, RideMode, type RideSetup } from './game/rideMode';
 import { WeatherView } from './render/weather';
+import { Steinbock } from './render/steinbock';
 import { Sound } from './audio/sound';
 import { Music } from './audio/music';
 import { POLICIES } from './sim/autopilot';
 import { createTuningPanel } from './ui/tuning';
 
 /** Extra Blender models (public/models/<name>.glb) the scenery uses. */
-const MODELS: string[] = ['town', 'balloon', 'riders', 'junction', 'bridges', 'props', 'people', 'tophut'];
+const MODELS: string[] = ['town', 'balloon', 'riders', 'junction', 'bridges', 'props', 'people', 'tophut', 'steinbock'];
 
 registerSW({ immediate: true });
 
@@ -71,6 +72,8 @@ async function start() {
   if (debug) Object.assign(window, { crowd });
   world.scene.add(crowd.group);
   ride.crowd = crowd;
+  if (assets.models.steinbock) ride.steinbock = new Steinbock(assets.models.steinbock, track);
+  ride.alwaysSteinbock = params.has('steinbock');
   const weather = new WeatherView(world);
   ride.weatherView = weather;
   weather.set(freeRideWeather());
