@@ -168,9 +168,9 @@ export function goal(c: Career): string {
     const n = c.practiceRides;
     if (n < LYING_RIDES) return `Beginner: clean lying starts, ${n} of ${LYING_RIDES}. A fall doesn't count.`;
     if (n < LYING_RIDES + CONVERSION_STEPS.length - 1) return `Running start: ${CONVERSION_STEPS[n - LYING_RIDES]} steps this time. Finish clean to take more.`;
-    return `For the club: ${memberRides(c)} of ${MEMBER_RIDES} rides under ${MEMBER_TIME} s. Ride well and the club will notice.`;
+    return 'Ride well and Tower will notice.';
   }
-  if (c.choicePending) return 'The Tower is impressed. Choose your next step.';
+  if (c.choicePending) return 'Tower is impressed. Choose your next step.';
   if (c.conversion) {
     const conv = c.conversion;
     const what = conv.toboggan === 'flattop' && conv.start === 'junction' ? 'Converting to the flat-top' : 'Learning to ride from Top';

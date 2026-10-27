@@ -30,6 +30,8 @@ export interface RideSetup {
   career?: {
     /** Under "Run Clear!", e.g. "The Curzon Cup · Course 2 of 3". */
     title: string;
+    /** A race course: a fall disqualifies. */
+    race?: boolean;
     coach?: Coach;
     /** Extra lines on the fall card (advice after a first fall). */
     fallLines?: (kind: string, zone: string) => string[];
@@ -540,7 +542,7 @@ export class RideMode {
     this.banner('', '');
     const fall = this.sim.state.fall!;
     this.result = { time: null, fall: { kind: fall.kind, zone: fall.zone }, speed: 0 };
-    this.card(`Fall at ${fall.zone}`, `You ${FALL_TEXT[fall.kind]}. Disqualified.`, this.setup.career?.fallLines?.(fall.kind, fall.zone) ?? []);
+    this.card(`Fall at ${fall.zone}`, `You ${FALL_TEXT[fall.kind]}.${this.setup.career?.race ? ' Disqualified.' : ''}`, this.setup.career?.fallLines?.(fall.kind, fall.zone) ?? []);
     $('ride-replay').hidden = false;
     this.stage = 'done';
   }

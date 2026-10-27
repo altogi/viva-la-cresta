@@ -246,7 +246,7 @@ export class CareerMode {
         );
       if (outcome.choice)
         moments.push(() =>
-          this.modal('The Tower is impressed', 'Three quick rides out of five. Choose your next step: convert to the <b>flat-top</b> (faster, and touchier), or ride from <b>Top</b>, with Church Leap and the high banks.', [
+          this.modal('Tower is impressed', 'Three quick rides out of five. Choose your next step: convert to the <b>flat-top</b> (faster, and touchier), or ride from <b>Top</b>, with Church Leap and the high banks.', [
             { label: 'The flat-top', primary: true, run: () => (startConversion(c, 'flattop'), this.save(), next()) },
             { label: 'Ride from Top', run: () => (startConversion(c, 'top'), this.save(), next()) },
           ]),
@@ -261,7 +261,7 @@ export class CareerMode {
     });
   }
 
-  private rideWith(setup: Setup, title: string, coach: Coach | undefined, onDone: (r: RideResult | null) => void) {
+  private rideWith(setup: Setup, title: string, coach: Coach | undefined, onDone: (r: RideResult | null) => void, race = false) {
     const c = this.career!;
     const rs: RideSetup = {
       startS: setup.start === 'top' ? 0 : JUNCTION_S,
@@ -270,6 +270,7 @@ export class CareerMode {
       label: `${setup.start === 'top' ? 'Top' : 'Junction'} · ${setup.style === 'lying' ? 'lying start' : 'running start'}`,
       career: {
         title,
+        race,
         coach,
         fallLines: c.seenFallHelp ? undefined : fallAdvice,
         onDone: (r) => onDone(r),
@@ -336,7 +337,7 @@ export class CareerMode {
       if (entry.course < 3)
         this.modal(`Course ${entry.course}: ${time.toFixed(2)} s`, `${(result!.speed).toFixed(1)} mph at the finish.`, [{ label: `Course ${entry.course + 1}`, primary: true, run: () => this.course(race) }]);
       else this.dayDone(race, null);
-    });
+    }, true);
   }
 
   /** The day's courses are done (or the rider fell): the Tower's sheet, then on. */
