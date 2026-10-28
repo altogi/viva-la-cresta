@@ -1,5 +1,5 @@
 // What the day and the night before bring: the weather on the run (one day in ten hot, one in ten
-// cold, one in ten snowing), announced as the run opens; and, one ride in twenty each, a hangover,
+// cold, one in ten snowing), announced as the run opens; and, one ride in ten each, a hangover,
 // some unwelcome gossip or a timely Coca-Cola, announced at the start.
 
 import type { RiderStats, TobogganStats } from '../sim/rider';
@@ -47,9 +47,9 @@ export function temperatureFor(key: string, seasonDay: number, weather: Weather 
   return Math.round(mid + (r - 0.5) * 8);
 }
 
-/** This ride's own luck, good and bad: each one in twenty. */
+/** This ride's own luck, good and bad: each one in ten. */
 export function rollMoods(rand = Math.random): Mood[] {
-  return (['hangover', 'rumours', 'luck'] as Mood[]).filter(() => rand() < 0.05);
+  return (['hangover', 'rumours', 'luck'] as Mood[]).filter(() => rand() < 0.1);
 }
 
 /** How the weather changes the ice: slush is slow, fresh snow slower still, hard cold ice fast. */

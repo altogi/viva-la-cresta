@@ -20,6 +20,7 @@ import { Viewer } from './viewer/viewer';
 import { freeRideWeather, RideMode, type RideSetup } from './game/rideMode';
 import { WeatherView } from './render/weather';
 import { Steinbock } from './render/steinbock';
+import { recordDescent, type DescentFrame } from './viewer/descent';
 import { Sound } from './audio/sound';
 import { Music } from './audio/music';
 import { POLICIES } from './sim/autopilot';
@@ -63,9 +64,19 @@ async function start() {
 
   // The ghost rider behind the menu and in the viewer wears the chosen rider's kit.
   let chosen = loadSelection();
-  let ghost = new RiderModel(LOOKS[chosen.rider], chosen.toboggan).root;
+  let ghostModel = new RiderModel(LOOKS[chosen.rider], chosen.toboggan);
+  let ghost = ghostModel.root;
   world.scene.add(ghost);
   const viewer = new Viewer(world, track, terrain, ghost);
+  viewer.setRider(ghost, ghostModel);
+  // The title's descent: a real ride by the autopilot, recorded once per rider and toboggan.
+  const recordings = new Map<string, DescentFrame[]>();
+  const record = (sel: Selection) => {
+    const key = `${sel.rider}-${sel.toboggan}`;
+    if (!recordings.has(key)) recordings.set(key, recordDescent(track, RIDERS[sel.rider], TOBOGGANS[sel.toboggan]));
+    viewer.setRecording(recordings.get(key)!);
+  };
+  record(chosen);
   const sound = new Sound();
   const ride = new RideMode(world, track, terrain, sound);
   const crowd = new Crowd(track, terrain);
@@ -112,9 +123,11 @@ async function start() {
   };
   const setGhost = (sel: Selection) => {
     ghost.removeFromParent();
-    ghost = new RiderModel(LOOKS[sel.rider], sel.toboggan).root;
+    ghostModel = new RiderModel(LOOKS[sel.rider], sel.toboggan);
+    ghost = ghostModel.root;
     world.scene.add(ghost);
-    viewer.setRider(ghost);
+    viewer.setRider(ghost, ghostModel);
+    record(sel);
   };
 
   // The career: intro, saved games, hub, races.

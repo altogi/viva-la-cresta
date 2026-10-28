@@ -9,6 +9,9 @@ import type { World } from '../render/world';
 import { toThree } from '../render/util';
 import type { Terrain } from '../render/terrain';
 import { Ghost } from './ghost';
+import { frameAt, type DescentFrame } from './descent';
+import type { RiderModel } from '../render/riderModel';
+import { surfaceAt } from '../sim/surface';
 import { trackSurfaceHeight } from '../render/trackMesh';
 import type { TreeCrown } from '../render/scenery';
 
@@ -29,7 +32,7 @@ const MODE_LABELS: Record<CameraMode, string> = {
 };
 const SPEEDS = [1, 0.5, 0.25, 2];
 /** The descent behind the title, relative to a real ride. */
-const ATTRACT_SPEED = 1.5;
+const ATTRACT_SPEED = 2.5;
 const MPH = 2.23694;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -125,6 +128,9 @@ export class Viewer {
   }
 
   private placeRider() {
+    // The viewer's own ghost lies forward on its line, whatever the recording left it doing.
+    this.riderModel?.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0 });
+    if (this.riderModel) this.riderModel.toboggan.position.x = 0;
     const g = this.ghost.state(this.s);
     const frame = this.track.frame(this.s);
     const pos = this.track.toWorld(frame, g.lateral, g.height);
@@ -145,9 +151,43 @@ export class Viewer {
   }
 
   /** Swap the ghost rider's model (after choosing a different rider or toboggan). */
-  setRider(rider: THREE.Object3D) {
+  setRider(rider: THREE.Object3D, model: RiderModel | null = null) {
     this.rider = rider;
+    this.riderModel = model;
+    this.recording = null;
     this.placeRider();
+  }
+
+  /** The real descent shown behind the title, once recorded (see descent.ts). */
+  setRecording(frames: DescentFrame[]) {
+    this.recording = frames.length > 1 ? frames : null;
+    this.recT = 0;
+    this.recHint.i = 0;
+  }
+
+  private riderModel: RiderModel | null = null;
+  private recording: DescentFrame[] | null = null;
+  private recT = 0;
+  private readonly recHint = { i: 0 };
+
+  /** Pose and place the rider from a recorded frame, as the ride itself does. */
+  private placeRecorded(f: DescentFrame) {
+    const s = Math.min(f.s, this.track.length);
+    const frame = this.track.frame(s);
+    const sp = surfaceAt(this.track.section(s), f.u);
+    toThree(this.track.toWorld(frame, sp.y, sp.z), this.riderPos);
+    const up = toThree([frame.left[0] * sp.ny + frame.up[0] * sp.nz, frame.left[1] * sp.ny + frame.up[1] * sp.nz, frame.left[2] * sp.ny + frame.up[2] * sp.nz]).normalize();
+    const across = toThree([frame.left[0] * sp.ty + frame.up[0] * sp.tz, frame.left[1] * sp.ty + frame.up[1] * sp.tz, frame.left[2] * sp.ty + frame.up[2] * sp.tz]);
+    const heading = toThree(frame.forward).multiplyScalar(Math.max(f.v, 0.5)).addScaledVector(across, f.w).normalize();
+    const right = new THREE.Vector3().crossVectors(heading, up).normalize();
+    heading.crossVectors(up, right).normalize();
+    this.rider.matrix.makeBasis(heading, up, right).setPosition(this.riderPos);
+    this.rider.matrixAutoUpdate = false;
+    this.rider.matrixWorldNeedsUpdate = true;
+    if (this.riderModel) {
+      this.riderModel.toboggan.position.x = -f.slidOff;
+      this.riderModel.setPose({ posture: f.posture, steer: f.steer, rakeLeft: f.rakeLeft, rakeRight: f.rakeRight, mount: f.mount, runPhase: f.runPhase });
+    }
   }
 
   /** Start or stop the background descent shown behind the menu. */
@@ -157,10 +197,27 @@ export class Viewer {
       // Behind the title: the rider seen going past from beside the run.
       this.setMode('trackside');
       this.startFrom(JUNCTION_S, true);
+      this.recT = 0;
+      this.recHint.i = 0;
     }
   }
 
   update(dt: number) {
+    if (this.attract && this.recording) {
+      // Behind the title: the recorded descent, played half as fast again and more as a real ride.
+      const last = this.recording[this.recording.length - 1].t;
+      this.recT += dt * ATTRACT_SPEED;
+      if (this.recT > last) {
+        this.recT = 0;
+        this.snapCamera = true;
+      }
+      const f = frameAt(this.recording, this.recT, this.recHint);
+      this.s = Math.min(TRACK_LENGTH, f.s);
+      this.placeRecorded(f);
+      this.updateCamera(dt);
+      this.world.followSun(this.riderPos);
+      return;
+    }
     if (this.attract && (this.s >= TRACK_LENGTH - 0.01 || !this.playing)) this.startFrom(JUNCTION_S, true);
     if (this.playing) {
       const speed = this.ghost.state(this.s).speed;
@@ -279,11 +336,11 @@ export class Viewer {
       return toThree(this.track.toWorld(this.track.frame(s), g.lateral, g.height + 0.25));
     });
     let best = { score: -1, pos: new THREE.Vector3() };
-    search: for (const out of [8, 11, 15, 20]) {
+    search: for (const out of [8, 11, 15, 20, 27, 35]) {
       // High enough to see down into the run over its walls.
-      for (const up of [6, 8.5, 4.5, 11]) {
+      for (const up of [6, 8.5, 4.5, 11, 15]) {
         for (const side of sides) {
-          for (const along of [0, -10, 10]) {
+          for (const along of [0, -10, 10, -20, 20]) {
             const s = THREE.MathUtils.clamp(s0 + along, 0, TRACK_LENGTH);
             const st = this.track.frame(s);
             const lateral = side > 0 ? pts[pts.length - 1].y + out : pts[0].y - out;

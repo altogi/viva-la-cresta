@@ -452,7 +452,12 @@ export class RiderModel {
       targets.headYaw += p.stand.look ?? 0;
     } else {
       targets = this.ridingTargets(p);
-      if (p.cheer && p.cheer > 0) targets = blendTargets(targets, this.cheeringTargets(p.cheerTime ?? 0), smooth(p.cheer));
+      if (p.cheer && p.cheer > 0) {
+        const cheer = this.cheeringTargets(p.cheerTime ?? 0);
+        targets = blendTargets(targets, cheer.targets, smooth(p.cheer));
+        wink = cheer.wink * p.cheer;
+        open = cheer.open * p.cheer;
+      }
       else if (p.mount < 1) {
         targets = blendTargets(this.runningTargets(p.runPhase), targets, smooth(p.mount));
         targets.pelvis.y += Math.sin(Math.PI * p.mount) * 0.32; // the little spring onto the toboggan
@@ -619,22 +624,69 @@ export class RiderModel {
     };
   }
 
-  /** On their feet beside the toboggan at Celerina, arms up and waving. */
-  private cheeringTargets(time: number): Targets {
+  /**
+   * On their feet beside the toboggan at Celerina, celebrating each in their own way: Maximilian
+   * cocky, arms out and palms down, calming the masses as he looks them over; Adelaide hopping with
+   * excitement, hands up; Remo one fist raised high like a victorious gladiator, the other on his hip.
+   */
+  private cheeringTargets(time: number): { targets: Targets; wink: number; open: number } {
     const s = this.look.scale;
-    const pelvis = V(-0.25, 0.92 * s, -0.62);
-    const wave = (i: number) => Math.sin(time * 8 + i) * 0.12;
-    return {
+    const base = (pelvis: THREE.Vector3): Omit<Targets, 'hands'> => ({
       pelvis,
       pitch: Math.PI / 2 - 0.05,
       roll: 0,
       headYaw: 0,
       headTilt: 0.15,
       headRoll: 0,
-      hands: [V(pelvis.x + 0.05 + wave(0), pelvis.y + 1.0 * s, pelvis.z - 0.35), V(pelvis.x + 0.05 + wave(1), pelvis.y + 1.0 * s, pelvis.z + 0.35)],
       feet: [V(pelvis.x + 0.05, 0.05, pelvis.z - 0.13), V(pelvis.x + 0.05, 0.05, pelvis.z + 0.13)],
       elbowPoles: [V(pelvis.x, pelvis.y + 0.4, pelvis.z - 1), V(pelvis.x, pelvis.y + 0.4, pelvis.z + 1)],
       kneePoles: [V(pelvis.x + 1, 0.4, pelvis.z), V(pelvis.x + 1, 0.4, pelvis.z)],
+    });
+    if (this.look.id === 'maximilian') {
+      // Arms out low to the sides, palms down, patting the air: "settle down, settle down".
+      const pelvis = V(-0.25, 0.92 * s, -0.62);
+      const shoulderY = pelvis.y + this.shoulder;
+      const pat = Math.sin(time * 2.4) * 0.07;
+      const t = base(pelvis);
+      t.pitch = Math.PI / 2 - 0.1; // leaning back a touch, pleased with himself
+      t.headTilt = 0.32; // chin up
+      t.headYaw = Math.sin(time * 0.8) * 0.45; // looking the crowd over
+      t.feet = [V(pelvis.x + 0.08, 0.05, pelvis.z - 0.2), V(pelvis.x - 0.02, 0.05, pelvis.z + 0.2)];
+      t.elbowPoles = [V(pelvis.x - 0.6, pelvis.y, pelvis.z - 1), V(pelvis.x - 0.6, pelvis.y, pelvis.z + 1)];
+      return {
+        targets: { ...t, hands: [V(pelvis.x + 0.28, shoulderY - 0.18 + pat, pelvis.z - 0.62), V(pelvis.x + 0.28, shoulderY - 0.18 + pat, pelvis.z + 0.62)] },
+        wink: Math.sin(time * 0.8) > 0.9 ? 1 : 0,
+        open: 0,
+      };
+    }
+    if (this.look.id === 'adelaide') {
+      // Little hops, landing on bent knees, hands up over her head.
+      const phase = (time * 1.9) % 1;
+      const hop = phase < 0.62 ? Math.sin((phase / 0.62) * Math.PI) * 0.17 : 0;
+      const crouch = phase >= 0.62 ? Math.sin(((phase - 0.62) / 0.38) * Math.PI) * 0.08 : 0;
+      const pelvis = V(-0.25, 0.92 * s + hop - crouch, -0.62);
+      const t = base(pelvis);
+      t.feet = [V(pelvis.x + 0.05, 0.05 + hop * 0.9, pelvis.z - 0.12), V(pelvis.x + 0.05, 0.05 + hop * 0.9, pelvis.z + 0.12)];
+      t.headTilt = 0.25;
+      const shake = Math.sin(time * 14) * 0.05;
+      return {
+        targets: { ...t, hands: [V(pelvis.x + 0.12, pelvis.y + 1.02 * s + shake, pelvis.z - 0.2), V(pelvis.x + 0.12, pelvis.y + 1.02 * s - shake, pelvis.z + 0.2)] },
+        wink: 0,
+        open: 0.7,
+      };
+    }
+    // Remo: feet planted wide, chest out, the right fist punched up and held, the left on his hip.
+    const pelvis = V(-0.25, 0.9 * s, -0.62);
+    const t = base(pelvis);
+    t.pitch = Math.PI / 2 - 0.12;
+    t.headTilt = 0.3;
+    t.feet = [V(pelvis.x + 0.05, 0.05, pelvis.z - 0.24), V(pelvis.x + 0.05, 0.05, pelvis.z + 0.24)];
+    t.elbowPoles = [V(pelvis.x - 0.2, pelvis.y + 0.2, pelvis.z - 1.2), V(pelvis.x, pelvis.y + 0.6, pelvis.z + 1)];
+    const pump = Math.sin(time * 1.6) * 0.04;
+    return {
+      targets: { ...t, hands: [V(pelvis.x - 0.02, pelvis.y + 0.08, pelvis.z - 0.3), V(pelvis.x + 0.06, pelvis.y + 1.1 * s + pump, pelvis.z + 0.2)] },
+      wink: 0,
+      open: 0.45,
     };
   }
 

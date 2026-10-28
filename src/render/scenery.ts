@@ -478,16 +478,21 @@ function railwayLine(ctx: Placer, holder: THREE.Object3D, wall: number, span: nu
   // terrain) and burying the abutments' ends, so the bridge sits in the bank with no gap.
   holder.updateMatrixWorld(true);
   const inv = holder.matrixWorld.clone().invert();
-  const positions: number[] = [];
-  const index: number[] = [];
-  const top = rail - 0.02;
+  // A little under the bridge's road (which runs on a metre past its deck), never level with it:
+  // two surfaces at the same height flicker against each other.
+  const top = rail - 0.17;
   const halfTop = 4.9;
   const groundAt = (x: number, z: number) => {
     const world = new THREE.Vector3(x, 0, z).applyMatrix4(holder.matrixWorld);
     return new THREE.Vector3(world.x, ctx.terrain.height(world.x, -world.z) - 0.6, world.z).applyMatrix4(inv).y;
   };
-  let row = 0;
+  // One bank each side of the run (each its own mesh, so cameras can tell where it stands).
+  const material = mat(colors.snow, { flatShading: false, side: THREE.DoubleSide, roughness: 0.95 });
+  const banks: THREE.Mesh[] = [];
   for (const dir of [-1, 1]) {
+    const positions: number[] = [];
+    const index: number[] = [];
+    let row = 0;
     const steps = 64;
     for (let i = 0; i <= steps; i++) {
       // From just inside the abutment's back face out to the end of the line.
@@ -506,13 +511,15 @@ function railwayLine(ctx: Placer, holder: THREE.Object3D, wall: number, span: nu
       }
       row++;
     }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(index);
+    geometry.computeVertexNormals();
+    const piece = new THREE.Mesh(geometry, material);
+    piece.receiveShadow = true;
+    banks.push(piece);
   }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(index);
-  geometry.computeVertexNormals();
-  const bank = new THREE.Mesh(geometry, mat(colors.snow, { flatShading: false, side: THREE.DoubleSide, roughness: 0.95 }));
-  bank.receiveShadow = true;
+  const bank = banks[0];
 
   const carrier = new THREE.Group();
   carrier.add(train);
@@ -538,7 +545,7 @@ function railwayLine(ctx: Placer, holder: THREE.Object3D, wall: number, span: nu
     carrier.rotation.y = dir > 0 ? Math.PI : 0;
   };
   carrier.position.set(ROAD_BRIDGE.trackX, rail, -reach);
-  return [bank, carrier];
+  return [...banks, carrier];
 }
 
 function buildBridge(ctx: Placer, s: number, name: string): THREE.Group {
