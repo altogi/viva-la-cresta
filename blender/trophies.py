@@ -25,6 +25,7 @@ M = {
     "gold": lib.material("tr_gold", (1.0, 0.76, 0.36), 0.13, 1.0),
     "ebony": lib.material("tr_ebony", (0.02, 0.018, 0.016), 0.22),
     "wood": lib.material("tr_wood", (0.2, 0.09, 0.035), 0.3),
+    "walnut": lib.material("tr_walnut", (0.3, 0.16, 0.07), 0.45),
     "oak": lib.material("tr_oak", (0.42, 0.24, 0.11), 0.38),
     "plaque": lib.material("tr_plaque", (0.85, 0.85, 0.88), 0.18, 1.0),
 }
@@ -441,58 +442,106 @@ bpy.context.view_layer.objects.active = calisch_obj
 bpy.ops.object.transform_apply(location=True)
 trophies.append(calisch_obj)
 
-# The Coppa d'Italia: a wild boar in silver, stocky and low, bristling ridge, tusks up.
+# The Coppa d'Italia: a wild boar in silver. High at the withers and deep in the chest, a long
+# wedge of a head ending in the snout's disc, pointed ears, thin legs on neat hooves, a tufted tail,
+# a bristling mane along the spine and tusks curling up out of the jaw.
 boar = {
-    "rump": ((0.0, 0, 0.62), (0.28, 0.25), None),
-    "back": ((0.35, 0, 0.66), (0.33, 0.29), "rump"),
-    "shoulder": ((0.7, 0, 0.7), (0.36, 0.3), "back"),
-    "nape": ((0.95, 0, 0.66), (0.26, 0.23), "shoulder"),
-    "head": ((1.15, 0, 0.56), (0.17, 0.15), "nape"),
-    "snout": ((1.38, 0, 0.46), 0.085, "head"),
-    "disc": ((1.46, 0, 0.44), 0.075, "snout"),
-    "ridge0": ((0.55, 0, 0.98), 0.05, "shoulder"),
-    "tail": ((-0.27, 0, 0.66), 0.03, "rump"),
+    "rump": ((0.0, 0, 0.62), (0.24, 0.23), None),
+    "loin": ((0.3, 0, 0.66), (0.3, 0.29), "rump"),
+    "withers": ((0.66, 0, 0.7), (0.36, 0.36), "loin"),
+    "neck": ((0.94, 0, 0.66), (0.29, 0.28), "withers"),
+    "head": ((1.16, 0, 0.58), (0.24, 0.22), "neck"),
+    "snout1": ((1.33, 0, 0.49), 0.15, "head"),
+    "snout2": ((1.46, 0, 0.43), 0.12, "snout1"),
+    "disc": ((1.53, 0, 0.41), 0.1, "snout2"),
+    "tail0": ((-0.22, 0, 0.64), 0.04, "rump"),
+    "tail1": ((-0.3, 0, 0.52), 0.02, "tail0"),
+    "tuft": ((-0.32, 0, 0.44), 0.035, "tail1"),
 }
 for side in (-1, 1):
     y = 0.15 * side
     s = f"{side}"
     boar.update({
-        f"sh{s}": ((0.72, y, 0.45), 0.13, "shoulder"), f"kn{s}": ((0.74, y, 0.22), 0.075, f"sh{s}"), f"ft{s}": ((0.75, y, 0.04), 0.06, f"kn{s}"),
-        f"hp{s}": ((0.05, y, 0.45), 0.14, "rump"), f"hk{s}": ((-0.03, y, 0.22), 0.075, f"hp{s}"), f"hf{s}": ((0.0, y, 0.04), 0.06, f"hk{s}"),
-        f"ear{s}": ((1.02, 0.12 * side, 0.82), 0.04, "nape"),
+        f"sh{s}": ((0.72, y, 0.48), 0.13, "withers"), f"el{s}": ((0.76, y, 0.3), 0.06, f"sh{s}"), f"fl{s}": ((0.77, y, 0.1), 0.042, f"el{s}"), f"fh{s}": ((0.8, y, 0.025), 0.05, f"fl{s}"),
+        f"hp{s}": ((0.08, y, 0.52), 0.14, "rump"), f"hk{s}": ((-0.02, y, 0.28), 0.06, f"hp{s}"), f"hl{s}": ((0.03, y, 0.1), 0.042, f"hk{s}"), f"hh{s}": ((0.06, y, 0.025), 0.05, f"hl{s}"),
+        f"ear{s}": ((1.08, 0.12 * side, 0.8), 0.06, "head"), f"eartip{s}": ((1.03, 0.15 * side, 0.95), 0.015, f"ear{s}"),
     })
-coppa = plinth("co", 0.4, 0.15, 0.05) + [skinned("co_body", scaled(boar, S, 0.05 - 0.008), "silver")]
+LIFT = 0.05 - 0.002
+boar_body = skinned("co_body", scaled(boar, S, LIFT), "silver")
+coppa = plinth("co", 0.44, 0.15, 0.05) + [boar_body]
+# The mane: bristles standing on the spine from the nape to the loin, longest over the withers,
+# each set on the body's surface (found by dropping a ray onto it).
+from mathutils import Vector
+from mathutils.bvhtree import BVHTree
+
+spine = BVHTree.FromObject(boar_body, bpy.context.evaluated_depsgraph_get())
+for i in range(20):
+    x = 1.0 - i / 19 * 0.82
+    hit = spine.ray_cast(Vector((x * S, 0, 2 * S)), Vector((0, 0, -1)))[0]
+    if hit is None:
+        continue
+    length = (0.05 + 0.08 * math.exp(-((x - 0.72) / 0.25) ** 2)) * S
+    base = Vector((hit.x, 0, hit.z - 0.008 * S))
+    tip = base + Vector((-0.35 * length, 0, length))
+    coppa.append(sweep("co_bristle", [tuple(base), tuple(tip)], [0.024 * S, 0.003 * S], "silver", n=6))
 for side in (-1, 1):
-    coppa.append(sweep("co_tusk", [(1.34 * S, side * 0.07 * S, 0.43 * S + 0.05), (1.4 * S, side * 0.1 * S, 0.5 * S + 0.05), (1.38 * S, side * 0.1 * S, 0.57 * S + 0.05)], [0.035 * S, 0.026 * S, 0.008 * S], "silver", n=8))
+    tusk = bezier([(1.38 * S, side * 0.1 * S, 0.4 * S + LIFT), (1.47 * S, side * 0.17 * S, 0.42 * S + LIFT), (1.5 * S, side * 0.18 * S, 0.55 * S + LIFT), (1.42 * S, side * 0.16 * S, 0.62 * S + LIFT)], steps=10)
+    coppa.append(sweep("co_tusk", tusk, [0.042 * S * (1 - 0.85 * i / (len(tusk) - 1)) for i in range(len(tusk))], "silver", n=8))
 coppa_obj = assemble("coppa-italia", coppa)
-coppa_obj.location.x = -0.08
+coppa_obj.location.x = -0.09
 bpy.ops.object.select_all(action="DESELECT")
 coppa_obj.select_set(True)
 bpy.context.view_layer.objects.active = coppa_obj
 bpy.ops.object.transform_apply(location=True)
 trophies.append(coppa_obj)
 
-# The Bartley Bear: a carved wooden bear sitting up, paws on his belly, on a round base.
+
+def ball(name, loc, r, key, segments=16, rings=10):
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=r, location=loc, segments=segments, ring_count=rings)
+    o = bpy.context.active_object
+    o.name = name
+    for c in o.users_collection:
+        c.objects.unlink(o)
+    COLL.objects.link(o)
+    return finish(o, key)
+
+
+# The Bartley Bear: a carved wooden bear standing up on his hind legs, paws raised, as the Swiss
+# carvers make them: a big round head, round ears, a short muzzle, dark eyes and nose, chisel facets.
 bear = {
-    "seat": ((0.0, 0, 0.3), (0.3, 0.27), None),
-    "belly": ((0.03, 0, 0.58), (0.3, 0.27), "seat"),
-    "chest": ((0.0, 0, 0.85), (0.25, 0.23), "belly"),
-    "neck": ((0.02, 0, 1.0), 0.16, "chest"),
-    "head": ((0.06, 0, 1.17), (0.22, 0.2), "neck"),
-    "muzzle": ((0.28, 0, 1.12), 0.1, "head"),
-    "nose": ((0.38, 0, 1.13), 0.045, "muzzle"),
+    "pelvis": ((0.0, 0, 0.55), (0.28, 0.25), None),
+    "belly": ((0.03, 0, 0.8), (0.32, 0.28), "pelvis"),
+    "chest": ((0.0, 0, 1.05), (0.27, 0.24), "belly"),
+    "neck": ((0.02, 0, 1.2), 0.18, "chest"),
+    "head": ((0.04, 0, 1.4), (0.25, 0.24), "neck"),
+    "muzzle": ((0.24, 0, 1.33), 0.11, "head"),
+    "muzzle_tip": ((0.32, 0, 1.32), 0.075, "muzzle"),
+    "tail": ((-0.27, 0, 0.6), 0.05, "pelvis"),
 }
 for side in (-1, 1):
     y = side
     s = f"{side}"
     bear.update({
-        f"ear{s}": ((0.0, 0.16 * y, 1.36), 0.075, "head"),
-        f"arm{s}": ((0.05, 0.24 * y, 0.88), 0.1, "chest"), f"elb{s}": ((0.25, 0.27 * y, 0.62), 0.085, f"arm{s}"), f"paw{s}": ((0.42, 0.21 * y, 0.46), 0.08, f"elb{s}"),
-        f"hip{s}": ((0.08, 0.2 * y, 0.25), 0.15, "seat"), f"knee{s}": ((0.38, 0.22 * y, 0.25), 0.12, f"hip{s}"), f"foot{s}": ((0.56, 0.2 * y, 0.16), 0.11, f"knee{s}"),
-        f"sole{s}": ((0.62, 0.2 * y, 0.28), 0.09, f"foot{s}"),
+        f"ear{s}": ((-0.01, 0.17 * y, 1.62), 0.085, "head"),
+        f"hip{s}": ((0.02, 0.17 * y, 0.45), 0.15, "pelvis"), f"knee{s}": ((0.08, 0.18 * y, 0.25), 0.12, f"hip{s}"),
+        f"ankle{s}": ((0.05, 0.18 * y, 0.08), 0.1, f"knee{s}"), f"foot{s}": ((0.16, 0.18 * y, 0.05), 0.09, f"ankle{s}"),
+        f"shoulder{s}": ((0.02, 0.24 * y, 1.08), 0.11, "chest"), f"elbow{s}": ((0.14, 0.29 * y, 0.88), 0.09, f"shoulder{s}"),
+        f"paw{s}": ((0.27, 0.17 * y, 0.98), 0.085, f"elbow{s}"),
     })
-bart = [lathe("be_base", [(0, 0), (0.12, 0), (0.125, 0.01), (0.12, 0.035), (0.11, 0.04), (0, 0.04)], "oak"),
-        skinned("be_body", scaled(bear, 0.22, 0.04 - 0.02), "wood")]
+BS = 0.2
+body = skinned("be_body", scaled(bear, BS, 0.045), "walnut", smooth=1)
+for p in body.data.polygons:
+    p.use_smooth = False  # chisel facets, as carved
+bart = [lathe("be_base", [(0, 0), (0.13, 0), (0.135, 0.012), (0.13, 0.04), (0.118, 0.046), (0, 0.046)], "oak"), body]
+for side in (-1, 1):
+    # Round ears on top of the head, carved like the rest (a few facets).
+    ear = ball("be_ear", (-0.02 * BS, side * 0.18 * BS, 1.6 * BS + 0.045), 0.085 * BS, "walnut", 8, 5)
+    ear.scale = (0.6, 1, 1)
+    for p in ear.data.polygons:
+        p.use_smooth = False
+    bart.append(ear)
+    bart.append(ball("be_eye", (0.205 * BS, side * 0.09 * BS, 1.46 * BS + 0.045), 0.028 * BS, "ebony"))
+bart.append(ball("be_nose", (0.345 * BS, 0, 1.345 * BS + 0.045), 0.05 * BS, "ebony"))
 trophies.append(assemble("bartley-bear", bart))
 
 # ---------- Lay them out, look, export ----------
@@ -500,6 +549,8 @@ trophies.append(assemble("bartley-bear", bart))
 for i, t in enumerate(trophies):
     t.location = (i * 0.55, 0, 0)
 # Five at a time, from a little above, with the sun across them.
+lib.preview("trophies_boar.png", (11 * 0.55 + 0.25, -0.75, 0.3), (11 * 0.55, 0.0, 0.12), size=(1200, 800), lens=40, sky=(0.5, 0.62, 0.85), sun=(0.5, -0.6, 0.7))
+lib.preview("trophies_bear.png", (12 * 0.55 + 0.35, -0.5, 0.3), (12 * 0.55, 0.0, 0.17), size=(900, 900), lens=45, sky=(0.5, 0.62, 0.85), sun=(0.5, -0.6, 0.7))
 for k in range(4):
     x = (k * 4 + 1.5) * 0.55
     lib.preview(f"trophies_{k}.png", (x, -2.4, 0.8), (x, 0.0, 0.24), size=(1600, 700), lens=30, sky=(0.5, 0.62, 0.85), sun=(0.5, -0.6, 0.7))

@@ -150,6 +150,7 @@ export class TrophyRoom {
     this.index = 0;
     this.visible = 0;
     this.time = 0;
+    this.fit.set(0, 0);
     this.buildCards(c);
     void this.load().then(() => this.show(this.index, false, true));
     requestAnimationFrame(() => this.scrollTo('instant'));
@@ -261,21 +262,30 @@ export class TrophyRoom {
     if (side) cam.setViewOffset(w, h, 200, 0, w, h);
     else cam.setViewOffset(w, h, 0, h * (0.5 - this.visible / 2), w, h);
     cam.updateProjectionMatrix();
-    // Fit what's on the table in the lower part of the view, with the mountains and sky above it.
-    const size = this.current ? new THREE.Box3().setFromObject(this.current).getSize(new THREE.Vector3()) : new THREE.Vector3(0.4, 0.55, 0.4);
-    const height = Math.max(0.3, size.y) / 0.55;
-    const width = Math.max(0.42, Math.max(size.x, size.z)) + 0.22;
+    // Fit what's on the table in the lower part of the view, with the mountains and sky above it,
+    // easing between one trophy's fit and the next (a sudden jump makes the outgoing one balloon).
+    const size = this.current ? sizeOf(this.current) : new THREE.Vector3(0.4, 0.55, 0.4);
+    const height = Math.max(0.28, size.y) / 0.68;
+    const width = Math.max(0.36, Math.max(size.x, size.z)) + 0.1;
     const tan = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * this.visible;
     const aspect = (side ? w - 400 : w) / (h * this.visible);
-    const dist = Math.max(height / 2 / tan, width / 2 / (tan * Math.min(1.4, aspect)));
-    const centre = SPOT.clone().add(new THREE.Vector3(0, Math.max(0.3, size.y) * 0.5, 0));
-    this.arrowAt.set(centre.y, Math.max(0.42, Math.max(size.x, size.z)) / 2 + 0.12);
+    const wantedDist = Math.max(height / 2 / tan, width / 2 / (tan * Math.min(1.4, aspect)));
+    const wantedY = SPOT.y + Math.max(0.28, size.y) * 0.5;
+    const k = this.fit.x ? 1 - Math.exp(-dt * 4) : 1;
+    this.fit.x += (wantedDist - this.fit.x) * k;
+    this.fit.y += (wantedY - this.fit.y) * k;
+    const dist = this.fit.x;
+    const centre = new THREE.Vector3(SPOT.x, this.fit.y, SPOT.z);
+    this.arrowAt.set(centre.y, Math.max(0.36, Math.max(size.x, size.z)) / 2 + 0.1);
     const yaw = Math.sin(this.time * 0.18) * 0.12;
     cam.position.set(centre.x + Math.sin(yaw) * dist, centre.y + 0.05, centre.z + Math.cos(yaw) * dist);
     // Look above the trophy, so it stands a fifth of the view below the middle.
-    cam.lookAt(centre.x, centre.y + dist * tan * 0.42, centre.z);
+    cam.lookAt(centre.x, centre.y + dist * tan * 0.3, centre.z);
     cam.updateMatrixWorld();
   }
+
+  /** The camera's distance and the height it frames, eased from trophy to trophy. */
+  private readonly fit = new THREE.Vector2();
 
   private slide(dt: number) {
     this.swap = Math.min(1, this.swap + dt / SWAP_TIME);
@@ -384,6 +394,22 @@ export class TrophyRoom {
       if (node) this.step(node.userData.side as number);
     });
   }
+}
+
+/** An object's size standing square to the view (measured once, so a turning trophy doesn't pump the zoom). */
+function sizeOf(obj: THREE.Object3D): THREE.Vector3 {
+  if (!obj.userData.size) {
+    const turn = obj.rotation.y;
+    const at = obj.position.clone();
+    obj.rotation.y = 0;
+    obj.position.set(0, 0, 0);
+    obj.updateMatrixWorld(true);
+    obj.userData.size = new THREE.Box3().setFromObject(obj).getSize(new THREE.Vector3());
+    obj.rotation.y = turn;
+    obj.position.copy(at);
+    obj.updateMatrixWorld(true);
+  }
+  return obj.userData.size as THREE.Vector3;
 }
 
 // ---------- The cards ----------
@@ -576,36 +602,48 @@ function tents(): THREE.Object3D {
 }
 
 /**
- * The mountains across the lake: an image rendered in Blender (blender/sunnybar.py), 100 degrees
- * wide and 48 high with its horizon a quarter of the way up, on a plane far off, square to the view.
+ * The view across the lake: a photograph of Piz Rosatsch from the shore (1880 x 918, cropped just
+ * above the ice), on a plane far off, square to the view, pitched so the bottom of the picture (the
+ * far shore, its forest and chalets) sits on the horizon.
  */
 function backdrop(): THREE.Object3D {
-  const tex = new THREE.TextureLoader().load(`${base}textures/sunnybar-mountains.webp`);
+  const tex = new THREE.TextureLoader().load(`${base}textures/sunnybar-rosatsch.webp`);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  const W = 1880;
+  const FULL_H = 1512;
+  const CROP_H = 918;
   const D = 5200;
-  const halfW = Math.tan(THREE.MathUtils.degToRad(50)) * D;
-  const halfH = Math.tan(THREE.MathUtils.degToRad(24.07)) * D;
-  const plane = new THREE.Mesh(new THREE.PlaneGeometry(halfW * 2, halfH * 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false, toneMapped: false }));
-  // Square to a view pitched 12 degrees up, from about where the camera stands.
-  const holder = new THREE.Group();
-  holder.position.set(0, LAKE + 16, 0);
-  holder.rotation.x = THREE.MathUtils.degToRad(12);
-  plane.position.set(0, 0, -D);
+  // Spread over 42 degrees (narrower than the photo's own), so the whole mountain, forest to
+  // peaks, fits in the band of view above the table.
+  const focal = W / 2 / Math.tan(THREE.MathUtils.degToRad(42 / 2));
+  // Heights on the plane of the crop's top and bottom, about the photo's optical axis.
+  const top = (FULL_H / 2 / focal) * D;
+  const bottom = ((FULL_H / 2 - CROP_H) / focal) * D;
+  const plane = new THREE.Mesh(
+    new THREE.PlaneGeometry((W / focal) * D, top - bottom),
+    new THREE.MeshBasicMaterial({ map: tex, depthWrite: false, fog: false, toneMapped: false }),
+  );
+  plane.position.set(0, (top + bottom) / 2, -D);
   plane.renderOrder = -1;
+  const holder = new THREE.Group();
+  holder.position.set(0, LAKE + 4, 0);
+  holder.rotation.x = Math.atan((CROP_H - FULL_H / 2) / focal);
   holder.add(plane);
   return holder;
 }
 
-/** A deep winter-blue sky, paler towards the mountains. */
+/** A deep winter-blue sky, as dark as the photograph's at the top. */
 function skyTexture(): THREE.Texture {
   const c = document.createElement('canvas');
   c.width = 2;
   c.height = 256;
   const g = c.getContext('2d')!;
   const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, '#1f63c9');
-  grad.addColorStop(0.55, '#4f8fe0');
-  grad.addColorStop(1, '#bcd6f2');
+  // The photograph's sky, where the view reaches above it.
+  grad.addColorStop(0, '#0b2c5c');
+  grad.addColorStop(0.6, '#163f78');
+  grad.addColorStop(1, '#2a5c9e');
   g.fillStyle = grad;
   g.fillRect(0, 0, 2, 256);
   const tex = new THREE.CanvasTexture(c);
@@ -652,13 +690,13 @@ function recordBoard(name: string, r: RiderRecord): THREE.Object3D {
   const g = c.getContext('2d')!;
   // Dark varnished wood with its grain.
   const grad = g.createLinearGradient(0, 0, W, H);
-  grad.addColorStop(0, '#4a2a16');
-  grad.addColorStop(1, '#2c170b');
+  grad.addColorStop(0, '#26130a');
+  grad.addColorStop(1, '#120803');
   g.fillStyle = grad;
   g.fillRect(0, 0, W, H);
   const rand = mulberry(5);
   for (let i = 0; i < 140; i++) {
-    g.strokeStyle = `rgba(${rand() < 0.5 ? '20,8,2' : '110,60,30'},${0.08 + rand() * 0.12})`;
+    g.strokeStyle = `rgba(${rand() < 0.5 ? '6,2,0' : '70,36,16'},${0.06 + rand() * 0.1})`;
     g.lineWidth = 1 + rand() * 3;
     const y = rand() * H;
     g.beginPath();
@@ -673,34 +711,34 @@ function recordBoard(name: string, r: RiderRecord): THREE.Object3D {
   g.lineWidth = 2;
   g.strokeRect(48, 48, W - 96, H - 96);
   const gilt = (text: string, x: number, y: number, size: number, align: CanvasTextAlign = 'center', font = 'Georgia, serif') => {
-    g.font = `${size}px ${font}`;
+    g.font = `bold ${size}px ${font}`;
     g.textAlign = align;
     // Cut into the wood, then gilded: a dark lower edge, a bright face.
-    g.fillStyle = 'rgba(0,0,0,0.6)';
-    g.fillText(text, x + 1.5, y + 2.5);
+    g.fillStyle = 'rgba(0,0,0,0.85)';
+    g.fillText(text, x + 2, y + 3);
     const face = g.createLinearGradient(0, y - size, 0, y);
-    face.addColorStop(0, '#f6dc8e');
-    face.addColorStop(0.55, '#d7a743');
-    face.addColorStop(1, '#a8761f');
+    face.addColorStop(0, '#fff2c4');
+    face.addColorStop(0.5, '#f2c862');
+    face.addColorStop(1, '#d09a32');
     g.fillStyle = face;
     g.fillText(text, x, y);
   };
-  gilt('ST MORITZ', W / 2, 140, 44);
-  gilt('TOBOGGANING CLUB', W / 2, 192, 44);
-  gilt(name.toUpperCase(), W / 2, 300, 64);
+  gilt('ST MORITZ', W / 2, 140, 48);
+  gilt('TOBOGGANING CLUB', W / 2, 196, 48);
+  gilt(name.toUpperCase(), W / 2, 306, 72);
   g.fillStyle = '#c99a3c';
   g.fillRect(W / 2 - 160, 330, 320, 3);
   const row = (label: string, value: string, y: number) => {
-    gilt(label, 110, y, 36, 'left');
-    gilt(value, W - 110, y, 36, 'right');
+    gilt(label, 100, y, 40, 'left');
+    gilt(value, W - 100, y, 40, 'right');
   };
   row('Rides from Junction', String(r.junctionRides), 420);
   row('Rides from Top', String(r.topRides), 480);
   row('Best from Junction', r.bestJunction === null ? '—' : r.bestJunction.toFixed(2), 560);
   row('Best from Top', r.bestTop === null ? '—' : r.bestTop.toFixed(2), 620);
-  gilt('CLUBS', W / 2, 730, 40);
+  gilt('CLUBS', W / 2, 730, 44);
   g.fillRect(W / 2 - 90, 748, 180, 2);
-  if (r.clubs.length) r.clubs.forEach((club, i) => gilt(`The ${club} Club`, W / 2, 810 + i * 50, 36));
+  if (r.clubs.length) r.clubs.forEach((club, i) => gilt(`The ${club} Club`, W / 2, 812 + i * 52, 40));
   else gilt('— none yet —', W / 2, 810, 34);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -708,7 +746,11 @@ function recordBoard(name: string, r: RiderRecord): THREE.Object3D {
   const group = new THREE.Group();
   const bw = 0.42;
   const bh = (bw * H) / W;
-  const face = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55, envMapIntensity: 0.15 }));
+  // Matte, a little shaded, and the lettering faintly lit from within: readable in full sun.
+  const face = new THREE.Mesh(
+    new THREE.PlaneGeometry(bw, bh),
+    new THREE.MeshStandardMaterial({ map: tex, color: '#9a9a9a', roughness: 0.85, envMapIntensity: 0.05, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.22 }),
+  );
   const back = new THREE.Mesh(new THREE.BoxGeometry(bw + 0.03, bh + 0.03, 0.025), mat('#2a160a', 0.4));
   // Leaning back a little on its stand.
   const board = new THREE.Group();
