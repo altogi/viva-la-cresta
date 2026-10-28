@@ -2,7 +2,7 @@
 // they've come off at) and the trophies they've won, each the club's own where it's known.
 
 import { CLUBS, dateOf, type Career, type Start } from './career';
-import { raceById } from './races';
+import { RACES, raceById } from './races';
 
 /** The trophy models (trophies.glb holds `trophy_<id>`). */
 export type TrophyModel =
@@ -92,8 +92,56 @@ export interface Win {
   colours: boolean;
 }
 
-/** The races the rider has won, in the order they were won. */
+/** The races the rider has won, in the order they were won (with every trophy first in a showcase career). */
 export function wins(c: Career): Win[] {
+  return [...(c.showcase ? showcaseWins() : []), ...wonRaces(c)];
+}
+
+/**
+ * One of each trophy, as if won in the first season: every race whose trophy is known, a race for
+ * each of the standard cups, and the Cresta trophy (no race awards it yet).
+ */
+export function showcaseWins(): Win[] {
+  const out: Win[] = [];
+  const shown = new Set<TrophyModel>();
+  for (const race of RACES) {
+    const trophy = trophyFor(race.id);
+    if (shown.has(trophy.model)) continue;
+    shown.add(trophy.model);
+    const d = dateOf(race.day + race.days - 1, 1);
+    const courses = race.days * 3;
+    const total = Math.round(((race.start === 'top' ? 59.4 : 45.3) * courses + Math.random() * 2) * 100) / 100;
+    out.push({
+      raceId: race.id,
+      name: race.name,
+      note: race.note,
+      season: 1,
+      date: `${d.label} ${d.year}`,
+      total,
+      net: race.kind === 'handicap' ? Math.round((total - courses * 4.2) * 100) / 100 : null,
+      of: race.field + 1,
+      model: trophy.model,
+      text: trophy.text,
+      colours: COLOUR_RACES.includes(race.id),
+    });
+  }
+  out.push({
+    raceId: 'cresta',
+    name: 'The Cresta Trophy',
+    note: '(Not yet raced for in the game)',
+    season: 1,
+    date: 'Season 1',
+    total: 178.42,
+    net: null,
+    of: 20,
+    model: 'cresta',
+    text: 'A silver vase flaring to a wide rim, slender handles, on an ebony base.',
+    colours: false,
+  });
+  return out;
+}
+
+function wonRaces(c: Career): Win[] {
   return c.results
     .filter((r) => r.position === 1 && r.total !== null)
     .map((r) => {

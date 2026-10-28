@@ -305,6 +305,20 @@ A music volume control and mute go next to the sound settings. If a composed sou
 ### Phase 7 — Polish & release
 Menus and scenes (SMTC clubhouse, Sunny Bar at the Kulm for results), SMTC branding, performance pass on a mid-range phone (target a steady 60 fps, with a quality fallback), offline check, settings (sound, haptics, hint zones, left-handed mirror), first public release.
 
+### Trophy room ✅
+"My trophies" in the hub (members only): the Sunny Bar's terrace above the frozen lake, the rider's record on an engraved board (rides and best times from each start, the clubs of the banks they've fallen at), then a trophy for each race won, modelled in Blender (`blender/trophies.py`), with fireworks for the four colour races. Open questions: which trophy is the Curzon Cup's (the gold lidded cup for now), and which race awards the Cresta trophy (none yet).
+
+### Phase 8 — Multiplayer (planned)
+A private game for a group of friends, riding the same season together on the real calendar.
+
+- **Rooms:** a host creates a game and gets a 6-letter code; up to 10 others join with the code and a nickname. Once everyone is in, the host starts the season. No accounts: each phone keeps a device key, so a nickname can't be taken over.
+- **Backend:** GitHub Pages can't hold shared state, so a small hosted service is needed: Supabase or Firebase (auth by device key, tables for games, players and rides, realtime updates). Each player keeps their own career as now; the game only shares results.
+- **The real calendar:** the season's day is today's date, not a "Next day" button. Each player has up to 5 rides a day, counted by the server. A game started mid-winter begins on the matching day; one started out of season could run a compressed season (say 3 game days per real day).
+- **Fair play:** the physics are deterministic, so each ride uploads its inputs as well as its time, and the server (or the other players' phones) can replay it to check the time. At the least, times are checked against what the rider and toboggan can do.
+- **Race days:** every member of the game rides the race's three courses that day, whenever they like. The sheet merges the players with the NPC field (players take the places of NPCs, so the field keeps its size and the players are ranked among the regulars). The race closes at midnight; anyone who hasn't ridden is a non-starter. The winner's trophy goes to their trophy room.
+- **The game's leaderboard:** best times from Junction and Top, race wins, trophies and clubs (a table for the Shuttlecock Club regulars), with a daily digest and push notifications for race days (web push works for the installed app on Android and on iOS 16.4+).
+- **Steps:** (1) rooms, codes and a shared leaderboard of practice bests; (2) the real calendar and the daily ride limit; (3) shared race days with merged sheets; (4) ride replays for fair play, and notifications. Step 1 is about a week's work with Supabase; each later step builds on it.
+
 ### Later (not in this plan)
 Budget and economy, kit with performance effects, shop (America toboggan, suits, helmets), races on real calendar dates, splits display, ghost of your best run (the deterministic sim makes this cheap), online leaderboards, app-store wrap.
 

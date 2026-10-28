@@ -212,6 +212,8 @@ export class CareerMode {
   private newGame() {
     this.select.onDone = (sel) => {
       const c = newCareer(newId(), nextGameName(), sel.rider);
+      // For now, to show off the trophy room: Adelaide starts with every trophy in it.
+      if (sel.rider === 'adelaide') c.showcase = true;
       this.career = c;
       this.save();
       this.onRider({ rider: c.rider, toboggan: 'traditional' });
@@ -306,7 +308,7 @@ export class CareerMode {
       .map((r) => `<div><span>${dateOf(r.day).short} · ${r.name}</span><b>${r.start === 'top' ? 'Top' : 'Jct'} · ${r.kind === 'major' ? 'Scr' : 'H’cap'}</b></div>`)
       .join('') || '<div class="muted">The season is over: next season starts on 17 December.</div>';
     // The trophy room is for members: the record, and what they've won.
-    $('hub-trophies').hidden = !c.member;
+    $('hub-trophies').hidden = !c.member && !c.showcase;
     const won = c.results.filter((r) => r.position === 1).length;
     $('hub-record').textContent = c.results.length ? `${c.results.length} race${c.results.length > 1 ? 's' : ''}, ${won} won${c.gnWon ? ' · Grand National winner' : ''}` : '';
     this.show('hub');
