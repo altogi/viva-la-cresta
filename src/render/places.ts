@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { Track } from '../sim/track';
 import { lips, surfaceAt } from '../sim/surface';
 import type { Terrain } from './terrain';
+import { groundHeight } from './ground';
 import { toThree } from './util';
 import { OSM_IDS, OSM_NEAR } from '../track/osm';
 
@@ -42,11 +43,15 @@ export function platformFrame(track: Track, terrain: Terrain): THREE.Object3D {
 export function finishPlaces(track: Track, terrain: Terrain) {
   const end = track.length;
   const lip = lipAt(track, end - 3, 'left');
+  // On the drawn snow, whichever is higher there: the levelled ground or the run's embankment.
+  const hut = besideRun(track, terrain, end - 10, lip + 4.6);
+  hut.position.y = groundHeight(track, terrain, hut.position.x, hut.position.z);
+  hut.updateMatrixWorld(true);
   return {
     end,
     exitS: end - 3.2,
     lip,
-    hut: besideRun(track, terrain, end - 10, lip + 4.6),
+    hut,
     technician: { s: end - 2.2, u: lip + 0.9 },
   };
 }

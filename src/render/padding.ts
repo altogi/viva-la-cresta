@@ -1,7 +1,7 @@
 // The fall zone beyond Shuttlecock, from the photographs: a bed of straw along the run's outer lip,
 // a strip of snow, then two staggered rows of padded red vinyl mats (white labels, seams, snow on
 // top), and behind them a wall of yellow timber boards. The mats are heavy but loose: a rider who
-// flies out smashes into them, shoves them back and tips them, and drops into the straw.
+// flies out smashes into them and sends them flying (they're light foam), and drops into the straw.
 
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
@@ -14,7 +14,8 @@ import { groundHeight } from './ground';
 
 /** Distances out from the run's outer lip (m). */
 export const PADDING = { straw: 2.4, front: 3.1, back: 4.3, fence: 5.5 };
-const MAT = { length: 2.6, height: 1.1, depth: 0.75, mass: 90 };
+const MAT = { length: 2.6, height: 1.1, depth: 0.75, mass: 8 };
+const GRAVITY = 9.81;
 
 interface Mat {
   mesh: THREE.Object3D;
@@ -23,11 +24,14 @@ interface Mat {
   heading: number;
   /** Outward (away from the run) in the horizontal plane. */
   out: THREE.Vector3;
-  /** Shoved this far back, and tipped this far over (radians), and how fast each is changing. */
-  shove: number;
+  /** Where it is now, how fast it's going, and how far it has tumbled over and spun round (radians). */
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
   tip: number;
-  shoveV: number;
   tipV: number;
+  spin: number;
+  spinV: number;
+  moving: boolean;
 }
 
 export class Padding {
@@ -136,7 +140,7 @@ export class Padding {
         mesh.rotation.y = heading;
         this.group.add(mesh);
         const outDir = toThree([-st.left[0], -st.left[1], 0]).normalize();
-        this.mats.push({ mesh, home, heading, out: outDir, shove: 0, tip: 0, shoveV: 0, tipV: 0 });
+        this.mats.push({ mesh, home, heading, out: outDir, pos: home.clone(), vel: new THREE.Vector3(), tip: 0, tipV: 0, spin: 0, spinV: 0, moving: false });
       }
     }
     const boardGeo = new THREE.BoxGeometry(3.25, 1.9, 0.12);
@@ -167,72 +171,91 @@ export class Padding {
   }
 
   /**
-   * A tumbling body (a sphere of `radius` at `pos`, moving at `vel`) against the mats: pushed back
-   * out of any it has run into, giving the mat some of its momentum (it slides back and tips), and
-   * losing most of its own.
+   * A tumbling body (a sphere of `radius` at `pos`, moving at `vel`) against the mats: the mats are
+   * light foam, so they take the blow and fly off, tumbling, while the body only loses a little.
    */
   collide(pos: THREE.Vector3, vel: THREE.Vector3, radius: number, mass: number): boolean {
     let hit = false;
     const local = new THREE.Vector3();
+    const upAxis = new THREE.Vector3(0, 1, 0);
     for (const m of this.mats) {
       if (Math.abs(m.mesh.position.x - pos.x) > 3 || Math.abs(m.mesh.position.z - pos.z) > 3) continue;
-      // Into the mat's own frame (x along it, z across it, y up), allowing for its shove and tip.
+      // Into the mat's own frame (x along it, z across it, y up).
       local.copy(pos).sub(m.mesh.position);
-      local.applyAxisAngle(new THREE.Vector3(0, 1, 0), -m.heading);
+      local.applyAxisAngle(upAxis, -(m.heading + m.spin));
       const hx = MAT.length / 2 + radius;
       const hy = MAT.height / 2 + radius;
       const hz = MAT.depth / 2 + radius;
       if (Math.abs(local.x) > hx || Math.abs(local.y) > hy || Math.abs(local.z) > hz) continue;
-      // Out the way it came: through the face nearest the run (or over the top if it's above it).
-      const speedIn = Math.max(0, vel.dot(m.out));
-      if (local.y > MAT.height / 2 - 0.1 && vel.y < 0) {
-        pos.y += hy - local.y;
-        vel.y = Math.abs(vel.y) * 0.2;
-      } else {
-        const push = hz - Math.abs(local.z);
-        // Back out towards the run.
-        pos.addScaledVector(m.out, -push);
-        // The mat takes the blow: slides back and tips over, heavy as it is.
-        const impulse = (mass * speedIn) / (mass + MAT.mass);
-        m.shoveV += impulse * 0.9;
-        m.tipV += impulse * (local.y + MAT.height / 2) * 0.9;
-        vel.addScaledVector(m.out, -speedIn * 1.25);
-      }
-      vel.x *= 0.6;
-      vel.z *= 0.6;
+      // How fast the body closes on the mat.
+      const rel = vel.clone().sub(m.vel);
+      const speedIn = Math.max(0, rel.dot(m.out));
+      if (speedIn < 0.3 && rel.y > -0.3) continue;
+      // An elastic-ish knock between a heavy body and a light mat: the mat leaves at nearly twice
+      // the body's speed, up and away, tumbling and slewing round.
+      const share = (2 * mass) / (mass + MAT.mass);
+      const kick = speedIn * share * 0.55;
+      m.vel.addScaledVector(m.out, kick);
+      m.vel.x += vel.x * 0.35 - m.out.x * vel.dot(m.out) * 0.35;
+      m.vel.z += vel.z * 0.35 - m.out.z * vel.dot(m.out) * 0.35;
+      m.vel.y += 1.5 + kick * 0.35 + Math.max(0, -vel.y) * 0.3;
+      m.tipV += kick * 0.45 * (local.y > 0 ? 1 : 0.6);
+      m.spinV += (Math.random() - 0.5) * kick * 0.8 + local.x * kick * 0.3;
+      m.moving = true;
+      // The body loses only what the mat carries off.
+      vel.addScaledVector(m.out, -speedIn * ((2 * MAT.mass) / (mass + MAT.mass)));
+      vel.x *= 0.9;
+      vel.z *= 0.9;
       hit = true;
     }
     return hit;
   }
 
-  /** Mats that were hit slide to a stop and settle (tipping back if not too far over). */
+  /** Mats in the air fly and tumble; on the snow they bounce, slide and settle on a face. */
   update(dt: number) {
     for (const m of this.mats) {
-      if (m.shoveV === 0 && m.tipV === 0 && m.shove === 0 && m.tip === 0) continue;
-      m.shove = Math.min(1.4, m.shove + m.shoveV * dt);
-      m.shoveV *= Math.exp(-dt * 4);
-      if (Math.abs(m.shoveV) < 0.01) m.shoveV = 0;
+      if (!m.moving) continue;
+      m.vel.y -= GRAVITY * dt;
+      m.pos.addScaledVector(m.vel, dt);
       m.tip += m.tipV * dt;
-      // Heavy and soft: tips settle back unless pushed past about 40 degrees.
-      const back = m.tip < 0.7 ? -m.tip * 6 : 0;
-      m.tipV = (m.tipV + back * dt) * Math.exp(-dt * 3);
-      m.tip = Math.max(0, Math.min(1.3, m.tip));
-      if (Math.abs(m.tipV) < 0.005 && m.tip < 0.01) {
-        m.tipV = 0;
-        m.tip = 0;
+      m.spin += m.spinV * dt;
+      // Lying on its side it is lower: from half its height standing to half its depth on its back.
+      const lying = Math.abs(Math.sin(m.tip));
+      const rest = this.ground(m.pos.x, -m.pos.z) + (MAT.height / 2) * (1 - lying) + (MAT.depth / 2) * lying;
+      if (m.pos.y <= rest) {
+        m.pos.y = rest;
+        if (m.vel.y < -1.2) {
+          m.vel.y *= -0.3;
+          m.tipV *= 0.6;
+        } else {
+          m.vel.y = 0;
+          // Settling flat on whichever face is nearest the snow.
+          const face = Math.round(m.tip / (Math.PI / 2)) * (Math.PI / 2);
+          m.tipV = m.tipV * Math.exp(-dt * 6) + (face - m.tip) * 10 * dt;
+        }
+        const f = Math.exp(-dt * 4);
+        m.vel.x *= f;
+        m.vel.z *= f;
+        m.spinV *= f;
+        if (m.vel.lengthSq() < 0.0004 && Math.abs(m.tipV) < 0.02 && Math.abs(m.spinV) < 0.02) {
+          m.vel.set(0, 0, 0);
+          m.tipV = m.spinV = 0;
+          m.moving = false;
+        }
       }
-      m.mesh.position.copy(m.home).addScaledVector(m.out, m.shove);
-      // Tipping about the bottom edge furthest from the run.
-      m.mesh.rotation.set(0, m.heading, 0);
+      m.mesh.position.copy(m.pos);
+      m.mesh.rotation.set(0, m.heading + m.spin, 0);
       m.mesh.rotateX(-m.tip);
-      m.mesh.position.y = m.home.y - (MAT.height / 2) * (1 - Math.cos(m.tip)) + (MAT.depth / 2) * Math.sin(m.tip) * 0.3;
     }
   }
 
   /** All back as they were, for the next ride. */
   reset() {
     for (const m of this.mats) {
-      m.shove = m.tip = m.shoveV = m.tipV = 0;
+      m.pos.copy(m.home);
+      m.vel.set(0, 0, 0);
+      m.tip = m.tipV = m.spin = m.spinV = 0;
+      m.moving = false;
       m.mesh.position.copy(m.home);
       m.mesh.rotation.set(0, m.heading, 0);
     }

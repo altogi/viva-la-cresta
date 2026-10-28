@@ -33,6 +33,8 @@ export interface Bend {
   floorWidth?: number;
   /** What lies beyond the outer lip. */
   runoff?: 'snow' | 'straw';
+  /** Metres over which the walls ease back to a straight's after the bend (BEND_EXIT_BLEND if not given). */
+  exitBlend?: number;
 }
 
 export interface Landmark {
@@ -117,7 +119,7 @@ const low: WallShape = { radius: 0.4, height: 0.6 };
 export const BENDS: Bend[] = [
   { name: 'Curzon', s0: 157, s1: 202, turn: 43, outer: { radius: 3.0, height: 3.6 }, inner: low },
   { name: 'Brabazon', s0: 209, s1: 250, turn: -28, outer: { radius: 2.5, height: 2.6 }, inner: low },
-  { name: 'Thoma', s0: 253, s1: 305, turn: 47, outer: { radius: 3.2, height: 2.6 }, inner: low },
+  { name: 'Thoma', s0: 253, s1: 305, turn: 47, outer: { radius: 3.2, height: 2.6 }, inner: low, exitBlend: 30 },
   { name: 'Rise', s0: 430, s1: 484, turn: -41, outer: { radius: 2.5, height: 1.6 }, inner: low },
   { name: 'Battledore', s0: 485, s1: 557, turn: -38, outer: { radius: 3.0, height: 2.0 }, inner: low },
   {
@@ -134,7 +136,7 @@ export const BENDS: Bend[] = [
   { name: 'Bulpetts', s0: 862, s1: 905, turn: -14, outer: { radius: 2.0, height: 1.6 }, inner: low },
   { name: 'Scylla', s0: 988, s1: 1040, turn: 23.5, outer: { radius: 2.0, height: 1.7 }, inner: low },
   // Sharp and high: a rider has to take it up the bank, not slide through.
-  { name: 'Charybdis', s0: 1071, s1: 1121, turn: -33, outer: { radius: 2.8, height: 2.7 }, inner: low },
+  { name: 'Charybdis', s0: 1071, s1: 1121, turn: -33, outer: { radius: 2.8, height: 2.7 }, inner: low, exitBlend: 34 },
   // Past the finish: a long left bend up the run-out, then a sharp left hook to the cushion.
   { name: 'Run-out', s0: 1273, s1: 1368, turn: 45, outer: { radius: 3.0, height: 1.8 }, inner: low },
   { name: 'Finish curve', s0: 1369, s1: 1402, turn: 133, outer: { radius: 3.0, height: 3.2 }, inner: low, floorWidth: 1.8 },

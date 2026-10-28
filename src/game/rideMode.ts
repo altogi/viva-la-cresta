@@ -133,7 +133,7 @@ export class RideMode {
   weatherView: WeatherView | null = null;
   /** The loose padded mats beyond Shuttlecock's straw. */
   padding: Padding | null = null;
-  /** The Steinbock that wanders onto the ice after Shuttlecock one ride in a hundred. */
+  /** The Steinbock that wanders onto the ice after Shuttlecock one ride in two hundred. */
   steinbock: Steinbock | null = null;
   /** Debug: always have him there (?steinbock). */
   alwaysSteinbock = false;
@@ -271,8 +271,8 @@ export class RideMode {
     const weather = setup.career ? setup.career.weather ?? null : freeRideWeather();
     this.weatherView?.set(weather);
     this.moods = setup.career?.noLuck ? [] : rollMoods();
-    // One ride in a hundred, a Steinbock on the ice below Shuttlecock (only for rides that get there).
-    this.steinbockOut = !!this.steinbock && setup.startS < STEINBOCK_S && (this.alwaysSteinbock || Math.random() < 0.01);
+    // One ride in two hundred, a Steinbock on the ice below Shuttlecock (only for rides that get there).
+    this.steinbockOut = !!this.steinbock && setup.startS < STEINBOCK_S && (this.alwaysSteinbock || Math.random() < 0.005);
     if (this.steinbock) {
       if (this.steinbockOut) {
         this.steinbock.place();

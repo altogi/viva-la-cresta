@@ -60,9 +60,7 @@ const debug = params.has('debug');
 if (debug) document.body.classList.add('debug');
 
 const RIDES: Record<string, RideSetup> = {
-  'junction-lying': { startS: JUNCTION_S, start: 'lying', label: 'Junction · lying start' },
   'junction-running': { startS: JUNCTION_S, start: 'running', steps: 7, label: 'Junction · running start' },
-  'top-lying': { startS: 0, start: 'lying', label: 'Top · lying start' },
   'top-running': { startS: 0, start: 'running', steps: 7, label: 'Top · running start' },
 };
 

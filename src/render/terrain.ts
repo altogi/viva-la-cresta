@@ -130,8 +130,8 @@ export class Terrain {
     }
     if (signedArea(ring) < 0) ring.reverse();
     // Level just round it, easing away over a wide margin, so no shelf stands out seen from the run.
-    // At the embankment's height beside the run, so the path, the embankment and the pad meet flush.
-    this.pads.push({ ring, z: st.pos[2] + 0.5, flat: 2, edge: 14 });
+    // Just over the embankment's crest beside the run, so the pad is the snow the hut and its riders stand on.
+    this.pads.push({ ring, z: st.pos[2] + 0.64, flat: 2, edge: 14 });
     this.mesh = this.build();
   }
 

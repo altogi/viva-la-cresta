@@ -38,6 +38,8 @@ export type StartStyle = 'lying' | 'running';
 
 /** The highest a rider can ride up a bank's wall (radians from the floor): never vertical. */
 export const MAX_CLIMB = 1.22;
+/** How high up a bank's wall a rider can ride once the bend has stopped turning (radians). */
+export const EXIT_CLIMB = 0.95;
 export type Phase = 'waiting' | 'running' | 'riding' | 'finished' | 'fallen';
 export type FallKind = 'fly-out' | 'over-wall' | 'crash' | 'wall' | 'steinbock';
 
@@ -95,6 +97,10 @@ export interface RideOptions {
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const smooth01 = (x: number) => {
+  const t = clamp(x, 0, 1);
+  return t * t * (3 - 2 * t);
+};
 
 export class RideSim {
   readonly state: RideState;
@@ -275,15 +281,19 @@ export class RideSim {
   /**
    * No riding a bank's wall at vertical: once a rider is as high as MAX_CLIMB, their outward speed is
    * spent and they come back down it. (Low banks whose lip comes first can still throw them out.)
+   * Where the bend stops turning there is nothing to hold them up there, so the limit comes down to
+   * EXIT_CLIMB; and it follows a bank tapering into a straight's square wall all the way down, so no
+   * one is left on its vertical face.
    */
   private capClimb(section: ReturnType<Track['section']>) {
     const st = this.state;
     const side = st.u >= 0 ? 1 : -1;
     const wall = side > 0 ? section.left : section.right;
-    if (wall.radius < 0.3) return;
     const phiMax = wall.height <= wall.radius ? Math.acos(1 - wall.height / wall.radius) : Math.PI / 2;
-    if (phiMax <= MAX_CLIMB) return;
-    const limit = section.floorWidth / 2 + wall.radius * MAX_CLIMB;
+    const turning = smooth01((Math.abs(this.track.curvature(st.s)) - 0.004) / 0.01);
+    const cap = EXIT_CLIMB + (MAX_CLIMB - EXIT_CLIMB) * turning;
+    if (phiMax <= cap) return;
+    const limit = section.floorWidth / 2 + wall.radius * cap;
     if (Math.abs(st.u) <= limit) return;
     st.u = side * limit;
     if (st.w * side > 0) {

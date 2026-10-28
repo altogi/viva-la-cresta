@@ -792,7 +792,7 @@ export class Crowd {
   /** A point on the ground in the finish hut's frame (Blender's: x down the run, y away from it). */
   private atHut(x: number, y: number): THREE.Vector3 {
     const p = new THREE.Vector3(x, 0, -y).applyMatrix4(this.hutFrame!.matrixWorld);
-    p.y = this.terrain.height(p.x, -p.z);
+    p.y = groundHeight(this.track, this.terrain, p.x, p.z);
     return p;
   }
 
