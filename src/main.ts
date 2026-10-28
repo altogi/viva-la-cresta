@@ -6,6 +6,7 @@ import { JUNCTION_S } from './track/cresta';
 import { createWorld } from './render/world';
 import { buildTrackMesh } from './render/trackMesh';
 import { finishGround } from './render/finishGround';
+import { TrophyRoom } from './game/trophyRoom';
 import { Terrain } from './render/terrain';
 import { buildScenery } from './render/scenery';
 import { loadAssets } from './render/assets';
@@ -128,7 +129,9 @@ async function start() {
   };
   showChoice(chosen);
 
-  type Mode = 'intro' | 'saves' | 'hub' | 'menu' | 'ride' | 'viewer' | 'select';
+  type Mode = 'intro' | 'saves' | 'hub' | 'menu' | 'ride' | 'viewer' | 'select' | 'trophies';
+  const trophyRoom = new TrophyRoom(world.renderer, assets.models.balloon);
+  if (debug) Object.assign(window, { trophyRoom });
   let mode: Mode = 'intro';
   /** Where the track viewer goes back to. */
   let viewerReturn: Mode = 'saves';
@@ -136,10 +139,12 @@ async function start() {
   let onMode: (() => void) | null = null;
   const setMode = (next: Mode) => {
     if (mode === 'select' && next !== 'select') select.close();
+    if (mode === 'trophies' && next !== 'trophies') trophyRoom.close();
     mode = next;
     document.body.classList.toggle('in-menu', next === 'menu');
     document.body.classList.toggle('viewing', next === 'viewer');
     document.body.classList.toggle('selecting', next === 'select');
+    document.body.classList.toggle('trophy-room', next === 'trophies');
     for (const screen of ['intro', 'saves', 'hub']) document.body.classList.toggle(`screen-${screen}`, next === screen);
     // The rider flies down the run behind the menus.
     const attract = next === 'menu' || next === 'intro' || next === 'saves' || next === 'hub';
@@ -164,6 +169,11 @@ async function start() {
     (sel) => setGhost(sel),
   );
   if (debug) Object.assign(window, { career });
+  career.onTrophies = (c) => {
+    setMode('trophies');
+    trophyRoom.open(c);
+  };
+  trophyRoom.onClose = () => career.hub();
   for (const img of document.querySelectorAll<HTMLImageElement>('.badge, .badge-small')) clearBadgeBackground(img);
   // Phones only let sound start from a touch, and pause it again after a call, the lock screen or
   // a switch of app: any touch, click or key anywhere wakes it.
@@ -269,12 +279,18 @@ async function start() {
   let fpsTime = 0;
   world.renderer.setAnimationLoop(() => {
     const dt = Math.min(clock.getDelta(), 0.1);
-    if (mode === 'ride') ride.update(dt);
-    else if (mode === 'select') select.update(dt);
-    else viewer.update(dt);
-    crowd.update(dt, mode === 'ride' ? ride.riderPosition : null);
-    weather.update(dt);
-    world.renderer.render(world.scene, world.camera);
+    if (mode === 'trophies') {
+      // The trophy room is a scene of its own, on the Sunny Bar's terrace.
+      trophyRoom.update(dt);
+      world.renderer.render(trophyRoom.scene, trophyRoom.camera);
+    } else {
+      if (mode === 'ride') ride.update(dt);
+      else if (mode === 'select') select.update(dt);
+      else viewer.update(dt);
+      crowd.update(dt, mode === 'ride' ? ride.riderPosition : null);
+      weather.update(dt);
+      world.renderer.render(world.scene, world.camera);
+    }
     if (debug) {
       frames++;
       fpsTime += dt;

@@ -408,7 +408,7 @@ export class SelectMode {
 }
 
 /** Two chunky red chevrons, a little glossy, with a hint of glow so they read against snow. */
-function buildArrows(): THREE.Group {
+export function buildArrows(): THREE.Group {
   const group = new THREE.Group();
   const shape = new THREE.Shape();
   // A chevron pointing right (+x), about 0.34 m tall.

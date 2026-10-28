@@ -1,0 +1,121 @@
+// What a rider has to show for a season: their record (rides, best times, the clubs of the banks
+// they've come off at) and the trophies they've won, each the club's own where it's known.
+
+import { CLUBS, dateOf, type Career, type Start } from './career';
+import { raceById } from './races';
+
+/** The trophy models (trophies.glb holds `trophy_<id>`). */
+export type TrophyModel =
+  | 'curzon' | 'cresta' | 'gunter-sachs' | 'grand-national' | 'morgan' | 'brabazon'
+  | 'calisch' | 'coppa-italia' | 'willoughby' | 'bartley-bear' | 'urn' | 'cup' | 'flared';
+
+/** The races whose trophies are known, and what each is. */
+export const KNOWN_TROPHIES: Record<string, { model: TrophyModel; text: string }> = {
+  curzon: { model: 'curzon', text: 'A gold cup with a domed lid and scrolled handles: the oldest of the colour races.' },
+  'gunter-sachs': { model: 'gunter-sachs', text: 'A tall gold vase with high loop handles, on a banded wooden base.' },
+  'grand-national': { model: 'grand-national', text: 'The silver tankard, lid, spout and all, on its stack of silver and ebony. The oldest race on the Cresta.' },
+  morgan: { model: 'morgan', text: 'A tall flared silver cup on a black block, scrolls at the rim.' },
+  brabazon: { model: 'brabazon', text: 'A gold toboggan on a wooden plinth, the winners on its silver plaques since 1966.' },
+  'junction-calisch': { model: 'calisch', text: 'The Graubünden Steinbock in silver, the canton\'s beast, horns swept back over his shoulders.' },
+  'coppa-italia': { model: 'coppa-italia', text: 'A wild boar in silver, tusks up, bristling.' },
+  willoughby: { model: 'willoughby', text: 'A silver kukri, laid on its wooden stand.' },
+  'bartley-bear': { model: 'bartley-bear', text: 'The bear himself, carved in wood. The first race of the season.' },
+};
+
+/** The four colour races: fireworks over the lake for these. */
+export const COLOUR_RACES = ['curzon', 'brabazon', 'morgan', 'grand-national'];
+
+const STANDARD: TrophyModel[] = ['urn', 'cup', 'flared'];
+
+/** The trophy for a race: its own where known, else one of the standard ornate cups (always the same one). */
+export function trophyFor(raceId: string): { model: TrophyModel; text: string } {
+  const known = KNOWN_TROPHIES[raceId];
+  if (known) return known;
+  let h = 0;
+  for (const ch of raceId) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return { model: STANDARD[h % STANDARD.length], text: 'Silver, engraved with the names of the riders who won it before you.' };
+}
+
+/** What each bank's club says about its members. */
+export const CLUB_LORE: Record<string, string> = {
+  Curzon: 'Came off at the first great bank from Top. A select few.',
+  Brabazon: 'Out of the left-hander at the foot of Curzon. Quietly distinguished.',
+  Thoma: 'The bank before Junction: the second most crowded club on the run.',
+  Rise: 'Thrown out of Rise. Rarer than you might think.',
+  Battledore: 'Battledore, the bank before the famous one. Mostly late riders.',
+  Shuttlecock: 'Over the top into the straw: the most popular club on the Cresta, with its own tie.',
+  Stream: 'Out of Stream at full speed. Nobody joins twice.',
+  Bulpetts: 'Off at Bulpetts, under the road bridge. A curious few.',
+  Scylla: 'Scylla, at seventy miles an hour. A dangerous club to be in.',
+  Charybdis: 'Charybdis, just short of the finish. Membership comes with a limp.',
+};
+
+export interface RiderRecord {
+  junctionRides: number;
+  topRides: number;
+  bestJunction: number | null;
+  bestTop: number | null;
+  clubs: string[];
+}
+
+/** The rider's record: rides from each start, their best times, and their clubs (in the run's order). */
+export function riderRecord(c: Career): RiderRecord {
+  const count = (start: Start) => c.rideCounts?.[start] ?? c.rides.filter((r) => r.start === start).length;
+  const best = (start: Start) => {
+    const times = Object.entries(c.best)
+      .filter(([k, v]) => k.startsWith(`${start}-`) && typeof v === 'number')
+      .map(([, v]) => v as number);
+    return times.length ? Math.min(...times) : null;
+  };
+  const fell = new Set([...(c.clubs ?? []), ...c.rides.map((r) => r.fall).filter((f): f is string => !!f && CLUBS.includes(f))]);
+  return {
+    junctionRides: count('junction'),
+    topRides: count('top'),
+    bestJunction: best('junction'),
+    bestTop: best('top'),
+    clubs: CLUBS.filter((club) => fell.has(club)),
+  };
+}
+
+export interface Win {
+  raceId: string;
+  name: string;
+  note?: string;
+  season: number;
+  date: string;
+  /** Aggregate of all the courses, and net of handicap for a handicap race. */
+  total: number;
+  net: number | null;
+  of: number;
+  model: TrophyModel;
+  text: string;
+  colours: boolean;
+}
+
+/** The races the rider has won, in the order they were won. */
+export function wins(c: Career): Win[] {
+  return c.results
+    .filter((r) => r.position === 1 && r.total !== null)
+    .map((r) => {
+      const race = raceById(r.raceId);
+      const day = r.day ?? (race ? race.day + race.days - 1 : 0);
+      const d = dateOf(day, r.season);
+      const trophy = trophyFor(r.raceId);
+      return {
+        raceId: r.raceId,
+        name: race?.name ?? r.raceId,
+        note: race?.note,
+        season: r.season,
+        day,
+        date: `${d.label} ${d.year}`,
+        total: r.total!,
+        net: race?.kind === 'handicap' ? r.net : null,
+        of: r.of,
+        model: trophy.model,
+        text: trophy.text,
+        colours: COLOUR_RACES.includes(r.raceId),
+      };
+    })
+    .sort((a, b) => a.season - b.season || a.day - b.day)
+    .map(({ day: _day, ...w }) => w);
+}

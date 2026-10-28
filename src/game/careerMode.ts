@@ -15,6 +15,7 @@ import {
   nextPractice,
   noteBest,
   recordPractice,
+  noteRide,
   RIDES_PER_DAY,
   startConversion,
   type Career,
@@ -22,6 +23,7 @@ import {
 } from '../career/career';
 import { CALENDAR, RACES, cannotEnter, fallCode, fastestOfDay, npcField, playerEntrant, raceOn, standings, standingsAfter, upcoming, type Entrant, type Race } from '../career/races';
 import { deleteCareer, loadSaves, newId, nextGameName, storeCareer } from '../career/saves';
+import { CLUB_LORE } from '../career/trophies';
 import { Coach, fallAdvice } from './coach';
 import type { RideMode, RideResult, RideSetup } from './rideMode';
 import { temperatureFor, WEATHER, weatherFor } from './conditions';
@@ -35,6 +37,8 @@ export type Screen = 'intro' | 'saves' | 'hub' | 'select' | 'ride';
 
 export class CareerMode {
   private career: Career | null = null;
+  /** Open the trophy room for this career. */
+  onTrophies: (c: Career) => void = () => {};
 
   constructor(
     private readonly ride: RideMode,
@@ -54,6 +58,7 @@ export class CareerMode {
     });
     $('hub-games').addEventListener('click', () => this.saves());
     $('hub-calendar').addEventListener('click', () => this.openCalendar());
+    $('hub-trophies').addEventListener('click', () => this.career && this.onTrophies(this.career));
     $('day-go').addEventListener('click', () => ($('day').hidden = true));
     $('cal-close').addEventListener('click', () => document.body.classList.remove('calendar-open'));
     $('cal-prev').addEventListener('click', () => this.drawCalendar(this.calMonth - 1));
@@ -300,6 +305,8 @@ export class CareerMode {
     $('hub-races').innerHTML = upcoming(c.day)
       .map((r) => `<div><span>${dateOf(r.day).short} · ${r.name}</span><b>${r.start === 'top' ? 'Top' : 'Jct'} · ${r.kind === 'major' ? 'Scr' : 'H’cap'}</b></div>`)
       .join('') || '<div class="muted">The season is over: next season starts on 17 December.</div>';
+    // The trophy room is for members: the record, and what they've won.
+    $('hub-trophies').hidden = !c.member;
     const won = c.results.filter((r) => r.position === 1).length;
     $('hub-record').textContent = c.results.length ? `${c.results.length} race${c.results.length > 1 ? 's' : ''}, ${won} won${c.gnWon ? ' · Grand National winner' : ''}` : '';
     this.show('hub');
@@ -351,6 +358,9 @@ export class CareerMode {
         moments.push(() => this.modal('Your first ride!', `Down in ${result.time!.toFixed(2)} s. Next, a short running start: one, two, flop. Then the full running start. Ride well and Tower will notice.`, [{ label: 'Carry on', primary: true, run: next }]));
       if (setup.first && result.fall)
         moments.push(() => this.modal('Back to Junction', 'Every Cresta rider has been where you are now. Your first ride starts again, and the guide picks up where you fell.', [{ label: 'Try again', primary: true, run: next }]));
+      // Off at a bank for the first time: into its club (shown in the trophy room).
+      if (outcome.club && c.member)
+        moments.push(() => this.modal(`The ${outcome.club} Club`, `${CLUB_LORE[outcome.club!]}<br><br>Welcome to the club. Your membership is on the board in your trophy room.`, [{ label: 'Hmm. Thanks', primary: true, run: next }]));
       if (outcome.joined)
         moments.push(() =>
           this.modal(
@@ -443,6 +453,7 @@ export class CareerMode {
       entry.times[entry.raceDay][entry.course] = time;
       entry.speeds[entry.raceDay][entry.course] = result?.speed ?? 0;
       c.rides.push({ day: c.day, season: c.season, start: race.start, toboggan, style: 'running', time, fall: result?.fall?.zone ?? (result ? null : 'Retired'), speed: result?.speed ?? 0, race: race.id });
+      if (result) noteRide(c, race.start, result.fall?.zone ?? null);
       if (time !== null) noteBest(c, race.start, toboggan, time);
       if (result?.fall) c.seenFallHelp = true;
       if (time === null) {
@@ -522,7 +533,7 @@ export class CareerMode {
     const entry = c.race!;
     const rows = standings(race, field, entry.dq ? Math.max(1, entry.raceDay + 1) : race.days);
     const me = rows.find((r) => r.entrant.player)!;
-    c.results.push({ raceId: race.id, season: c.season, position: entry.dq ? null : me.rank, of: rows.filter((r) => r.rank !== null).length, total: me.total, net: me.net });
+    c.results.push({ raceId: race.id, season: c.season, position: entry.dq ? null : me.rank, of: rows.filter((r) => r.rank !== null).length, total: me.total, net: me.net, day: c.day });
     c.race = null;
     const wonGN = race.id === 'grand-national' && me.rank === 1 && !entry.dq;
     if (wonGN) c.gnWon = true;

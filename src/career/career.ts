@@ -48,6 +48,8 @@ export interface RaceResult {
   of: number;
   total: number | null;
   net: number | null;
+  /** Season day the race finished on. */
+  day?: number;
 }
 
 export interface Career {
@@ -83,6 +85,25 @@ export interface Career {
   calendar?: number;
   /** The last day whose morning screen was shown ("season-day"). */
   dayShown?: string;
+  /** Every ride ever ridden from each start (the ride log itself keeps only the last few hundred). */
+  rideCounts?: Record<Start, number>;
+  /** The banks the rider has fallen at: a member of each one's club. */
+  clubs?: string[];
+}
+
+/** The banks with a club for those who have come off in them. */
+export const CLUBS = ['Curzon', 'Brabazon', 'Thoma', 'Rise', 'Battledore', 'Shuttlecock', 'Stream', 'Bulpetts', 'Scylla', 'Charybdis'];
+
+/** Count a ride (practice or race) from a start, and a fall at a bank as joining its club. */
+export function noteRide(c: Career, start: Start, fall: string | null): string | null {
+  // A career from before the counts began: start them from its ride log (this ride already in it).
+  if (!c.rideCounts) c.rideCounts = { junction: c.rides.filter((r) => r.start === 'junction').length, top: c.rides.filter((r) => r.start === 'top').length };
+  else c.rideCounts[start]++;
+  c.clubs ??= [...new Set(c.rides.slice(0, -1).map((r) => r.fall).filter((f): f is string => !!f && CLUBS.includes(f)))];
+  if (!fall || !CLUBS.includes(fall)) return null;
+  if (c.clubs.includes(fall)) return null;
+  c.clubs.push(fall);
+  return fall;
 }
 
 export const RIDES_PER_DAY = 5;
@@ -209,12 +230,15 @@ export interface RideOutcome {
   /** Something new opened up: 'flattop' or 'top'. */
   unlocked: 'flattop' | 'top' | null;
   newBest: boolean;
+  /** The bank whose club the rider has just joined by falling there. */
+  club: string | null;
 }
 
 /** Record a practice ride and apply the progression rules. */
 export function recordPractice(c: Career, setup: Setup, time: number | null, fall: string | null, speed: number): RideOutcome {
-  const out: RideOutcome = { joined: false, choice: false, unlocked: null, newBest: false };
+  const out: RideOutcome = { joined: false, choice: false, unlocked: null, newBest: false, club: null };
   c.rides.push({ day: c.day, season: c.season, start: setup.start, toboggan: setup.toboggan, style: setup.style, time, fall, speed });
+  out.club = noteRide(c, setup.start, fall);
   if (c.rides.length > 300) c.rides.splice(0, c.rides.length - 300);
   c.ridesToday++;
   c.lastPlayed = Date.now();

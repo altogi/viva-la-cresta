@@ -25,7 +25,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,jpg}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,jpg,webp}'],
         // The club's typefaces (Outfit, Habibi) from Google Fonts, kept for offline play.
         runtimeCaching: [
           {

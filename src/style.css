@@ -2160,3 +2160,147 @@ table.standings tr.gap td {
   border: 0;
   padding: 0;
 }
+
+/* ---------- The trophy room ---------- */
+#trophies {
+  display: none;
+}
+
+body.trophy-room #trophies {
+  display: block;
+}
+
+/* One achievement at a time: swipe sideways to the next. */
+#trophy-cards {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  margin: 0 -16px;
+}
+
+#trophy-cards::-webkit-scrollbar {
+  display: none;
+}
+
+.trophy-card {
+  flex: 0 0 100%;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  padding: 0 16px;
+  color: var(--charcoal);
+  max-height: 34vh;
+  overflow-y: auto;
+}
+
+.trophy-kicker {
+  font-family: var(--display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.trophy-title {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 20px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 2px 0 2px;
+}
+
+.trophy-note,
+.trophy-text,
+.trophy-hint {
+  font-family: var(--serif);
+  font-size: 14px;
+  line-height: 1.35;
+  color: #5a5a5a;
+  margin: 6px 0;
+}
+
+.trophy-kpis {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+
+.trophy-kpis div {
+  background: #fff;
+  border: 1px solid #ebe5d8;
+  border-radius: 6px;
+  padding: 7px 10px;
+}
+
+.trophy-kpis span {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7a7a7a;
+}
+
+.trophy-kpis b {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--charcoal);
+}
+
+.trophy-card h3 {
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin: 12px 0 6px;
+}
+
+.trophy-clubs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trophy-clubs li {
+  padding: 5px 0;
+  border-bottom: 1px solid #efe9dd;
+}
+
+.trophy-clubs b {
+  display: block;
+  font-size: 14px;
+  text-transform: uppercase;
+}
+
+.trophy-clubs span {
+  font-family: var(--serif);
+  font-size: 13px;
+  color: #5a5a5a;
+}
+
+#trophy-dots {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 2px;
+}
+
+#trophy-dots button {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #d8d2c4;
+}
+
+#trophy-dots button.chosen {
+  background: var(--accent);
+  width: 22px;
+  border-radius: 4px;
+}
