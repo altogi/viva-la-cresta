@@ -361,7 +361,85 @@ def front_door(bld, hl, hw):
     bld.box(-1.0, 1.0, -hw - 1.2, -hw, 0.3, 0.6, "stone", bottom=False)
 
 
+# The apartment house beside Shuttlecock: given its own, closer study.
+SHUTTLECOCK_HOUSE = 269
+
+
+def slat_balcony(bld, x0, x1, y, side, z):
+    """A timber balcony along a wall (at y, facing `side`): slab, top and bottom rails, upright slats."""
+    d = 1.35 * side
+    bld.box(x0, x1, min(y, y + d), max(y, y + d), z - 0.14, z, "wood", bottom=True)
+    ry = y + d
+    for z0, z1 in ((z + 0.08, z + 0.16), (z + 0.94, z + 1.04)):
+        bld.box(x0, x1, min(ry, ry - 0.07 * side), max(ry, ry - 0.07 * side), z0, z1, "wood_light", bottom=False)
+    bld.box(x0, x1, min(ry, ry - 0.09 * side), max(ry, ry - 0.09 * side), z + 1.04, z + 1.12, "snow", bottom=False)
+    n = int((x1 - x0) / 0.24)
+    for k in range(n + 1):
+        x = x0 + (x1 - x0) * k / n
+        bld.box(x - 0.035, x + 0.035, min(ry, ry - 0.04 * side), max(ry, ry - 0.04 * side), z + 0.16, z + 0.94, "wood", bottom=False)
+    for xe in (x0, x1):
+        bld.box(xe - 0.05, xe + 0.05, min(y, ry), max(y, ry), z, z + 1.04, "wood", bottom=False)
+
+
+def dormer(bld, x, side, hw, top, pitch_deg):
+    """A little gabled dormer with a window, standing out of the roof slope on one side."""
+    pitch = math.tan(math.radians(pitch_deg))
+    yf = side * hw * 0.55  # front face, partway up the slope
+    zb = top + (hw - abs(yf)) * pitch  # the slope's height there
+    w, h = 0.85, 1.25
+    yb = side * hw * 0.1
+    # Front with a window (one bay of the facade), cheeks, and a little roof under snow.
+    bld.quad((x - w, yf, zb), (x + w, yf, zb), (x + w, yf, zb + h), (x - w, yf, zb + h), "engadin_white", ((0.2, 0.25), (0.8, 0.25), (0.8, 0.85), (0.2, 0.85)))
+    for sx in (-1, 1):
+        bld.quad((x + sx * w, yf, zb), (x + sx * w, yb, zb + (abs(yf) - abs(yb)) * pitch), (x + sx * w, yb, zb + h), (x + sx * w, yf, zb + h), "trim")
+    ridge = zb + h + 0.55
+    for sx in (-1, 1):
+        bld.quad((x + sx * (w + 0.2), yf - side * 0.25, zb + h - 0.1), (x, yf - side * 0.25, ridge), (x, yb, ridge), (x + sx * (w + 0.2), yb, zb + h - 0.1), "snow")
+
+
+def apartment_house(b):
+    """A big Engadin apartment house in two wings: a stone ground floor, plastered storeys with
+    shuttered windows, a timber-clad top floor under a deep, snow-laden roof with dormers and
+    chimneys, and long timber balconies with slatted railings."""
+    bld = Builder()
+    hl0, hw0 = b["length"] / 2, b["width"] / 2
+
+    def wing(cx, cy, hl, hw, levels, balcony_sides):
+        n0 = len(bld.verts)
+        top = 0.6 + levels * FLOOR
+        corners = [(-hl, -hw), (hl, -hw), (hl, hw), (-hl, hw)]
+        for i in range(4):
+            a, c = corners[i], corners[(i + 1) % 4]
+            bld.wall(a, c, -0.5, 1.2, "plinth")
+            bld.wall(a, c, 1.2, top - FLOOR, "engadin_white")
+            bld.wall(a, c, top - FLOOR, top, "chalet_boards")
+        quoins(bld, hl, hw, top - FLOOR)
+        ridge = roof(bld, hl, hw, top, "gabled", 1.6, 28, "chalet_boards", "roof_edge")
+        for side in balcony_sides:
+            for f in range(1, levels):
+                slat_balcony(bld, -hl + 1.2, hl - 1.2, side * hw, side, 0.6 + f * FLOOR)
+        for side in (-1, 1):
+            n = max(1, int(2 * hl / 6.5))
+            for k in range(n):
+                dormer(bld, -hl + (k + 0.5) * 2 * hl / n, side, hw, top, 28)
+        for x in (-hl * 0.55, hl * 0.55):
+            slope_z = ridge - hw * 0.3 * math.tan(math.radians(28))
+            chimney(bld, x, hw * 0.3, top, slope_z + 1.3, "trim")
+        drift(bld, hl, hw)
+        front_door(bld, hl, hw)
+        for i in range(n0, len(bld.verts)):
+            v = bld.verts[i]
+            bld.verts[i] = (v[0] + cx, v[1] + cy, v[2])
+
+    # The long main wing along the front of the footprint, a smaller one behind it.
+    wing(0, -hw0 + 8, hl0, 8, 4, (-1, 1))
+    wing(0, hw0 - 9, min(hl0, 11), 9, 3, (1,))
+    return bld.build(f"bld_{b['i']}")
+
+
 def building(b):
+    if b["i"] == SHUTTLECOCK_HOUSE:
+        return apartment_house(b)
     hl, hw = b["length"] / 2, b["width"] / 2
     style = b["style"]
     # The details that only show close to (distance from the run, m).

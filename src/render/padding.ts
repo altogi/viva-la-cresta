@@ -13,7 +13,7 @@ import { mulberry32, toThree } from './util';
 import { groundHeight } from './ground';
 
 /** Distances out from the run's outer lip (m). */
-export const PADDING = { straw: 3.2, front: 4.9, back: 6.1, fence: 7.3 };
+export const PADDING = { straw: 2.4, front: 3.1, back: 4.3, fence: 5.5 };
 const MAT = { length: 2.6, height: 1.1, depth: 0.75, mass: 90 };
 
 interface Mat {
@@ -45,7 +45,16 @@ export class Padding {
     const snow = new THREE.MeshStandardMaterial({ color: '#f3f6fa', roughness: 0.9 });
     const matGeo = new RoundedBoxGeometry(MAT.length, MAT.height, MAT.depth, 3, 0.12);
     const capGeo = new RoundedBoxGeometry(MAT.length * 0.96, 0.12, MAT.depth * 0.9, 2, 0.05);
-    const straw = new THREE.MeshStandardMaterial({ map: strawTexture(), roughness: 1, color: '#c9a25e' });
+    // Straw photographed beside the run at Shuttlecock (public/textures/straw.jpg), mirrored as it
+    // repeats so no seams show; the drawn one until it has loaded.
+    const straw = new THREE.MeshStandardMaterial({ map: strawTexture(), roughness: 1 });
+    new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/straw.jpg`, (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = tex.wrapT = THREE.MirroredRepeatWrapping;
+      tex.anisotropy = 4;
+      straw.map = tex;
+      straw.needsUpdate = true;
+    });
     const boards = new THREE.MeshStandardMaterial({ map: boardTexture(), roughness: 0.8 });
     const post = new THREE.MeshStandardMaterial({ color: '#8a6a44', roughness: 0.85 });
     const strawPos: number[] = [];
@@ -61,7 +70,7 @@ export class Padding {
         const x = st.pos[0] + st.left[0] * u;
         const y = st.pos[1] + st.left[1] * u;
         strawPos.push(x, this.ground(x, y) + 0.06 + (out < 1 ? 0.04 : 0), -y);
-        strawUv.push(s / 3, v);
+        strawUv.push(s / 2.4, v * 3);
       }
       if (row > 0) {
         const a = (row - 1) * 3;

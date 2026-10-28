@@ -177,7 +177,7 @@ export class Viewer {
     const s = Math.min(f.s, this.track.length);
     const frame = this.track.frame(s);
     const sp = surfaceAt(this.track.section(s), f.u);
-    this.riderModel?.setCastShadow(sp.angle < 0.55);
+    this.riderModel?.castShadowOnSlope(sp.angle);
     toThree(this.track.toWorld(frame, sp.y, sp.z), this.riderPos);
     const up = toThree([frame.left[0] * sp.ny + frame.up[0] * sp.nz, frame.left[1] * sp.ny + frame.up[1] * sp.nz, frame.left[2] * sp.ny + frame.up[2] * sp.nz]).normalize();
     const across = toThree([frame.left[0] * sp.ty + frame.up[0] * sp.tz, frame.left[1] * sp.ty + frame.up[1] * sp.tz, frame.left[2] * sp.ty + frame.up[2] * sp.tz]);

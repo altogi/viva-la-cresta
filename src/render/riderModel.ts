@@ -445,6 +445,11 @@ export class RiderModel {
     });
   }
 
+  /** As setCastShadow, from the steepness of the ice under the rider, with a margin so it doesn't flicker. */
+  castShadowOnSlope(angle: number) {
+    this.setCastShadow(this.casting ? angle < 0.62 : angle < 0.48);
+  }
+
   /** Put the helmet on or take it off (off to celebrate). */
   setHelmet(on: boolean) {
     this.helmet.visible = on && this.look.helmet !== null;
@@ -626,28 +631,28 @@ export class RiderModel {
   private runningTargets(phase: number): Targets {
     const s = this.look.scale;
     // Two dips a stride: one at each foot strike.
-    const bob = -0.04 * Math.abs(Math.sin(phase)) * s;
-    const pelvis = V(-0.46, 0.83 * s + bob, -0.38);
+    const bob = -0.03 * Math.abs(Math.sin(phase)) * s;
+    // Doubled over beside the toboggan, back nearly flat, so the hands reach right down to it.
+    const pelvis = V(-0.5, 0.66 * s + bob, -0.44);
     const stride = (offset: number) => {
       const a = phase + offset;
-      // Forward through the swing (cos > 0), lifting the foot high; back along the ground in contact.
+      // Forward through the swing (cos > 0), lifting the foot; back along the ground in contact.
       const swing = Math.cos(a);
-      return V(pelvis.x - 0.04 + 0.4 * Math.sin(a) * s, 0.04 + Math.max(0, swing) * 0.26 * s, pelvis.z + (offset ? 0.12 : -0.12));
+      return V(pelvis.x - 0.06 + 0.36 * Math.sin(a) * s, 0.04 + Math.max(0, swing) * 0.2 * s, pelvis.z + (offset ? 0.13 : -0.13));
     };
     return {
       pelvis,
-      pitch: 0.62,
-      roll: Math.sin(phase) * 0.05,
+      pitch: 0.2,
+      roll: Math.sin(phase) * 0.04,
       headYaw: 0.1,
-      headTilt: 0.55,
+      headTilt: 0.75,
       headRoll: 0,
-      // Down on the near rail of the toboggan, which runs on the rider's right: the left hand behind,
-      // the right ahead.
-      hands: [V(-0.08, this.handleY + 0.03, -0.22), V(0.36, this.handleY + 0.03, -0.17)],
+      // Both hands on the toboggan's near rail, down at ice level: the left behind, the right ahead.
+      hands: [V(-0.06, this.handleY + 0.01, -0.2), V(0.3, this.handleY + 0.01, -0.17)],
       feet: [stride(0), stride(Math.PI)],
-      elbowPoles: [V(pelvis.x - 0.2, 1.1 * s, -1.1), V(pelvis.x + 0.4, 1.1 * s, 0.2)],
-      // Knees forward and a little out, so they bend the right way as the hips sink.
-      kneePoles: [V(pelvis.x + 1.2, 0.55 * s, pelvis.z - 0.25), V(pelvis.x + 1.2, 0.55 * s, pelvis.z + 0.25)],
+      elbowPoles: [V(pelvis.x - 0.3, 1.0 * s, -1.2), V(pelvis.x + 0.3, 1.0 * s, 0.1)],
+      // Knees forward and a little out, so they bend the right way in the crouch.
+      kneePoles: [V(pelvis.x + 1.2, 0.5 * s, pelvis.z - 0.3), V(pelvis.x + 1.2, 0.5 * s, pelvis.z + 0.3)],
     };
   }
 

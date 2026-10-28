@@ -15,6 +15,7 @@ import { CUTTING, cuttingHeight, finishPlaces, pathBridge, platformFrame, PATH_B
 import { lips, surfaceAt } from '../sim/surface';
 import type { Terrain } from './terrain';
 import { trackSurfaceHeight } from './trackMesh';
+import { groundHeight } from './ground';
 import { colors, mulberry32, toThree, valueNoise } from './util';
 
 const mat = (color: THREE.ColorRepresentation, opts: THREE.MeshStandardMaterialParameters = {}) =>
@@ -336,24 +337,6 @@ function woodNoise(x: number, y: number) {
   return 0.5 + 0.5 * woodNoiseField(x / 90, y / 90);
 }
 
-function signTexture(text: string, bg: string, fg: string, width = 512, height = 96, font = 'bold 56px Georgia, serif') {
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const g = canvas.getContext('2d')!;
-  g.fillStyle = bg;
-  g.fillRect(0, 0, width, height);
-  g.fillStyle = fg;
-  g.font = font;
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText(text, width / 2, height / 2 + 2);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
-}
-
 /** The ornate wooden pavilion at Top, behind the start, on the run's left. */
 /** The Top: the octagonal pavilion behind the start, a level snow platform, the start's back wall and timing box. */
 /** Height of the snow platform round the Top start and hut, relative to the start's ice. */
@@ -587,26 +570,71 @@ function buildTimingEye(ctx: Placer, s: number): THREE.Group {
   return eye;
 }
 
+/** The finish: a red line painted across the ice, and a Swiss flag on a pole at either side of the run. */
 function buildFinish(ctx: Placer): THREE.Group {
   const finish = new THREE.Group();
   const s = TRACK_LENGTH - 0.5;
-  const ext = ctx.extent(s);
-  const banner = new THREE.Mesh(
-    new THREE.PlaneGeometry(ext.left - ext.right + 2, 1),
-    new THREE.MeshBasicMaterial({ map: signTexture('FINISH', '#930303', '#ffffff'), side: THREE.DoubleSide }),
-  );
-  const width = ext.left - ext.right + 2;
-  banner.position.set(0, 3.2, 0);
-  banner.rotation.y = -Math.PI / 2;
-  finish.add(banner);
-  for (const side of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 3.8, 0.25), mat('#930303'));
-    post.position.set(0, 1.9, side * (width / 2));
-    finish.add(post);
+  finish.add(buildStartLine(ctx, s, '#c8102e', 0.09));
+  const pts = ctx.track.crossSection(s);
+  const st = ctx.track.frame(s);
+  const flagTex = swissFlag();
+  for (const lat of [pts[0].y - 1.1, pts[pts.length - 1].y + 1.1]) {
+    const x = st.pos[0] + st.left[0] * lat;
+    const y = st.pos[1] + st.left[1] * lat;
+    const base = new THREE.Vector3(x, groundHeight(ctx.track, ctx.terrain, x, -y), -y);
+    finish.add(wavingFlag(base, 5.5, 1.4, flagTex, Math.atan2(st.forward[1], st.forward[0]) + Math.PI));
   }
-  finish.position.copy(ctx.local(s, (ext.left + ext.right) / 2, 0));
-  finish.rotation.y = ctx.heading(s);
   return finish;
+}
+
+/** A pole with a flag (`w` metres square) flying from its top, rippling; facing back up the run. */
+function wavingFlag(base: THREE.Vector3, height: number, w: number, map: THREE.Texture, heading: number): THREE.Group {
+  const g = new THREE.Group();
+  g.position.copy(base);
+  g.rotation.y = heading;
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.06, height, 10), mat('#f2f2f0', { roughness: 0.5 }));
+  pole.position.y = height / 2;
+  pole.castShadow = true;
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), new THREE.MeshStandardMaterial({ color: '#c9a640', metalness: 0.8, roughness: 0.3 }));
+  ball.position.y = height + 0.06;
+  g.add(pole, ball);
+  const geo = new THREE.PlaneGeometry(w, w, 14, 8);
+  geo.translate(w / 2 + 0.05, height - w / 2 - 0.12, 0);
+  const rest = (geo.attributes.position.array as Float32Array).slice();
+  const flag = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map, roughness: 0.8, side: THREE.DoubleSide }));
+  flag.castShadow = true;
+  const phase = Math.random() * 10;
+  flag.onBeforeRender = () => {
+    const t = performance.now() / 1000 + phase;
+    const pos = geo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const fx = rest[i * 3];
+      const fy = rest[i * 3 + 1];
+      const k = Math.min(1, fx / w);
+      pos.setXYZ(i, fx - k * k * 0.12, fy - k * 0.08, (Math.sin(fx * 2.4 - t * 5 + fy * 0.5) * 0.14 + Math.sin(fx * 4.1 - t * 7.7) * 0.04) * k);
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+  };
+  g.add(flag);
+  return g;
+}
+
+/** The Swiss flag: a white cross on red, square. */
+function swissFlag(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#da291c';
+  g.fillRect(0, 0, 256, 256);
+  g.fillStyle = '#ffffff';
+  // Arms one sixth longer than they are wide, as the federal flag has them.
+  const u = 256 / 32;
+  g.fillRect(13 * u, 6 * u, 6 * u, 20 * u);
+  g.fillRect(6 * u, 13 * u, 20 * u, 6 * u);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
 /** The yellow mat across the end of the run-out at Celerina: it stops the toboggan, the rider slides on. */
@@ -807,12 +835,11 @@ function buildCutting(ctx: Placer): THREE.Group {
 }
 
 /** A snow bank closing the end of the run-out, beyond the mat (and covering the cut in the ground). */
-/** The blue line painted across the ice at a start: where the rider sets off from. */
-function buildStartLine(ctx: Placer, s: number): THREE.Mesh {
+/** A line painted across the ice, up both walls: blue at a start, red at the finish. */
+function buildStartLine(ctx: Placer, s: number, color = '#1f5fd6', half = 0.05): THREE.Mesh {
   const pts = ctx.track.crossSection(s);
   const positions: number[] = [];
   const index: number[] = [];
-  const half = 0.05;
   // Across the floor and up the walls to the lips, just above the ice.
   pts.forEach((p, i) => {
     for (const ds of [-half, half]) {
@@ -828,7 +855,7 @@ function buildStartLine(ctx: Placer, s: number): THREE.Mesh {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.setIndex(index);
   geo.computeVertexNormals();
-  const line = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#1f5fd6', roughness: 0.4, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }));
+  const line = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.4, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }));
   line.receiveShadow = true;
   return line;
 }

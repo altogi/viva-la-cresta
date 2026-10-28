@@ -165,8 +165,32 @@ export class Terrain {
     return z;
   }
 
-  /** Ground height at any horizontal point. */
+  /** The heights at the mesh's grid points, once built (so placements sit on what is drawn). */
+  private grid: { z: Float32Array; nx: number; ny: number } | null = null;
+
+  /**
+   * Ground height at any horizontal point: on the drawn mesh (its triangles cut the corners of the
+   * smooth shape between grid points, and what stands on the ground must stand on those), or the
+   * smooth shape itself before the mesh is built.
+   */
   height(x: number, y: number): number {
+    const g = this.grid;
+    if (g) {
+      const fx = (x - this.bounds.minX) / CELL;
+      const fy = (y - this.bounds.minY) / CELL;
+      const i = Math.floor(fx);
+      const j = Math.floor(fy);
+      if (i >= 0 && j >= 0 && i < g.nx - 1 && j < g.ny - 1) {
+        const u = fx - i;
+        const v = fy - j;
+        const za = g.z[j * g.nx + i];
+        const zb = g.z[j * g.nx + i + 1];
+        const zd = g.z[(j + 1) * g.nx + i];
+        const ze = g.z[(j + 1) * g.nx + i + 1];
+        // The two triangles of the cell, as the mesh is wound: (a, b, d) and (b, e, d).
+        return u + v <= 1 ? za + (zb - za) * u + (zd - za) * v : ze + (zd - ze) * (1 - u) + (zb - ze) * (1 - v);
+      }
+    }
     const { station, distance } = this.index.nearest(x, y);
     return this.blend(x, y, station, distance);
   }
@@ -196,6 +220,9 @@ export class Terrain {
         vertexColors[k * 3 + 2] = c.b;
       }
     }
+    const heights = new Float32Array(nx * ny);
+    for (let k = 0; k < nx * ny; k++) heights[k] = positions[k * 3 + 1];
+    this.grid = { z: heights, nx, ny };
     const indices: number[] = [];
     for (let j = 0; j < ny - 1; j++) {
       for (let i = 0; i < nx - 1; i++) {

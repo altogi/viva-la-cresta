@@ -572,7 +572,7 @@ export class RideMode {
     const s = Math.min(snap.s, this.track.length);
     const frame = this.track.frame(s);
     const sp = surfaceAt(this.track.section(s), snap.u);
-    model.setCastShadow(sp.angle < 0.55);
+    model.castShadowOnSlope(sp.angle);
     toThree(this.track.toWorld(frame, sp.y, sp.z), this.riderPos);
     const up = toThree([
       frame.left[0] * sp.ny + frame.up[0] * sp.nz,

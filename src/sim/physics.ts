@@ -354,9 +354,18 @@ export class RideSim {
       // Thrown off the wall: the bend demands more than the ice can hold.
       this.fall('fly-out', side);
     } else if (this.againstBankina(section, side)) {
-      // Into a bankina: bump off it, or hit it too squarely and fall.
       const impact = Math.abs(st.w);
-      if (Math.abs(st.heading) > PHYSICS.impactAngle && impact > PHYSICS.impactSpeed) {
+      const wall = side === 'left' ? section.left : section.right;
+      // Up into the steep top of a curved bank (Curzon, Thoma...): climbing a bank always means a
+      // lot of sideways speed, so it's no square hit; the rider glances off it and back down, and
+      // only a climb far too fast and too steep carries them over the top.
+      const curved = wall.radius >= 0.3;
+      const tooSquare = curved
+        ? Math.abs(st.heading) > PHYSICS.impactAngle * 1.2 && impact > PHYSICS.impactSpeed * 1.4
+        : Math.abs(st.heading) > PHYSICS.impactAngle && impact > PHYSICS.impactSpeed;
+      if (tooSquare && curved) {
+        this.fall('fly-out', side);
+      } else if (tooSquare) {
         this.fall('wall', side);
       } else {
         const speed = Math.hypot(st.v, st.w - st.slide);
@@ -368,6 +377,8 @@ export class RideSim {
         st.slide = 0;
         st.v = speed * loss * Math.cos(st.heading);
         st.w = speed * loss * Math.sin(st.heading);
+        // Off the steep part, so the same bounce doesn't fire again next instant (a jitter).
+        if (curved) st.u -= Math.sign(st.u) * 0.04;
       }
     }
   }
