@@ -1,11 +1,12 @@
-// The menus' music: "Shuttlecock", a fast, driving rock track in E minor written for the game: a
-// pounding kick and snare, a pumping eighth-note bass, distorted power chords, a sixteenth-note
-// synth arpeggio, a rising build into a chorus with a soaring lead hook. Synthesised as it plays,
-// scheduled a little ahead, looping.
+// The game's music, written for it and synthesised as it plays (scheduled a little ahead, looping):
+//   "Shuttlecock" - the menus: a fast, driving rock track in E minor, pounding kick and snare, a
+//                   pumping bass, distorted power chords, a synth arpeggio, a rising build into a
+//                   chorus with a soaring lead hook;
+//   "Straw"       - a fall: an impact (crash, a low boom, a chord left ringing), then a heavy
+//                   half-time lament in D minor down Dm-C-Bb-A, the lead falling away to nothing:
+//                   the thrill of the ride and the frustration of not reaching Celerina.
 
-const BPM = 144;
-const STEP = 60 / BPM / 4; // a sixteenth
-const BAR = 16; // steps
+const BAR = 16; // sixteenths
 
 type Chord = { root: number; tones: number[] };
 const C: Record<string, Chord> = {
@@ -15,6 +16,9 @@ const C: Record<string, Chord> = {
   D: { root: 38, tones: [62, 66, 69, 74] },
   Am: { root: 45, tones: [64, 69, 72, 76] },
   B: { root: 47, tones: [63, 66, 71, 75] },
+  Dm: { root: 38, tones: [62, 65, 69, 74] },
+  Bb: { root: 34, tones: [58, 62, 65, 70] },
+  A: { root: 33, tones: [57, 61, 64, 69] },
 };
 
 /** Lead notes: [midi or 0 for a rest, length in eighths]. One bar per line. */
@@ -32,7 +36,7 @@ const HOOK: Line[] = [
 /** A counter-riff over the second half of the verse. */
 const RIFF: Line = [[76, 1], [76, 1], [79, 1], [76, 1], [81, 1], [76, 1], [83, 1], [81, 1]];
 
-type Part = 'intro' | 'verse' | 'build' | 'chorus' | 'break';
+type Part = 'intro' | 'verse' | 'build' | 'chorus' | 'break' | 'impact' | 'lament';
 interface Bar {
   chord: string;
   part: Part;
@@ -44,7 +48,7 @@ interface Bar {
 const bars = (part: Part, chords: string[], lead?: (i: number) => Line | null, crash = true): Bar[] =>
   chords.map((chord, i) => ({ chord, part, lead: lead ? lead(i) : null, crash: crash && i === 0 }));
 
-const SONG: Bar[] = [
+const SHUTTLECOCK: Bar[] = [
   ...bars('intro', ['Em', 'Em', 'C', 'D'], undefined, false),
   ...bars('verse', ['Em', 'C', 'G', 'D', 'Em', 'C', 'G', 'D'], (i) => (i >= 4 ? RIFF : null)),
   ...bars('build', ['Am', 'C', 'D', 'B']),
@@ -52,8 +56,29 @@ const SONG: Bar[] = [
   ...bars('break', ['Em', 'C', 'G', 'D']),
   ...bars('chorus', ['C', 'D', 'Em', 'Em', 'C', 'D', 'Em', 'B'], (i) => HOOK[i]),
 ];
-/** Where the song goes round again (after the intro). */
-const LOOP = 4;
+/** The lament's lead: rising hope in each first bar, sinking away in the rest. */
+const LAMENT: Line[] = [
+  [[74, 3], [72, 1], [74, 2], [77, 2]],
+  [[76, 3], [74, 1], [72, 4]],
+  [[74, 2], [72, 2], [70, 2], [69, 2]],
+  [[69, 4], [73, 2], [76, 2]],
+  [[77, 3], [76, 1], [74, 2], [72, 2]],
+  [[72, 2], [74, 2], [76, 4]],
+  [[77, 2], [76, 2], [74, 2], [70, 2]],
+  [[69, 6], [0, 2]],
+];
+
+const STRAW: Bar[] = [
+  { chord: 'Dm', part: 'impact', lead: null, crash: true },
+  ...bars('lament', ['Dm', 'C', 'Bb', 'A', 'Dm', 'C', 'Bb', 'A'], (i) => LAMENT[i]),
+];
+
+export type SongName = 'shuttlecock' | 'straw';
+/** Tempo, the bars, and where each starts and goes round again (Shuttlecock skips its soft intro). */
+const SONGS: Record<SongName, { bpm: number; bars: Bar[]; start: number; loop: number; level: number }> = {
+  shuttlecock: { bpm: 144, bars: SHUTTLECOCK, start: 4, loop: 4, level: 0.42 },
+  straw: { bpm: 92, bars: STRAW, start: 0, loop: 1, level: 0.46 },
+};
 
 const hz = (midi: number) => 440 * Math.pow(2, (midi - 69) / 12);
 
@@ -65,23 +90,33 @@ export class Music {
   private noise: AudioBuffer | null = null;
   private timer: number | null = null;
   private bar = 0;
+  private song: SongName = 'shuttlecock';
+  /** A sixteenth at this song's tempo (s). */
+  private step = 60 / 144 / 4;
   private nextBarAt = 0;
   private playing = false;
 
   constructor(private readonly context: () => { ctx: AudioContext; destination: AudioNode } | null) {}
 
-  /** Start (or keep) playing, fading in. */
-  play() {
+  /** Play a song from its start (or keep playing it if it's already on). */
+  play(song: SongName = 'shuttlecock') {
     const c = this.context();
     if (!c) return;
     const { ctx } = c;
     if (!this.out) this.build(ctx, c.destination);
-    if (this.playing) return;
+    if (this.playing && this.song === song) return;
+    if (this.song !== song || !this.playing) {
+      this.song = song;
+      this.step = 60 / SONGS[song].bpm / 4;
+      this.delay!.delayTime.setValueAtTime(this.step * 3, ctx.currentTime);
+      this.bar = SONGS[song].start;
+      this.nextBarAt = ctx.currentTime + 0.02;
+    }
     this.playing = true;
     this.out!.gain.cancelScheduledValues(ctx.currentTime);
-    this.out!.gain.setTargetAtTime(0.42, ctx.currentTime, 0.4);
+    this.out!.gain.setTargetAtTime(SONGS[song].level, ctx.currentTime, 0.05);
     if (this.timer === null) {
-      this.nextBarAt = Math.max(this.nextBarAt, ctx.currentTime + 0.1);
+      this.nextBarAt = Math.max(this.nextBarAt, ctx.currentTime + 0.02);
       this.timer = window.setInterval(() => this.schedule(), 100);
     }
   }
@@ -97,7 +132,7 @@ export class Music {
       if (this.playing || this.timer === null) return;
       window.clearInterval(this.timer);
       this.timer = null;
-      this.bar = 0; // from the top next time
+      this.bar = SONGS[this.song].start; // from its start next time
     }, 2500);
   }
 
@@ -126,7 +161,7 @@ export class Music {
     this.wet.connect(wetGain).connect(this.out);
     // A dotted-eighth echo for the arpeggio and the lead.
     this.delay = ctx.createDelay(1);
-    this.delay.delayTime.value = STEP * 3;
+    this.delay.delayTime.value = this.step * 3;
     const feedback = ctx.createGain();
     feedback.gain.value = 0.32;
     const delayOut = ctx.createGain();
@@ -163,17 +198,19 @@ export class Music {
     const { ctx } = c;
     if (this.nextBarAt < ctx.currentTime - 0.5) this.nextBarAt = ctx.currentTime + 0.05; // after a suspend
     while (this.nextBarAt < ctx.currentTime + 0.5) {
-      this.playBar(ctx, SONG[this.bar], this.nextBarAt);
+      const song = SONGS[this.song];
+      this.playBar(ctx, song.bars[this.bar], this.nextBarAt);
       this.bar++;
-      if (this.bar >= SONG.length) this.bar = LOOP;
-      this.nextBarAt += BAR * STEP;
+      if (this.bar >= song.bars.length) this.bar = song.loop;
+      this.nextBarAt += BAR * this.step;
     }
   }
 
   private playBar(ctx: AudioContext, bar: Bar, t: number) {
     const chord = C[bar.chord];
-    const at = (step: number) => t + step * STEP;
+    const at = (step: number) => t + step * this.step;
     const { part } = bar;
+    if (part === 'impact' || part === 'lament') return this.strawBar(ctx, bar, t);
     // Drums: four on the floor in the intro and break, a rock beat with the backbeat elsewhere.
     if (bar.crash) this.crash(ctx, t);
     if (part === 'intro' || part === 'break') {
@@ -187,18 +224,18 @@ export class Music {
       // The snare rolls through the build.
       if (part === 'build') for (let s = 1; s < 16; s += 2) this.snare(ctx, at(s), 0.35);
     }
-    if (part === 'build') this.riser(ctx, t, BAR * STEP);
+    if (part === 'build') this.riser(ctx, t, BAR * this.step);
     // Bass: pumping eighths, jumping the octave in the chorus.
     if (part !== 'intro') {
-      for (let s = 0; s < 16; s += 2) this.bass(ctx, chord.root + (part === 'chorus' && s % 4 === 2 ? 12 : 0), at(s), STEP * 1.7);
+      for (let s = 0; s < 16; s += 2) this.bass(ctx, chord.root + (part === 'chorus' && s % 4 === 2 ? 12 : 0), at(s), this.step * 1.7);
     }
     // Guitars: palm-muted chugs in the verse and build, chords ringing out in the chorus.
     if (part === 'verse' || part === 'build') {
-      for (let s = 0; s < 16; s += 2) this.power(ctx, chord.root + 12, at(s), STEP * 1.2, s % 8 === 0 ? 1 : 0.7);
+      for (let s = 0; s < 16; s += 2) this.power(ctx, chord.root + 12, at(s), this.step * 1.2, s % 8 === 0 ? 1 : 0.7);
     } else if (part === 'chorus') {
-      this.power(ctx, chord.root + 12, at(0), STEP * 7.5, 1);
-      this.power(ctx, chord.root + 12, at(8), STEP * 5.5, 0.9);
-      this.power(ctx, chord.root + 12, at(14), STEP * 1.5, 0.8);
+      this.power(ctx, chord.root + 12, at(0), this.step * 7.5, 1);
+      this.power(ctx, chord.root + 12, at(8), this.step * 5.5, 0.9);
+      this.power(ctx, chord.root + 12, at(14), this.step * 1.5, 0.8);
     }
     // The arpeggio: sixteenths up and down the chord, swelling through the intro.
     if (part !== 'verse') {
@@ -210,10 +247,74 @@ export class Music {
     if (bar.lead) {
       let step = 0;
       for (const [note, eighths] of bar.lead) {
-        if (note) this.lead(ctx, note, at(step), eighths * 2 * STEP, part === 'chorus');
+        if (note) this.lead(ctx, note, at(step), eighths * 2 * this.step, part === 'chorus');
         step += eighths * 2;
       }
     }
+  }
+
+  /** A bar of "Straw": the impact, or the lament. */
+  private strawBar(ctx: AudioContext, bar: Bar, t: number) {
+    const chord = C[bar.chord];
+    const at = (step: number) => t + step * this.step;
+    if (bar.part === 'impact') {
+      // The fall: a crash, a deep boom dropping away, the chord struck and left to ring, and the
+      // noise of it sweeping down.
+      this.crash(ctx, t);
+      this.boom(ctx, t);
+      this.power(ctx, chord.root + 12, t, BAR * this.step * 0.95, 1.2);
+      this.bass(ctx, chord.root, t, BAR * this.step * 0.9);
+      return;
+    }
+    if (bar.crash) this.crash(ctx, t);
+    // Half time: the kick on one and the and of three, the snare hard on three.
+    for (const s of [0, 10]) this.kick(ctx, at(s));
+    this.snare(ctx, at(8), 1.2);
+    for (let s = 0; s < 16; s += 2) this.hat(ctx, at(s), 0.04, s === 14);
+    // A tom fill tumbling down into the turn of the progression.
+    if (bar.chord === 'A') for (const [s, f] of [[12, 180], [13, 150], [14, 120], [15, 95]] as const) this.tom(ctx, at(s), f);
+    // Bass and guitars: long, heavy chords, re-struck on three.
+    this.bass(ctx, chord.root, at(0), this.step * 7.5);
+    this.bass(ctx, chord.root, at(8), this.step * 7.5);
+    this.power(ctx, chord.root + 12, at(0), this.step * 7.6, 1);
+    this.power(ctx, chord.root + 12, at(8), this.step * 7.6, 0.9);
+    // Strings trembling under it.
+    for (let s = 0; s < 16; s++) this.arp(ctx, chord.tones[s % 2 === 0 ? 1 : 2], at(s), 0.022);
+    if (bar.lead) {
+      let step = 0;
+      for (const [note, eighths] of bar.lead) {
+        if (note) this.lead(ctx, note, at(step), eighths * 2 * this.step, true);
+        step += eighths * 2;
+      }
+    }
+  }
+
+  /** A deep boom, the fall hitting home. */
+  private boom(ctx: AudioContext, t: number) {
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(90, t);
+    o.frequency.exponentialRampToValueAtTime(28, t + 1.2);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(1.0, t);
+    env.gain.exponentialRampToValueAtTime(0.001, t + 1.6);
+    o.connect(env);
+    this.connect(ctx, env, 1, 0.4);
+    o.start(t);
+    o.stop(t + 1.7);
+    this.noiseHit(ctx, t, 300, 0.9, 0.4, 'lowpass', 0.5);
+  }
+
+  private tom(ctx: AudioContext, t: number, freq: number) {
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(freq, t);
+    o.frequency.exponentialRampToValueAtTime(freq * 0.6, t + 0.25);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.5, t);
+    env.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    o.connect(env);
+    this.connect(ctx, env, 1, 0.3);
+    o.start(t);
+    o.stop(t + 0.32);
   }
 
   private connect(ctx: AudioContext, node: AudioNode, dry: number, wet = 0, echo = 0) {
@@ -356,17 +457,17 @@ export class Music {
     const f = ctx.createBiquadFilter();
     f.type = 'lowpass';
     f.frequency.setValueAtTime(3200, t);
-    f.frequency.exponentialRampToValueAtTime(700, t + STEP * 0.9);
+    f.frequency.exponentialRampToValueAtTime(700, t + this.step * 0.9);
     const env = ctx.createGain();
     env.gain.setValueAtTime(level, t);
-    env.gain.exponentialRampToValueAtTime(0.0008, t + STEP * 0.95);
+    env.gain.exponentialRampToValueAtTime(0.0008, t + this.step * 0.95);
     o.connect(f).connect(env);
     const pan = ctx.createStereoPanner();
     pan.pan.value = Math.sin(t * 3) * 0.5;
     env.connect(pan);
     this.connect(ctx, pan, 1, 0.1, 0.6);
     o.start(t);
-    o.stop(t + STEP);
+    o.stop(t + this.step);
   }
 
   /** The lead: a bright, singing synth with vibrato and a little slide into each note. */

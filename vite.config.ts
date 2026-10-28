@@ -6,7 +6,8 @@ export default defineConfig({
   base: '/viva-la-cresta/',
   plugins: [
     VitePWA({
-      registerType: 'autoUpdate',
+      // Updates install when the app says so: never in the middle of a ride (see main.ts).
+      registerType: 'prompt',
       includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'smtc-logo.svg'],
       manifest: {
         name: 'Viva la Cresta',
@@ -33,10 +34,11 @@ export default defineConfig({
             options: { cacheName: 'google-fonts', expiration: { maxEntries: 20, maxAgeSeconds: 31536000 } },
           },
           {
-            // The Blender models: too big to precache, kept once fetched (refreshed in the background).
+            // The Blender models: too big to precache. Fetched fresh whenever there's a connection (so
+            // a changed model shows at once), the cached copy when offline or the network is slow.
             urlPattern: /\/models\/.*\.glb$/,
-            handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'models', expiration: { maxEntries: 20 } },
+            handler: 'NetworkFirst',
+            options: { cacheName: 'models', networkTimeoutSeconds: 8, expiration: { maxEntries: 30 } },
           },
         ],
       },

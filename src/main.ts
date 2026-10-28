@@ -29,7 +29,30 @@ import { createTuningPanel } from './ui/tuning';
 /** Extra Blender models (public/models/<name>.glb) the scenery uses. */
 const MODELS: string[] = ['town', 'balloon', 'riders', 'junction', 'bridges', 'props', 'people', 'tophut', 'steinbock'];
 
-registerSW({ immediate: true });
+// New versions: look for one every few minutes and whenever the app comes back to the foreground
+// (a phone's home-screen app may stay open for days). One that's found installs, and the page
+// reloads into it, as soon as the rider is off the ice (never mid-ride).
+let updateReady = false;
+const installUpdate = () => {
+  if (updateReady && !document.body.classList.contains('riding')) void updateSW(true);
+};
+const updateSW = registerSW({
+  immediate: true,
+  onNeedRefresh() {
+    updateReady = true;
+    installUpdate();
+  },
+  onRegisteredSW(_url, registration) {
+    if (!registration) return;
+    const check = () => void registration.update().catch(() => {});
+    window.setInterval(check, 5 * 60 * 1000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') check();
+    });
+  },
+});
+// Leaving the ice is when a waiting update goes in.
+new MutationObserver(installUpdate).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
 const params = new URLSearchParams(location.search);
 const debug = params.has('debug');
@@ -153,9 +176,13 @@ async function start() {
   const updateMusic = () => {
     musicButton.classList.toggle('off', !musicOn);
     musicButton.setAttribute('aria-label', musicOn ? 'Music off' : 'Music on');
-    if (musicOn && mode !== 'ride') music.play();
+    // Off the ice, Shuttlecock; on it, silence, until a fall brings in Straw.
+    if (!musicOn) music.stop();
+    else if (mode !== 'ride') music.play('shuttlecock');
+    else if (ride.fallen) music.play('straw');
     else music.stop();
   };
+  ride.onMusic = () => updateMusic();
   onMode = updateMusic;
   musicButton.addEventListener('click', (e) => {
     e.stopPropagation();

@@ -40,8 +40,9 @@ export const MAXIMILIAN: RiderStats = {
   name: 'Maximilian',
   mass: 70,
   dragArea: 0.115,
-  transitionTime: 0.4,
-  reach: 1.25,
+  transitionTime: 0.45,
+  // Long arms, but not so much more steering than the others that the banks can't hold him.
+  reach: 1.1,
   runSpeed: 9.4,
 };
 

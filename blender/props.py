@@ -32,6 +32,14 @@ M = {
     "white": lib.material("p_white", (0.92, 0.92, 0.9), 0.6),
     "window": lib.material("p_window", (0.05, 0.07, 0.1), 0.1, metallic=0.4),
     "roof": lib.material("p_roof", (0.28, 0.2, 0.14), 0.8),
+    "log": lib.material("p_log", (0.36, 0.23, 0.13), 0.88),
+    "log_end": lib.material("p_log_end", (0.55, 0.4, 0.25), 0.85),
+    "stone": lib.material("p_stone", (0.42, 0.41, 0.39), 0.95),
+    "shutter": lib.material("p_shutter", (0.12, 0.27, 0.18), 0.7),
+    "iron": lib.material("p_iron", (0.08, 0.08, 0.08), 0.5, metallic=0.6),
+    "ice": lib.material("p_ice", (0.85, 0.92, 0.98), 0.1),
+    "lamp": lib.material("p_lamp", (1.0, 0.85, 0.55), 0.3, emission=(1.0, 0.75, 0.4)),
+    "sign": lib.material("p_sign", (0.56, 0.05, 0.04), 0.6),
 }
 
 
@@ -140,39 +148,120 @@ def platform():
 
 
 def hut():
+    """The finish hut, built as the Engadin builds them: walls of horizontal logs on a stone plinth,
+    the logs crossing and standing out at the corners; a steep roof deep in snow on rafters whose ends
+    show under the eaves, icicles hanging from it, a stovepipe through it. On the front (-y) a plank
+    door with a Z-brace and iron hinges, a sign board over it and a lantern beside it; a cross-barred
+    window with green shutters and a window box; firewood stacked along one end; the bench by the door."""
     B = Builder()
     w, d, h = 2.6, 2.2, 2.3
-    # Vertical boards all round.
-    n = int(w / 0.16)
-    for k in range(n):
-        x = -w / 2 + k * w / n
-        for y0, y1 in ((-d / 2, -d / 2 + 0.05), (d / 2 - 0.05, d / 2)):
-            B.box(x + 0.005, x + w / n - 0.005, y0, y1, 0, h, "boards" if k % 3 else "timber")
-    m = int(d / 0.16)
-    for k in range(m):
-        y = -d / 2 + k * d / m
-        for x0, x1 in ((-w / 2, -w / 2 + 0.05), (w / 2 - 0.05, w / 2)):
-            B.box(x0, x1, y + 0.005, y + d / m - 0.005, 0, h, "boards" if k % 3 else "timber")
-    # Gable ends.
+    plinth = 0.3
+    # Stone plinth.
+    B.box(-w / 2 - 0.05, w / 2 + 0.05, -d / 2 - 0.05, d / 2 + 0.05, -0.2, plinth, "stone")
+    # Log courses, alternately long on the front/back and on the ends, so the corners interlock and
+    # stick out by turns.
+    log = 0.19
+    k = 0
+    z = plinth
+    while z < h - 0.05:
+        z1 = min(h, z + log)
+        over_x = 0.18 if k % 2 == 0 else 0.06
+        over_y = 0.06 if k % 2 == 0 else 0.18
+        for y0, y1 in ((-d / 2, -d / 2 + 0.14), (d / 2 - 0.14, d / 2)):
+            B.box(-w / 2 - over_x, w / 2 + over_x, y0, y1, z + 0.006, z1 - 0.006, "log")
+        for x0, x1 in ((-w / 2, -w / 2 + 0.14), (w / 2 - 0.14, w / 2)):
+            B.box(x0, x1, -d / 2 - over_y, d / 2 + over_y, z + 0.006, z1 - 0.006, "log")
+        # The lighter cut ends at the corners.
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                if k % 2 == 0:
+                    B.box(sx * (w / 2 + over_x) - (0.01 if sx > 0 else -0.01) - 0.005, sx * (w / 2 + over_x) + (0.005 if sx > 0 else -0.005), sy * d / 2 - 0.07 * sy - 0.06, sy * d / 2 - 0.07 * sy + 0.06, z + 0.02, z1 - 0.02, "log_end")
+        z = z1
+        k += 1
+    # Gable ends (front and back, under the ridge that runs front to back): upright boards.
+    ridge = h + 1.15
     for y in (-d / 2, d / 2):
-        B.poly([(-w / 2, y, h), (w / 2, y, h), (0, y, h + 0.9)] if y > 0 else [(w / 2, y, h), (-w / 2, y, h), (0, y, h + 0.9)], "boards")
-    # Door and window on the front, a frame round each.
-    B.box(-0.95, -0.15, -d / 2 - 0.03, -d / 2, 0.05, 1.95, "timber_dark")
-    B.box(0.3, 1.0, -d / 2 - 0.03, -d / 2, 1.0, 1.6, "window")
-    for x0, x1, z0, z1 in ((0.25, 1.05, 0.95, 1.0), (0.25, 1.05, 1.6, 1.65), (0.25, 0.3, 0.95, 1.65), (1.0, 1.05, 0.95, 1.65), (0.6, 0.65, 1.0, 1.6)):
-        B.box(x0, x1, -d / 2 - 0.05, -d / 2 - 0.01, z0, z1, "white")
-    # Roof: two pitches with overhang, a thick layer of snow on each.
-    over = 0.35
+        n = 9
+        for i in range(n):
+            x0 = -w / 2 + i * w / n
+            x1 = x0 + w / n - 0.01
+            top0 = h + (ridge - h) * (1 - abs(x0) / (w / 2))
+            top1 = h + (ridge - h) * (1 - abs(x1) / (w / 2))
+            yo = y + (0.07 if y > 0 else -0.07)
+            B.poly([(x0, yo, h), (x1, yo, h), (x1, yo, top1), (x0, yo, top0)], "boards")
+    # The door: planks, a Z-brace, iron strap hinges and a ring handle, in a frame.
+    dx0, dx1 = -1.0, -0.2
+    yf = -d / 2 - 0.15
+    for i in range(5):
+        x0 = dx0 + i * (dx1 - dx0) / 5
+        B.box(x0 + 0.005, x0 + (dx1 - dx0) / 5 - 0.005, yf - 0.03, yf, plinth, 2.0, "timber_dark")
+    B.box(dx0, dx1, yf - 0.06, yf - 0.03, 0.55, 0.65, "timber")
+    B.box(dx0, dx1, yf - 0.06, yf - 0.03, 1.65, 1.75, "timber")
+    B.poly([(dx0 + 0.05, yf - 0.061, 0.65), (dx0 + 0.15, yf - 0.061, 0.65), (dx1 - 0.05, yf - 0.061, 1.65), (dx1 - 0.15, yf - 0.061, 1.65)], "timber")
+    for zz in (0.6, 1.7):
+        B.box(dx0, dx0 + 0.45, yf - 0.075, yf - 0.06, zz - 0.025, zz + 0.025, "iron")
+    B.tube((dx1 - 0.12, yf - 0.06, 1.05), (dx1 - 0.12, yf - 0.12, 1.05), 0.025, "iron")
+    for x0, x1, z0, z1 in ((dx0 - 0.08, dx0, plinth, 2.08), (dx1, dx1 + 0.08, plinth, 2.08), (dx0 - 0.08, dx1 + 0.08, 2.0, 2.08)):
+        B.box(x0, x1, yf - 0.02, yf + 0.05, z0, z1, "timber")
+    # The window: dark glass behind a cross of bars in a white frame, green shutters, a window box.
+    wx0, wx1, wz0, wz1 = 0.3, 1.0, 1.0, 1.6
+    B.box(wx0, wx1, yf + 0.02, yf + 0.03, wz0, wz1, "window")
+    for x0, x1, z0, z1 in ((wx0 - 0.05, wx0, wz0 - 0.05, wz1 + 0.05), (wx1, wx1 + 0.05, wz0 - 0.05, wz1 + 0.05), (wx0, wx1, wz0 - 0.05, wz0), (wx0, wx1, wz1, wz1 + 0.05),
+                           (0.63, 0.67, wz0, wz1), (wx0, wx1, 1.28, 1.32)):
+        B.box(x0, x1, yf - 0.02, yf + 0.04, z0, z1, "white")
+    for x0, x1 in ((wx0 - 0.4, wx0 - 0.07), (wx1 + 0.07, wx1 + 0.4)):
+        B.box(x0, x1, yf - 0.04, yf, wz0 - 0.03, wz1 + 0.03, "shutter")
+        for zz in (wz0 + 0.12, wz0 + 0.3, wz0 + 0.48):
+            B.box(x0 + 0.02, x1 - 0.02, yf - 0.05, yf - 0.04, zz, zz + 0.02, "timber_dark")
+    B.box(wx0 - 0.05, wx1 + 0.05, yf - 0.24, yf, wz0 - 0.18, wz0 - 0.05, "timber")
+    B.box(wx0 - 0.04, wx1 + 0.04, yf - 0.23, yf - 0.01, wz0 - 0.05, wz0 + 0.03, "snow")
+    # A sign board over the door and a lantern beside it.
+    B.box(-1.15, -0.05, yf - 0.06, yf - 0.02, 2.12, 2.38, "sign")
+    B.box(-1.18, -0.02, yf - 0.065, yf - 0.055, 2.09, 2.12, "white")
+    B.tube((-0.06, yf, 1.9), (-0.06, yf - 0.22, 1.9), 0.015, "iron")
+    B.box(-0.12, 0.0, yf - 0.28, yf - 0.16, 1.68, 1.88, "lamp")
+    B.box(-0.14, 0.02, yf - 0.3, yf - 0.14, 1.88, 1.92, "iron")
+    # Roof: steep, overhanging, on rafters whose ends show; thick snow with a rounded front and icicles.
+    over_y, over_x = 0.55, 0.4
+    pitch_z = ridge
     for sx in (-1, 1):
-        a = (0, -d / 2 - over, h + 0.9)
-        b = (sx * (w / 2 + over), -d / 2 - over, h - 0.25)
-        c = (sx * (w / 2 + over), d / 2 + over, h - 0.25)
-        e = (0, d / 2 + over, h + 0.9)
+        a = (0, -d / 2 - over_y, pitch_z)
+        b = (sx * (w / 2 + over_x), -d / 2 - over_y, h - 0.3)
+        c = (sx * (w / 2 + over_x), d / 2 + over_y, h - 0.3)
+        e = (0, d / 2 + over_y, pitch_z)
         pts = [a, b, c, e] if sx > 0 else [a, e, c, b]
         B.poly(pts, "roof")
-        lift = 0.18
-        B.poly([(p[0], p[1], p[2] + lift) for p in pts], "snow")
+        lift = 0.24
+        B.poly([(q[0], q[1], q[2] + lift) for q in pts], "snow")
         B.poly([(b[0], b[1], b[2]), (c[0], c[1], c[2]), (c[0], c[1], c[2] + lift), (b[0], b[1], b[2] + lift)] if sx > 0 else [(c[0], c[1], c[2]), (b[0], b[1], b[2]), (b[0], b[1], b[2] + lift), (c[0], c[1], c[2] + lift)], "snow")
+        # A soft lip of snow curling over the eave.
+        B.tube((b[0] * 0.98, b[1], b[2] + 0.12), (c[0] * 0.98, c[1], c[2] + 0.12), 0.14, "snow", sides=8)
+        # Rafter ends under the eave, and icicles.
+        for i in range(6):
+            y = -d / 2 - over_y + 0.1 + i * (d + 2 * over_y - 0.2) / 5
+            B.box(sx * (w / 2 + over_x) - 0.06 * sx - 0.05, sx * (w / 2 + over_x) - 0.06 * sx + 0.05, y - 0.05, y + 0.05, h - 0.42, h - 0.3, "timber_dark")
+        for i in range(9):
+            y = -d / 2 - over_y + 0.15 + i * (d + 2 * over_y - 0.3) / 8
+            ln = 0.12 + 0.18 * ((i * 37) % 5) / 4
+            B.tube((sx * (w / 2 + over_x - 0.02), y, h - 0.3), (sx * (w / 2 + over_x - 0.02), y, h - 0.3 - ln), 0.012, "ice", sides=4)
+    # Fascia boards along the gable eaves.
+    for y in (-d / 2 - over_y, d / 2 + over_y):
+        for sx in (-1, 1):
+            B.poly([(0, y, pitch_z), (sx * (w / 2 + over_x), y, h - 0.3), (sx * (w / 2 + over_x), y, h - 0.42), (0, y, pitch_z - 0.12)], "timber")
+    # Stovepipe through the back slope, with a cap and snow on it.
+    B.tube((0.7, 0.45, h + 0.4), (0.7, 0.45, ridge + 0.25), 0.07, "iron", sides=10)
+    B.box(0.58, 0.82, 0.33, 0.57, ridge + 0.25, ridge + 0.3, "iron")
+    B.box(0.6, 0.8, 0.35, 0.55, ridge + 0.3, ridge + 0.37, "snow")
+    # Firewood stacked along the +x end under the eave: rows of log ends.
+    for row in range(5):
+        for i in range(7):
+            yy = -d / 2 + 0.2 + i * 0.26 + (0.13 if row % 2 else 0)
+            if yy > d / 2 - 0.15:
+                continue
+            zz = plinth + 0.1 + row * 0.2
+            B.tube((w / 2 + 0.06, yy, zz), (w / 2 + 0.42, yy, zz), 0.1, "log", sides=7)
+            B.tube((w / 2 + 0.42, yy, zz), (w / 2 + 0.425, yy, zz), 0.095, "log_end", sides=7)
+    B.box(w / 2 + 0.04, w / 2 + 0.46, -d / 2 + 0.05, d / 2 - 0.05, plinth + 1.05, plinth + 1.12, "snow")
     # A bench by the door.
     B.box(-1.25, 1.25, -d / 2 - 0.55, -d / 2 - 0.2, 0.42, 0.47, "timber")
     for x in (-1.1, 1.1):
@@ -183,5 +272,8 @@ def hut():
 objs = [platform(), hut()]
 objs[1].location = (8, -4, 0)
 lib.preview("props.png", (6, -16, 6), (2, 0, 1.5), size=(1100, 700), lens=35, sky=(0.35, 0.55, 0.9))
+objs[0].hide_render = True
+lib.preview("finish_hut.png", (11.5, -9.5, 2.6), (8, -4, 1.6), size=(1000, 800), lens=35, sky=(0.35, 0.55, 0.9))
+objs[0].hide_render = False
 objs[1].location = (0, 0, 0)
 result = {"export": lib.export_glb("props.glb", objs)}

@@ -157,6 +157,13 @@ export class RideMode {
   /** Debug: let a bot ride instead of the player (?autopilot=good). */
   autopilot: Policy | null = null;
   onExit: () => void = () => {};
+  /** The music should change: a fall (or a fresh start after one). */
+  onMusic: () => void = () => {};
+
+  /** On the ice after a fall (its song plays), until the next ride. */
+  get fallen() {
+    return this.stage === 'falling' || this.stage === 'replay' || (this.stage === 'done' && this.sim.state.phase === 'fallen');
+  }
 
   constructor(
     private readonly world: World,
@@ -221,6 +228,8 @@ export class RideMode {
     this.setup = setup;
     this.crowd?.populate();
     this.crowd?.endFinish();
+    // A fresh start: whatever played for the last fall stops.
+    queueMicrotask(() => this.onMusic());
     // A rider's first ride from Top (in a career, or the first ever in free rides) draws a crowd.
     let firstTop = false;
     if (setup.startS < 4) {
@@ -588,6 +597,7 @@ export class RideMode {
   private startFall() {
     this.model.contactShadow.visible = false;
     this.stage = 'falling';
+    this.onMusic();
     this.applyCam();
     this.stageTime = 0;
     this.sound.fallBells();
