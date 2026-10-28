@@ -11,6 +11,7 @@ import type { Career } from '../career/career';
 import { CLUB_LORE, riderRecord, wins, type RiderRecord, type Win } from '../career/trophies';
 import { RIDERS } from '../sim/rider';
 import { buildArrows } from './selectMode';
+import type { Part } from '../render/assets';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const base = import.meta.env.BASE_URL;
@@ -19,8 +20,14 @@ const base = import.meta.env.BASE_URL;
 const TABLE_TOP = 0.78;
 const SPOT = new THREE.Vector3(0, TABLE_TOP, -1.05);
 const SWAP_TIME = 0.55;
+/** The railing's top: just above the table, so the trophy stands against the woods and mountains. */
+const RAIL = 0.8;
 /** The terrace above the lake. */
 const LAKE = -24;
+/** How far off the lake's far shore is, lined with woods (the photograph's foot hides behind them). */
+const SHORE = 600;
+/** The eye's height above the terrace, near enough (the camera moves a little with each trophy). */
+const EYE = 1.2;
 
 type Item = { kind: 'record'; record: RiderRecord } | { kind: 'win'; win: Win };
 
@@ -45,8 +52,11 @@ export class TrophyRoom {
   private name = '';
   onClose: () => void = () => {};
 
-  constructor(private readonly renderer: THREE.WebGLRenderer, balloon?: THREE.Object3D) {
-    this.build(balloon);
+  constructor(
+    private readonly renderer: THREE.WebGLRenderer,
+    view: { balloon?: THREE.Object3D; trees?: Record<string, Part[]> } = {},
+  ) {
+    this.build(view.balloon, view.trees);
     $('trophies-back').addEventListener('click', () => this.onClose());
     const list = $('trophy-cards');
     const settle = () => {
@@ -70,7 +80,7 @@ export class TrophyRoom {
 
   // ---------- The terrace and the view ----------
 
-  private build(balloon?: THREE.Object3D) {
+  private build(balloon?: THREE.Object3D, trees?: Record<string, Part[]>) {
     const scene = this.scene;
     scene.background = skyTexture();
     scene.fog = new THREE.Fog('#c9dbef', 1800, 9000);
@@ -95,7 +105,8 @@ export class TrophyRoom {
     glint.name = 'glint';
     scene.add(glint);
 
-    scene.add(terrace(), railing(), table(), lake(), shoreTrees(), tents(), backdrop());
+    scene.add(terrace(), railing(), table(), lake(), tents(), backdrop());
+    if (trees) scene.add(woods(trees));
     this.sky.build(scene, balloon);
     scene.add(this.fireworks.group);
     scene.add(this.arrows);
@@ -468,27 +479,27 @@ function railing(): THREE.Object3D {
   const iron = mat('#1c1d1f', 0.45, 0.6);
   const z = -1.75;
   const top = new THREE.Mesh(new THREE.BoxGeometry(14, 0.05, 0.08), iron);
-  top.position.set(0, 1.05, z);
+  top.position.set(0, RAIL, z);
   const low = new THREE.Mesh(new THREE.BoxGeometry(14, 0.03, 0.03), iron);
   low.position.set(0, 0.12, z);
   const mid = new THREE.Mesh(new THREE.BoxGeometry(14, 0.025, 0.025), iron);
-  mid.position.set(0, 0.92, z);
+  mid.position.set(0, RAIL - 0.1, z);
   g.add(top, low, mid);
-  const bars = new THREE.InstancedMesh(new THREE.BoxGeometry(0.018, 0.8, 0.018), iron, 120);
+  const bars = new THREE.InstancedMesh(new THREE.BoxGeometry(0.018, RAIL - 0.14, 0.018), iron, 120);
   const m = new THREE.Matrix4();
   let n = 0;
-  for (let x = -7; x <= 7 && n < 120; x += 0.13, n++) bars.setMatrixAt(n, m.makeTranslation(x, 0.52, z));
+  for (let x = -7; x <= 7 && n < 120; x += 0.13, n++) bars.setMatrixAt(n, m.makeTranslation(x, 0.12 + (RAIL - 0.14) / 2, z));
   bars.count = n;
   g.add(bars);
   const ringGeo = new THREE.TorusGeometry(0.075, 0.009, 8, 28);
   for (let x = -6.5; x <= 6.5; x += 1.3) {
     const ring = new THREE.Mesh(ringGeo, iron);
-    ring.position.set(x + 0.065, 0.52, z);
+    ring.position.set(x + 0.065, 0.12 + (RAIL - 0.14) / 2, z);
     g.add(ring);
   }
   for (let x = -7; x <= 7; x += 2.6) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.05, 0.05), iron);
-    post.position.set(x, 0.53, z);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.05, RAIL, 0.05), iron);
+    post.position.set(x, RAIL / 2, z);
     g.add(post);
   }
   g.traverse((o) => (o.castShadow = true));
@@ -533,53 +544,92 @@ function lake(): THREE.Object3D {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(20, 20);
-  const plane = new THREE.Mesh(new THREE.PlaneGeometry(8000, 5000), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 }));
+  // The ice runs out to the far shore; beyond it, the dark floor of the woods (so no white shows
+  // between the trunks of the trees along the shore).
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(4000, SHORE), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 }));
   plane.rotation.x = -Math.PI / 2;
-  plane.position.set(0, LAKE, -2400);
+  plane.position.set(0, LAKE, -SHORE / 2);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(6000, 3000), mat('#1a2420', 1));
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(0, LAKE + 0.5, -SHORE - 1500);
   // The slope down from the terrace to the shore, in snow.
   const bank = new THREE.Mesh(new THREE.PlaneGeometry(300, 60), mat('#f3f6fa', 0.95));
   bank.rotation.x = -Math.PI / 2 - Math.atan2(-LAKE, 60);
   bank.position.set(0, LAKE / 2 - 0.5, -32);
-  return new THREE.Group().add(plane, bank);
+  return new THREE.Group().add(plane, floor, bank);
 }
 
-/** Spruces on the slope below the terrace and along the near shore. */
-function shoreTrees(): THREE.Object3D {
+/**
+ * Trees as on the run (the same Blender models): modelled spruces and larches on the slope below the
+ * terrace, and three staggered rows of their billboards along the far shore, tall enough to stand in
+ * front of the photograph's foot, so the woods run on from the 3D into the picture without a seam.
+ */
+function woods(trees: Record<string, Part[]>): THREE.Object3D {
   const g = new THREE.Group();
-  const needles = mat('#1d3324', 0.9);
-  const snow = mat('#e9eef4', 0.9);
-  const trunk = mat('#3d2b1f', 0.9);
-  const cone = new THREE.ConeGeometry(1, 1, 9);
   const rand = mulberry(11);
-  const spots: [number, number][] = [];
+  const byModel = new Map<string, THREE.Matrix4[]>();
+  const add = (name: string, m: THREE.Matrix4) => {
+    if (!byModel.has(name)) byModel.set(name, []);
+    byModel.get(name)!.push(m);
+  };
+  const q = new THREE.Quaternion();
+  const up = new THREE.Vector3(0, 1, 0);
+  const pick = (far: boolean) => {
+    const larch = rand() < 0.3;
+    if (far) return larch ? 'larch_far' : 'spruce_far';
+    return larch ? `larch_${Math.floor(rand() * 2)}` : `spruce_${Math.floor(rand() * 3)}`;
+  };
+  // The slope down from the terrace to the shore below it.
   for (let i = 0; i < 70; i++) {
     const x = (rand() - 0.5) * 260;
     const z = -14 - rand() * 120;
     if (Math.abs(x) < 7 && z > -40) continue; // keep the view over the table clear
-    spots.push([x, z]);
-  }
-  const count = spots.length * 3;
-  const tiers = new THREE.InstancedMesh(cone, needles, count);
-  const caps = new THREE.InstancedMesh(cone, snow, count);
-  const trunks = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15, 0.2, 1, 6), trunk, spots.length);
-  const m = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  let n = 0;
-  spots.forEach(([x, z], i) => {
-    const h = 9 + rand() * 9;
-    // The ground falls from the terrace to the lake.
     const y = LAKE * Math.min(1, (-z - 6) / 60);
-    trunks.setMatrixAt(i, m.compose(new THREE.Vector3(x, y + 0.8, z), q, new THREE.Vector3(1, 1.6, 1)));
-    for (let k = 0; k < 3; k++) {
-      const r = h * (0.24 - k * 0.06);
-      const th = h * 0.42;
-      const cy = y + 1.2 + k * h * 0.26 + th / 2;
-      tiers.setMatrixAt(n, m.compose(new THREE.Vector3(x, cy, z), q, new THREE.Vector3(r, th, r)));
-      caps.setMatrixAt(n, m.compose(new THREE.Vector3(x, cy + th * 0.08, z), q, new THREE.Vector3(r * 0.75, th * 0.85, r * 0.75)));
-      n++;
+    const s = 0.55 + rand() * 0.4;
+    q.setFromAxisAngle(up, rand() * Math.PI * 2);
+    add(pick(false), new THREE.Matrix4().compose(new THREE.Vector3(x, y - 0.3, z), q, new THREE.Vector3(s, s * (0.92 + rand() * 0.16), s)));
+  }
+  // The far shore: three rows, each tree 30-45 m tall, their crowns running up into the
+  // photograph's woods.
+  for (let row = 0; row < 3; row++) {
+    const z = -(SHORE - 25 + row * 30);
+    const half = Math.tan(THREE.MathUtils.degToRad(40)) * -z;
+    for (let x = -half; x < half; x += 6 + rand() * 4) {
+      const s = 2.0 + rand() * 1.1;
+      q.setFromAxisAngle(up, rand() * Math.PI * 2);
+      add(pick(true), new THREE.Matrix4().compose(new THREE.Vector3(x + (rand() - 0.5) * 4, LAKE - 0.5, z + (rand() - 0.5) * 12), q, new THREE.Vector3(s, s * (0.9 + rand() * 0.25), s)));
     }
-  });
-  g.add(tiers, caps, trunks);
+  }
+  // The far woods are in the mountain's shadow, as dark as the photograph's: their own, darker material.
+  const shaded = new Map<THREE.Material, THREE.Material>();
+  const shade = (m: THREE.Material) => {
+    if (!shaded.has(m)) {
+      const c = m.clone() as THREE.MeshStandardMaterial;
+      // A clone loses the billboard shader (the cards turn to face the camera): keep it.
+      c.onBeforeCompile = m.onBeforeCompile;
+      c.customProgramCacheKey = m.customProgramCacheKey;
+      // Very dark, as the photograph's woods in the mountain's shadow (the room is lit for the
+      // trophies, with a strong sun and sky). The cards also light themselves (an emissive
+      // picture): dim that too.
+      c.color?.multiplyScalar(0.022);
+      if (c.emissive) c.emissiveIntensity *= 0.03;
+      // And matte: the room's bright reflections (for the silver) would grey them over.
+      c.envMapIntensity = 0.05;
+      c.roughness = 1;
+      c.metalness = 0;
+      shaded.set(m, c);
+    }
+    return shaded.get(m)!;
+  };
+  for (const [name, matrices] of byModel) {
+    for (const part of trees[name] ?? []) {
+      const material = name.endsWith('_far') ? shade(part.material) : part.material;
+      const mesh = new THREE.InstancedMesh(part.geometry, material, matrices.length);
+      matrices.forEach((m, i) => mesh.setMatrixAt(i, m));
+      mesh.computeBoundingSphere();
+      g.add(mesh);
+    }
+  }
   return g;
 }
 
@@ -603,8 +653,7 @@ function tents(): THREE.Object3D {
 
 /**
  * The view across the lake: a photograph of Piz Rosatsch from the shore (1880 x 918, cropped just
- * above the ice), on a plane far off, square to the view, pitched so the bottom of the picture (the
- * far shore, its forest and chalets) sits on the horizon.
+ * above the ice), on a plane far off, square to the view.
  */
 function backdrop(): THREE.Object3D {
   const tex = new THREE.TextureLoader().load(`${base}textures/sunnybar-rosatsch.webp`);
@@ -622,28 +671,45 @@ function backdrop(): THREE.Object3D {
   const bottom = ((FULL_H / 2 - CROP_H) / focal) * D;
   const plane = new THREE.Mesh(
     new THREE.PlaneGeometry((W / focal) * D, top - bottom),
-    new THREE.MeshBasicMaterial({ map: tex, depthWrite: false, fog: false, toneMapped: false }),
+    new THREE.MeshBasicMaterial({ map: tex, alphaMap: topFade(), transparent: true, depthWrite: false, fog: false, toneMapped: false }),
   );
   plane.position.set(0, (top + bottom) / 2, -D);
   plane.renderOrder = -1;
+  // Seen from the eye, the picture's foot sits a degree and a half below the horizon: behind the
+  // crowns of the trees along the far shore (whose bases are 2.4 degrees down), never in a gap.
   const holder = new THREE.Group();
-  holder.position.set(0, LAKE + 4, 0);
-  holder.rotation.x = Math.atan((CROP_H - FULL_H / 2) / focal);
+  holder.position.set(0, EYE, 0);
+  holder.rotation.x = Math.atan((CROP_H - FULL_H / 2) / focal) - THREE.MathUtils.degToRad(1.5);
   holder.add(plane);
   return holder;
 }
 
-/** A deep winter-blue sky, as dark as the photograph's at the top. */
+/** Fades the photograph's top tenth into the sky behind it, so the picture has no upper edge. */
+function topFade(): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = 1;
+  c.height = 64;
+  const g = c.getContext('2d')!;
+  const grad = g.createLinearGradient(0, 0, 0, 64);
+  grad.addColorStop(0, '#000');
+  grad.addColorStop(0.12, '#fff');
+  grad.addColorStop(1, '#fff');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 1, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+/** The photograph's sky, carried on above it: deep navy overhead, brightening towards the mountains. */
 function skyTexture(): THREE.Texture {
   const c = document.createElement('canvas');
   c.width = 2;
   c.height = 256;
   const g = c.getContext('2d')!;
   const grad = g.createLinearGradient(0, 0, 0, 256);
-  // The photograph's sky, where the view reaches above it.
-  grad.addColorStop(0, '#0b2c5c');
-  grad.addColorStop(0.6, '#163f78');
-  grad.addColorStop(1, '#2a5c9e');
+  grad.addColorStop(0, '#0a2a5a');
+  grad.addColorStop(0.45, '#123a72');
+  grad.addColorStop(0.75, '#184580');
+  grad.addColorStop(1, '#2b5f9f');
   g.fillStyle = grad;
   g.fillRect(0, 0, 2, 256);
   const tex = new THREE.CanvasTexture(c);
@@ -803,7 +869,7 @@ class SkyTraffic {
       s.position.x += s.userData.speed * dt;
       if (s.position.x > 4600) s.position.x = -4600;
     }
-    // Now and then a biplane, low over the lake, left to right.
+    // Now and then a biplane, left to right, high over the lake.
     if (this.plane) {
       if (this.planeT < 0) {
         this.planeWait -= dt;
@@ -812,7 +878,7 @@ class SkyTraffic {
         this.planeT += dt / 26;
         const t = this.planeT;
         this.plane.visible = true;
-        this.plane.position.set(-900 + t * 1800, LAKE + 45 + Math.sin(t * 7) * 6, -620);
+        this.plane.position.set(-900 + t * 1800, 150 + Math.sin(t * 7) * 10, -620);
         this.plane.rotation.set(0, 0, Math.sin(t * 9) * 0.06);
         if (this.propeller) this.propeller.rotation.x += dt * 60;
         if (t >= 1) {

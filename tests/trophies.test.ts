@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { newCareer, noteRide, recordPractice } from '../src/career/career';
-import { riderRecord, showcaseWins, trophyFor, wins } from '../src/career/trophies';
+import { riderRecord, showcaseWins, TROPHIES, trophyFor, wins } from '../src/career/trophies';
+import { RACES } from '../src/career/races';
 
 const practice = { start: 'junction' as const, toboggan: 'traditional' as const, style: 'running' as const, steps: 7 };
 
@@ -45,19 +46,20 @@ describe('the trophy room', () => {
     expect(w[0].date).toContain('January 2027');
     expect(w[1].net).toBe(125);
     expect(w[2].model).toBe('brabazon');
-    // An unknown race always gets the same standard cup.
-    expect(trophyFor('stagni').model).toBe(trophyFor('stagni').model);
-    expect(['urn', 'cup', 'flared']).toContain(trophyFor('stagni').model);
+    expect(trophyFor('stagni').model).toBe('rake');
   });
 
-  it('a showcase career has one of every trophy in the room, before any race of its own', () => {
-    const models = new Set(showcaseWins().map((w) => w.model));
-    expect([...models].sort()).toEqual(
-      ['bartley-bear', 'brabazon', 'calisch', 'coppa-italia', 'cresta', 'cup', 'curzon', 'flared', 'grand-national', 'gunter-sachs', 'morgan', 'urn', 'willoughby'].sort(),
-    );
+  it('every race on the calendar has a trophy of its own', () => {
+    const models = RACES.map((r) => TROPHIES[r.id]?.model);
+    expect(models.every(Boolean)).toBe(true);
+    expect(new Set(models).size).toBe(RACES.length);
+  });
+
+  it('a showcase career has the trophy of every race in the room, before any race of its own', () => {
     const c = newCareer('t', 'T', 'adelaide');
     c.showcase = true;
-    expect(wins(c)).toHaveLength(13);
+    expect(wins(c)).toHaveLength(RACES.length);
+    expect(new Set(showcaseWins().map((w) => w.model)).size).toBe(RACES.length);
     expect(c.results).toHaveLength(0);
   });
 });

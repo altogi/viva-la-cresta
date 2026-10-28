@@ -28,6 +28,11 @@ M = {
     "walnut": lib.material("tr_walnut", (0.3, 0.16, 0.07), 0.45),
     "oak": lib.material("tr_oak", (0.42, 0.24, 0.11), 0.38),
     "plaque": lib.material("tr_plaque", (0.85, 0.85, 0.88), 0.18, 1.0),
+    "leather": lib.material("tr_leather", (0.45, 0.04, 0.04), 0.5),
+    "enamel": lib.material("tr_enamel", (0.95, 0.94, 0.9), 0.15),
+    "bottle": lib.material("tr_bottle", (0.02, 0.12, 0.05), 0.08),
+    "glaze": lib.material("tr_glaze", (0.08, 0.17, 0.3), 0.2),
+    "foliage": lib.material("tr_foliage", (0.06, 0.2, 0.07), 0.7),
 }
 NAMES = list(M)
 
@@ -544,6 +549,202 @@ for side in (-1, 1):
 bart.append(ball("be_nose", (0.345 * BS, 0, 1.345 * BS + 0.045), 0.05 * BS, "ebony"))
 trophies.append(assemble("bartley-bear", bart))
 
+
+# ---------- Trophies for the other races (one each: every race on the calendar has its own) ----------
+
+
+def prism(name, outline, thickness, key, y=0.0):
+    """A flat shape (points in the xz plane, in order round it) extruded across y."""
+    verts, faces = [], []
+    n = len(outline)
+    for x, z in outline:
+        verts.append((x, y - thickness / 2, z))
+        verts.append((x, y + thickness / 2, z))
+    for i in range(n):
+        j = (i + 1) % n
+        faces.append((2 * i, 2 * j, 2 * j + 1, 2 * i + 1))
+    faces.append(tuple(2 * i for i in range(n))[::-1])
+    faces.append(tuple(2 * i + 1 for i in range(n)))
+    obj = lib.mesh_object(name, verts, faces, coll=COLL)
+    fix_normals(obj)
+    finish(obj, key)
+    for p in obj.data.polygons:
+        p.use_smooth = False
+    return obj
+
+
+def pyramid(name, w, h, z, key):
+    verts = [(-w / 2, -w / 2, z), (w / 2, -w / 2, z), (w / 2, w / 2, z), (-w / 2, w / 2, z), (0, 0, z + h)]
+    obj = lib.mesh_object(name, verts, [(0, 1, 4), (1, 2, 4), (2, 3, 4), (3, 0, 4), (3, 2, 1, 0)], coll=COLL)
+    fix_normals(obj)
+    finish(obj, key)
+    for p in obj.data.polygons:
+        p.use_smooth = False
+    return obj
+
+
+def ring_handle(name, cx, cz, r, tube, key, axis="y"):
+    """A ring standing upright (in the xz plane), as a drop handle."""
+    pts = [(cx + r * math.cos(a), 0, cz + r * math.sin(a)) for a in (k / 32 * math.tau for k in range(33))]
+    return sweep(name, pts, tube, key, n=8)
+
+
+def round_base(prefix, r=0.11, h=0.045, key="ebony"):
+    return lathe(f"{prefix}_base", [(0, 0), (r, 0), (r + 0.004, h * 0.3), (r, h), (r * 0.9, h), (0, h)], key)
+
+
+# The Heaton Gold Cup: a tall gold goblet, plain and heavy, knopped stem.
+trophies.append(assemble("heaton", [
+    lathe("he_body", [(0, 0), (0.085, 0), (0.088, 0.01), (0.07, 0.02), (0.03, 0.04), (0.018, 0.08), (0.032, 0.1), (0.032, 0.11),
+                      (0.016, 0.13), (0.016, 0.17), (0.05, 0.19), (0.09, 0.24), (0.105, 0.33), (0.108, 0.4), (0.112, 0.41), (0.1, 0.405), (0, 0.37)], "gold"),
+    torus("he_band", 0.104, 0.005, 0.3, "gold"),
+]))
+
+# The Lightning Cup: a silver bolt striking up from an ebony drum.
+bolt = [(0.0, 0.05), (-0.035, 0.2), (0.01, 0.2), (-0.03, 0.34), (0.06, 0.18), (0.015, 0.18), (0.05, 0.05)]
+trophies.append(assemble("lightning", [round_base("li", 0.09, 0.05), prism("li_bolt", [(x, z + 0.0) for x, z in bolt], 0.022, "silver")]))
+
+# The Swiss Championship: a silver cow bell on its red leather strap, a white cross on the strap.
+cowbell = lathe("sw_bell", [(0, 0.05), (0.07, 0.05), (0.075, 0.06), (0.07, 0.12), (0.06, 0.17), (0.045, 0.2), (0.025, 0.21), (0, 0.21)], "silver")
+cowbell.scale = (1, 0.72, 1)
+strap = sweep("sw_strap", bezier([(-0.035, 0, 0.195), (-0.05, 0, 0.29), (0.05, 0, 0.29), (0.035, 0, 0.195)], steps=16), 0.011, "leather", n=10)
+trophies.append(assemble("swiss", [
+    box("sw_plinth", (0.2, 0.13, 0.05), (0, 0, 0.025), "wood"), cowbell, strap,
+    box("sw_cross_v", (0.008, 0.004, 0.026), (0.0, -0.012, 0.266), "enamel", 0.0), box("sw_cross_h", (0.026, 0.004, 0.008), (0.0, -0.012, 0.266), "enamel", 0.0),
+    ball("sw_clapper", (0, 0, 0.06), 0.016, "silver"),
+]))
+
+# The Johannes Badrutt Memorial Trophy: the Palace's tower in silver, its pointed roof and windows.
+tower = [box("ba_plinth", (0.16, 0.16, 0.05), (0, 0, 0.025), "ebony"), box("ba_shaft", (0.08, 0.08, 0.27), (0, 0, 0.185), "silver", 0.002),
+         box("ba_cornice", (0.092, 0.092, 0.012), (0, 0, 0.325), "silver", 0.002), pyramid("ba_roof", 0.096, 0.13, 0.331, "silver")]
+for z in (0.1, 0.15, 0.2, 0.25, 0.29):
+    tower.append(box("ba_window", (0.016, 0.004, 0.026), (0, -0.041, z), "ebony", 0.0))
+trophies.append(assemble("badrutt", tower))
+
+# The Claude Cartier Challenge Cup: a gilt carriage clock, white enamel dial, a handle on top.
+clock = [box("ca_case", (0.13, 0.08, 0.16), (0, 0, 0.1), "gold", 0.006), box("ca_cap", (0.14, 0.09, 0.012), (0, 0, 0.185), "gold", 0.003),
+         box("ca_foot", (0.14, 0.09, 0.012), (0, 0, 0.016), "gold", 0.003)]
+for x in (-0.06, 0.06):
+    for y in (-0.035, 0.035):
+        clock.append(ball("ca_ball", (x, y, 0.006), 0.008, "gold"))
+dial = lathe("ca_dial", [(0, 0), (0.042, 0), (0.042, 0.004), (0, 0.004)], "enamel")
+dial.rotation_euler = (math.pi / 2, 0, 0)
+dial.location = (0, -0.04, 0.1)
+clock.append(dial)
+clock.append(box("ca_hand1", (0.003, 0.002, 0.03), (0.0, -0.047, 0.112), "ebony", 0.0))
+clock.append(box("ca_hand2", (0.022, 0.002, 0.003), (0.01, -0.047, 0.1), "ebony", 0.0))
+clock.append(sweep("ca_handle", [(-0.045, 0, 0.19), (-0.04, 0, 0.225), (0.04, 0, 0.225), (0.045, 0, 0.19)], 0.004, "gold", n=8))
+trophies.append(assemble("cartier", clock))
+
+# The Bonsai Challenge: a little pine in a glazed pot, its trunk twisting, its foliage in pads.
+bonsai = [box("bo_pot", (0.2, 0.13, 0.05), (0, 0, 0.03), "glaze", 0.006),
+          sweep("bo_trunk", bezier([(-0.02, 0, 0.05), (0.04, 0, 0.12), (-0.07, 0, 0.17), (-0.02, 0, 0.24)], steps=12), [0.02 - 0.012 * i / 12 for i in range(13)], "walnut", n=8),
+          sweep("bo_branch", [(-0.03, 0, 0.17), (0.04, 0.0, 0.2), (0.08, 0, 0.21)], [0.008, 0.006, 0.004], "walnut", n=6)]
+for i, (x, y, z, r) in enumerate([(-0.02, 0, 0.26, 0.05), (0.08, 0.0, 0.22, 0.04), (-0.08, 0.02, 0.19, 0.04), (0.02, -0.03, 0.23, 0.035)]):
+    pad = ball(f"bo_pad{i}", (x, y, z), r, "foliage", 10, 6)
+    pad.scale = (1.3, 1.1, 0.5)
+    bonsai.append(pad)
+trophies.append(assemble("bonsai", bonsai))
+
+# The Aris Vatimbella Challenge Cup: a silver amphora with two upright handles.
+amph = [round_base("am", 0.07, 0.03),
+        lathe("am_body", [(0, 0.03), (0.04, 0.03), (0.03, 0.05), (0.06, 0.1), (0.09, 0.18), (0.085, 0.26), (0.05, 0.31), (0.032, 0.34), (0.032, 0.37), (0.045, 0.38), (0.04, 0.385), (0, 0.37)], "silver")]
+for side in (-1, 1):
+    h = bezier([(side * 0.034, 0, 0.36), (side * 0.1, 0, 0.37), (side * 0.11, 0, 0.3), (side * 0.07, 0, 0.27)], steps=12)
+    amph.append(sweep("am_handle", h, 0.006, "silver", n=8))
+trophies.append(assemble("amphora", amph))
+
+# The Lowe Portago Challenge: a silver racing helmet of the fifties, peak and goggles, on a stand.
+helmet = [round_base("hm", 0.07, 0.03), sweep("hm_post", [(0, 0, 0.03), (0, 0, 0.12)], 0.012, "ebony", n=8),
+          lathe("hm_shell", [(0.0, 0.12), (0.09, 0.12), (0.095, 0.15), (0.09, 0.19), (0.07, 0.225), (0.04, 0.245), (0, 0.25)], "silver")]
+peak = prism("hm_peak", [(-0.04, 0.0), (0.04, 0.0), (0.03, 0.03), (-0.03, 0.03)], 0.005, "silver")
+peak.rotation_euler = (math.radians(-70), 0, 0)
+peak.location = (0, -0.09, 0.19)
+helmet.append(peak)
+for side in (-1, 1):
+    g = ring_handle("hm_goggle", side * 0.028, 0.0, 0.02, 0.005, "enamel")
+    g.rotation_euler = (math.pi / 2, 0, 0)
+    g.location = (0, -0.092, 0.2)
+    helmet.append(g)
+helmet.append(torus("hm_strap", 0.093, 0.006, 0.2, "leather"))
+trophies.append(assemble("helmet", helmet))
+
+# The Bledisloe Cup: a wide silver rose bowl with ring handles, on a short foot.
+rose = [round_base("rb", 0.1, 0.035),
+        lathe("rb_bowl", [(0, 0.035), (0.07, 0.035), (0.05, 0.05), (0.08, 0.07), (0.14, 0.12), (0.165, 0.18), (0.17, 0.19), (0.16, 0.19), (0, 0.15)], "silver"),
+        torus("rb_rim", 0.168, 0.006, 0.19, "silver")]
+for side in (-1, 1):
+    rose.append(ring_handle("rb_ring", side * 0.17, 0.12, 0.03, 0.005, "silver"))
+    rose.append(ball("rb_lion", (side * 0.155, 0, 0.15), 0.016, "silver"))
+trophies.append(assemble("rosebowl", rose))
+
+# The Baron Oertzen Cup: a lidded silver beer stein with a thumb-lift and a stout handle.
+stein = [lathe("st_body", [(0, 0), (0.07, 0), (0.072, 0.012), (0.065, 0.02), (0.06, 0.2), (0.066, 0.21), (0.066, 0.22), (0.07, 0.225), (0.05, 0.25), (0.02, 0.26), (0, 0.262)], "silver"),
+         torus("st_band1", 0.063, 0.005, 0.06, "silver"), torus("st_band2", 0.061, 0.005, 0.16, "silver"),
+         sweep("st_handle", bezier([(0.06, 0, 0.18), (0.13, 0, 0.18), (0.13, 0, 0.05), (0.062, 0, 0.05)], steps=14), 0.01, "silver", n=8),
+         ball("st_thumb", (0.075, 0, 0.245), 0.012, "silver")]
+trophies.append(assemble("stein", stein))
+
+# The Fairchilds MacCarthy Cup: a quaich, the shallow two-lugged drinking bowl, on an oak base.
+quaich = [round_base("qu", 0.1, 0.04, "oak"),
+          lathe("qu_bowl", [(0, 0.04), (0.05, 0.04), (0.06, 0.05), (0.1, 0.08), (0.12, 0.11), (0.115, 0.115), (0, 0.095)], "silver")]
+for side in (-1, 1):
+    quaich.append(prism("qu_lug", [(side * 0.11, 0.104), (side * 0.18, 0.106), (side * 0.18, 0.112), (side * 0.11, 0.114)], 0.06, "silver"))
+trophies.append(assemble("quaich", quaich))
+
+# The Stagni Cup: a rider's boot rake in silver, the toe's three teeth, on a sloping oak stand.
+rake = [box("ra_stand", (0.24, 0.12, 0.04), (0, 0, 0.02), "oak")]
+plate = prism("ra_plate", [(-0.1, 0.0), (0.06, 0.0), (0.1, 0.02), (0.1, 0.05), (0.06, 0.06), (-0.1, 0.06)], 0.07, "silver")
+plate.location = (0, 0, 0.04)
+rake.append(plate)
+for y in (-0.025, 0.0, 0.025):
+    rake.append(sweep("ra_tooth", [(0.1, y, 0.06), (0.14, y, 0.04), (0.16, y, 0.01)], [0.008, 0.005, 0.001], "silver", n=6))
+rake.append(sweep("ra_strap", [(-0.06, -0.04, 0.1), (-0.06, 0, 0.14), (-0.06, 0.04, 0.1)], 0.008, "leather", n=8))
+trophies.append(assemble("rake", rake))
+
+# The Harland Trophy: a silver sailing ship (Harland, the shipbuilders) on ebony cradles.
+ship = [box("sh_plinth", (0.34, 0.1, 0.03), (0, 0, 0.015), "ebony")]
+hull = lathe("sh_hull", [(0, 0), (0.03, 0.002), (0.05, 0.02), (0.055, 0.05), (0.05, 0.06), (0, 0.06)], "silver")
+hull.scale = (3.2, 0.9, 1)
+hull.location = (0, 0, 0.05)
+ship.append(hull)
+for x, h in ((-0.08, 0.2), (0.02, 0.26), (0.11, 0.18)):
+    ship.append(sweep("sh_mast", [(x, 0, 0.1), (x, 0, 0.1 + h)], 0.004, "silver", n=6))
+    for k, w in enumerate((0.09, 0.07, 0.05)):
+        z = 0.14 + k * h * 0.28
+        sail = prism("sh_sail", [(x - w / 2, z), (x + w / 2, z), (x + w / 2 * 0.9, z + h * 0.22), (x - w / 2 * 0.9, z + h * 0.22)], 0.003, "silver", y=-0.006)
+        ship.append(sail)
+for x in (-0.09, 0.09):
+    ship.append(box("sh_cradle", (0.02, 0.06, 0.05), (x, 0, 0.045), "ebony", 0.002))
+trophies.append(assemble("ship", ship))
+
+# The Bott Cup: a silver wine cooler, ring handles, a bottle of fizz in it (gold foil on top).
+cooler = [lathe("co2_body", [(0, 0), (0.07, 0), (0.072, 0.01), (0.06, 0.02), (0.075, 0.05), (0.09, 0.2), (0.1, 0.22), (0.095, 0.225), (0, 0.2)], "silver")]
+for side in (-1, 1):
+    cooler.append(ring_handle("co2_ring", side * 0.1, 0.17, 0.022, 0.004, "silver"))
+bottle = lathe("co2_bottle", [(0, 0), (0.037, 0), (0.037, 0.2), (0.03, 0.24), (0.014, 0.27), (0.014, 0.31), (0, 0.31)], "bottle")
+foil = lathe("co2_foil", [(0, 0.27), (0.016, 0.27), (0.016, 0.33), (0, 0.33)], "gold")
+for o in (bottle, foil):
+    o.rotation_euler = (0, math.radians(18), 0)
+    o.location = (-0.01, 0, 0.06)
+cooler += [bottle, foil]
+trophies.append(assemble("cooler", cooler))
+
+# The Glattfelder Cup: a silver snowflake standing on a slender stem.
+flake = [round_base("sf", 0.07, 0.035), sweep("sf_stem", [(0, 0, 0.035), (0, 0, 0.115)], 0.006, "silver", n=8)]
+cz = 0.24
+for k in range(6):
+    a = k * math.pi / 3 + math.pi / 2  # one arm straight down, onto the stem
+    dx, dz = math.cos(a), math.sin(a)
+    flake.append(sweep("sf_arm", [(0, 0, cz), (dx * 0.13, 0, cz + dz * 0.13)], [0.008, 0.004], "silver", n=6))
+    for f in (0.06, 0.1):
+        for s in (-1, 1):
+            b = a + s * math.radians(55)
+            px, pz = dx * f, cz + dz * f
+            flake.append(sweep("sf_twig", [(px, 0, pz), (px + math.cos(b) * 0.035, 0, pz + math.sin(b) * 0.035)], [0.005, 0.002], "silver", n=6))
+flake.append(ball("sf_heart", (0, 0, cz), 0.016, "silver"))
+trophies.append(assemble("snowflake", flake))
+
 # ---------- Lay them out, look, export ----------
 
 for i, t in enumerate(trophies):
@@ -551,7 +752,7 @@ for i, t in enumerate(trophies):
 # Five at a time, from a little above, with the sun across them.
 lib.preview("trophies_boar.png", (11 * 0.55 + 0.25, -0.75, 0.3), (11 * 0.55, 0.0, 0.12), size=(1200, 800), lens=40, sky=(0.5, 0.62, 0.85), sun=(0.5, -0.6, 0.7))
 lib.preview("trophies_bear.png", (12 * 0.55 + 0.35, -0.5, 0.3), (12 * 0.55, 0.0, 0.17), size=(900, 900), lens=45, sky=(0.5, 0.62, 0.85), sun=(0.5, -0.6, 0.7))
-for k in range(4):
+for k in range(7):
     x = (k * 4 + 1.5) * 0.55
     lib.preview(f"trophies_{k}.png", (x, -2.4, 0.8), (x, 0.0, 0.24), size=(1600, 700), lens=30, sky=(0.5, 0.62, 0.85), sun=(0.5, -0.6, 0.7))
 for t in trophies:

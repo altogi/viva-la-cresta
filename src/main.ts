@@ -130,7 +130,7 @@ async function start() {
   showChoice(chosen);
 
   type Mode = 'intro' | 'saves' | 'hub' | 'menu' | 'ride' | 'viewer' | 'select' | 'trophies';
-  const trophyRoom = new TrophyRoom(world.renderer, assets.models.balloon);
+  const trophyRoom = new TrophyRoom(world.renderer, { balloon: assets.models.balloon, trees: assets.trees });
   if (debug) Object.assign(window, { trophyRoom });
   let mode: Mode = 'intro';
   /** Where the track viewer goes back to. */
