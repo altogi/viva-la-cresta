@@ -6,6 +6,7 @@ import type { Track } from '../sim/track';
 import { lips, surfaceAt } from '../sim/surface';
 import type { Terrain } from './terrain';
 import { toThree } from './util';
+import { OSM_IDS, OSM_NEAR } from '../track/osm';
 
 /** The observers' stand just before Shuttlecock, on the outside (right) of the run. */
 export const PLATFORM = { s: 548, back: 5.5, deck: 2.6, length: 9 };
@@ -88,4 +89,36 @@ export function cuttingHeight(s: number): number {
   const up = THREE.MathUtils.smoothstep(s, s0, s0 + ramp);
   const down = 1 - THREE.MathUtils.smoothstep(s, s1 - ramp, s1);
   return height * Math.min(up, down);
+}
+
+/**
+ * The riders' terrace at Junction: a level shelf of trodden snow in front of the Junction hut's
+ * door (at its uphill end), at the height of its sill, where the toboggans are laid out and the
+ * riders wait. Beside it the run's bank is cut back to a wall. `side` is +1 when it lies to the
+ * run's left; `z` is the world height of the shelf; from `out0` to `out1` metres beyond the lip.
+ */
+export interface Terrace {
+  s0: number;
+  s1: number;
+  side: 1 | -1;
+  z: number;
+  out0: number;
+  out1: number;
+}
+
+const terraces = new WeakMap<Track, Terrace>();
+
+export function junctionTerrace(track: Track): Terrace {
+  const cached = terraces.get(track);
+  if (cached) return cached;
+  const hut = OSM_NEAR.find((b) => b.id === OSM_IDS.junctionHut)!;
+  let near = track.stations[0];
+  for (const st of track.stations) {
+    if (Math.hypot(st.pos[0] - hut.c[0], st.pos[1] - hut.c[1]) < Math.hypot(near.pos[0] - hut.c[0], near.pos[1] - hut.c[1])) near = st;
+  }
+  const side = (hut.c[0] - near.pos[0]) * near.left[0] + (hut.c[1] - near.pos[1]) * near.left[1] > 0 ? 1 : -1;
+  // The hut's floor is 0.3 m under the run's beside it (clubhouse.ts); its door's sill 0.55 above that.
+  const terrace: Terrace = { s0: 307.5, s1: 318, side, z: near.pos[2] - 0.3 + 0.5, out0: 0.4, out1: 7.5 };
+  terraces.set(track, terrace);
+  return terrace;
 }

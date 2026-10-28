@@ -65,7 +65,7 @@ export function adjust(rider: RiderStats, toboggan: TobogganStats, weather: Weat
     /** How well the rakes bite: not at all with the mind elsewhere. */
     rakeGrip: moods.includes('rumours') ? 0 : 1,
     /** Seconds before the hands and feet do what they're told. */
-    lag: moods.includes('hangover') ? 0.38 : 0,
+    lag: moods.includes('hangover') ? 0.2 : 0,
   };
 }
 

@@ -234,6 +234,9 @@ def hut():
         lift = 0.24
         B.poly([(q[0], q[1], q[2] + lift) for q in pts], "snow")
         B.poly([(b[0], b[1], b[2]), (c[0], c[1], c[2]), (c[0], c[1], c[2] + lift), (b[0], b[1], b[2] + lift)] if sx > 0 else [(c[0], c[1], c[2]), (b[0], b[1], b[2]), (b[0], b[1], b[2] + lift), (c[0], c[1], c[2] + lift)], "snow")
+        # Close the slab at the gable ends, front and back, so no gap shows between roof and snow.
+        for p0, p1 in ((a, b), (e, c)):
+            B.poly([p0, p1, (p1[0], p1[1], p1[2] + lift), (p0[0], p0[1], p0[2] + lift)], "snow")
         # A soft lip of snow curling over the eave.
         B.tube((b[0] * 0.98, b[1], b[2] + 0.12), (c[0] * 0.98, c[1], c[2] + 0.12), 0.14, "snow", sides=8)
         # Rafter ends under the eave, and icicles.

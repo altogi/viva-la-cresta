@@ -675,18 +675,26 @@ export class RiderModel {
         open: 0.7,
       };
     }
-    // Remo: feet planted wide, chest out, the right fist punched up and held, the left on his hip.
-    const pelvis = V(-0.25, 0.9 * s, -0.62);
+    // Remo: the victorious warrior. Feet planted wide, leaning into it, the right arm thrust up and
+    // brandished again and again, fist clenched as if holding up his enemy's head; the left fist
+    // clenched at his side; roaring with every thrust.
+    const pump = (time * 1.4) % 1;
+    const thrust = pump < 0.35 ? Math.sin((pump / 0.35) * Math.PI * 0.5) : Math.cos(((pump - 0.35) / 0.65) * Math.PI * 0.5);
+    const shake = Math.sin(time * 19) * 0.025 * thrust;
+    const pelvis = V(-0.22, (0.88 - 0.03 * thrust) * s, -0.62);
     const t = base(pelvis);
-    t.pitch = Math.PI / 2 - 0.12;
-    t.headTilt = 0.3;
-    t.feet = [V(pelvis.x + 0.05, 0.05, pelvis.z - 0.24), V(pelvis.x + 0.05, 0.05, pelvis.z + 0.24)];
-    t.elbowPoles = [V(pelvis.x - 0.2, pelvis.y + 0.2, pelvis.z - 1.2), V(pelvis.x, pelvis.y + 0.6, pelvis.z + 1)];
-    const pump = Math.sin(time * 1.6) * 0.04;
+    t.pitch = Math.PI / 2 + 0.04; // leaning in, not back
+    t.headTilt = 0.15 + 0.25 * thrust;
+    t.headYaw = 0.25;
+    t.feet = [V(pelvis.x + 0.12, 0.05, pelvis.z - 0.26), V(pelvis.x - 0.06, 0.05, pelvis.z + 0.26)];
+    t.kneePoles = [V(pelvis.x + 1, 0.4, pelvis.z - 0.4), V(pelvis.x + 1, 0.4, pelvis.z + 0.4)];
+    // The raised arm swings from a bent, shoulder-high fist up to full stretch and back.
+    const high = V(pelvis.x + 0.14 + shake, pelvis.y + (0.78 + 0.36 * thrust) * s, pelvis.z + 0.24 + shake);
+    t.elbowPoles = [V(pelvis.x - 0.8, pelvis.y - 0.1, pelvis.z - 0.6), V(pelvis.x + 0.4, pelvis.y + 0.5, pelvis.z + 1.2)];
     return {
-      targets: { ...t, hands: [V(pelvis.x - 0.02, pelvis.y + 0.08, pelvis.z - 0.3), V(pelvis.x + 0.06, pelvis.y + 1.1 * s + pump, pelvis.z + 0.2)] },
+      targets: { ...t, hands: [V(pelvis.x + 0.1, pelvis.y - 0.18, pelvis.z - 0.32), high] },
       wink: 0,
-      open: 0.45,
+      open: 0.25 + 0.6 * thrust,
     };
   }
 

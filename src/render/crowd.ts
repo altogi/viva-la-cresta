@@ -12,7 +12,7 @@ import { RiderModel, looseToboggan, type Prop, type StandPosture } from './rider
 import { clubhouseTerrace } from './clubhouse';
 import { JUNCTION_S } from '../track/cresta';
 import { OSM_IDS, OSM_NEAR } from '../track/osm';
-import { PLATFORM, finishPlaces, pathBridge, platformFrame } from './places';
+import { junctionTerrace, PLATFORM, finishPlaces, pathBridge, platformFrame } from './places';
 import { HUT_APOTHEM } from './topHut';
 import { TOP_PLATFORM } from './scenery';
 import { LOOKS, type RiderLook } from './riderLooks';
@@ -656,12 +656,17 @@ export class Crowd {
     // Riders get ready on the side of the run opposite the clubhouse.
     const side = -(Math.sign((club[0] - st.pos[0]) * st.left[0] + (club[1] - st.pos[1]) * st.left[1]) || 1);
     const colors = ['#b3261e', '#d9a21a', '#1f4fa8', '#1d1d1f', '#b3261e', '#2f7d4a', '#d9a21a', '#7a1d1d'];
-    // Uphill of the Junction hut, which stands at the run's edge from just above the start.
-    for (let k = 0; k < 8; k++) {
-      const s = s0 - 25 + k * 1.6;
+    // On the riders' terrace in front of the Junction hut's door: level snow at the sill's height.
+    const shelf = junctionTerrace(this.track);
+    const onTerrace = (s: number, out: number) => {
       const f = this.track.frame(s);
-      const u = side * (lips(this.track.section(s))[side > 0 ? 'left' : 'right'] * side + 1.6);
-      const at = this.ground(s, u);
+      const u = lips(this.track.section(s))[shelf.side > 0 ? 'left' : 'right'] + shelf.side * out;
+      return new THREE.Vector3(f.pos[0] + f.left[0] * u, shelf.z + 0.02, -(f.pos[1] + f.left[1] * u));
+    };
+    for (let k = 0; k < 7; k++) {
+      const s = shelf.s0 + 1 + k * 1.25;
+      const f = this.track.frame(s);
+      const at = onTerrace(s, 1.6);
       const sled = looseToboggan(k % 4 === 3 ? 'flattop' : 'traditional', colors[k]);
       sled.position.copy(at);
       // Side by side, noses towards the run.
@@ -674,9 +679,8 @@ export class Crowd {
       [LOOKS.remo, '#e9e4d6', '#1f4fa8'],
     ];
     kit.forEach(([look, suit, helmet], k) => {
-      const s = s0 - 20 + k * 4.5;
-      const u = side * (lips(this.track.section(s))[side > 0 ? 'left' : 'right'] * side + 3.6 + (k % 2) * 1.2);
-      const at = this.ground(s, u);
+      const s = shelf.s0 + 2 + k * 3;
+      const at = onTerrace(s, 3.8 + (k % 2) * 1.3);
       const f = this.track.frame(s);
       const model = new RiderModel(waitingLook(look, suit, helmet), 'traditional');
       const toRun = new THREE.Vector3(-side * f.left[0], 0, side * f.left[1]).normalize();

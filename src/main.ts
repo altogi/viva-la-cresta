@@ -203,6 +203,10 @@ async function start() {
       },
       { capture: true, passive: true },
     );
+  // The theme from the moment the title appears: browsers that allow sound before a first touch
+  // play it at once; the rest hold it until the first tap or key, when it starts straight away.
+  sound.start();
+  updateMusic();
   document.getElementById('intro')!.addEventListener('click', () => sound.start());
   document.getElementById('new-game')!.addEventListener('click', () => sound.start());
 

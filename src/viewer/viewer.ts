@@ -20,6 +20,8 @@ const FRONT_AHEAD = [9, 7.5, 6, 4.5];
 const FRONT_HEIGHT = [3.6, 2.8, 2.1];
 /** Trackside: one spectator's spot per this many metres of run. */
 const TRACKSIDE_EVERY = 50;
+/** Seconds each trackside spot is held at least (unless the rider has gone far past it). */
+const TRACKSIDE_HOLD = 3;
 
 type CameraMode = 'chase' | 'front' | 'helmet' | 'trackside' | 'orbit';
 const MODES: CameraMode[] = ['chase', 'front', 'helmet', 'trackside', 'orbit'];
@@ -212,6 +214,7 @@ export class Viewer {
         this.snapCamera = true;
       }
       const f = frameAt(this.recording, this.recT, this.recHint);
+      this.pace = (f.v * ATTRACT_SPEED + this.pace * 4) / 5;
       this.s = Math.min(TRACK_LENGTH, f.s);
       this.placeRecorded(f);
       this.updateCamera(dt);
@@ -221,6 +224,7 @@ export class Viewer {
     if (this.attract && (this.s >= TRACK_LENGTH - 0.01 || !this.playing)) this.startFrom(JUNCTION_S, true);
     if (this.playing) {
       const speed = this.ghost.state(this.s).speed;
+      this.pace = speed * SPEEDS[this.speedIndex];
       // Behind the title it plays at half as fast again as a real ride, to show more of the run.
       this.s = Math.min(TRACK_LENGTH, this.s + speed * dt * (this.attract ? ATTRACT_SPEED : SPEEDS[this.speedIndex]));
       if (this.s >= TRACK_LENGTH) this.playing = false;
@@ -267,7 +271,18 @@ export class Viewer {
     } else {
       // Trackside: a spectator's spot every 50 m beside the run, chosen so that the rider can be seen
       // coming the whole way past it (no tree, bank or building in between).
-      desiredPos.copy(this.tracksideSpot(Math.floor((this.s + 20) / TRACKSIDE_EVERY)));
+      // The next spot is picked further ahead the faster the rider is going, so they come towards
+      // it, and each spot is held a while: at the title's pace a spot every 50 m would mean a cut
+      // every second.
+      const lead = 20 + Math.min(80, this.pace * 1.1);
+      const want = Math.floor((this.s + lead) / TRACKSIDE_EVERY);
+      this.spotHeld += dt;
+      const gone = this.spotK >= 0 && this.camPos.distanceTo(this.riderPos) > 75 && this.spotHeld > 0.6;
+      if (this.spotK < 0 || want < this.spotK || (want !== this.spotK && (this.spotHeld > TRACKSIDE_HOLD || gone))) {
+        this.spotK = want;
+        this.spotHeld = 0;
+      }
+      desiredPos.copy(this.tracksideSpot(this.spotK));
       desiredLook.copy(this.riderPos).add(new THREE.Vector3(0, 0.4, 0));
     }
     const k = this.snapCamera ? 1 : 1 - Math.exp(-dt * (this.mode === 'trackside' ? 4 : 8));
@@ -279,7 +294,7 @@ export class Viewer {
     } else this.camPos.lerp(desiredPos, k);
     this.camLook.lerp(desiredLook, this.snapCamera || cut ? 1 : 1 - Math.exp(-dt * (this.mode === 'trackside' ? 16 : 10)));
     // Trackside, the lens zooms to keep the rider about the same size however far off they are.
-    const fov = this.mode === 'trackside' ? THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(5 / Math.max(1, this.camPos.distanceTo(this.riderPos)))), 16, 55) : 62;
+    const fov = this.mode === 'trackside' ? THREE.MathUtils.clamp(THREE.MathUtils.radToDeg(2 * Math.atan(5 / Math.max(1, this.camPos.distanceTo(this.riderPos)))), 9, 55) : 62;
     if (Math.abs(cam.fov - fov) > 0.05) {
       cam.fov += (fov - cam.fov) * (cut || this.snapCamera ? 1 : 1 - Math.exp(-dt * 6));
       cam.updateProjectionMatrix();
@@ -316,6 +331,11 @@ export class Viewer {
   }
 
   private readonly spots = new Map<number, THREE.Vector3>();
+  /** The trackside spot in use, and for how long it has been. */
+  private spotK = -1;
+  private spotHeld = 0;
+  /** How fast the rider is moving down the run on screen (m/s). */
+  private pace = 0;
 
   /**
    * The trackside camera for the stretch of run around k * 50 + 25 m: of spots either side of the
@@ -330,7 +350,7 @@ export class Viewer {
     const pts = this.track.crossSection(s0, sec);
     const sides = sec.outerSide === 'right' ? [-1, 1] : [1, -1];
     // Where the ghost actually is on its line (up the banks on the bends), at toboggan height.
-    const rider = [-26, -12, 0, 12, 22].map((d) => {
+    const rider = [-45, -26, -12, 0, 12, 22].map((d) => {
       const s = THREE.MathUtils.clamp(s0 + d, 0, TRACK_LENGTH);
       const g = this.ghost.state(s);
       return toThree(this.track.toWorld(this.track.frame(s), g.lateral, g.height + 0.25));

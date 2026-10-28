@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import type { Station, Track } from '../sim/track';
 import { TERRAIN_BASE } from './trackMesh';
 import { colors, valueNoise } from './util';
-import { CUTTING_EDGE, CUTTING_FLAT, cuttingHeight, lipAt } from './places';
+import { CUTTING_EDGE, CUTTING_FLAT, cuttingHeight, junctionTerrace, lipAt } from './places';
 import { OSM_IDS, OSM_NEAR } from '../track/osm';
 
 const CELL = 6;
@@ -101,6 +101,18 @@ export class Terrain {
     }
     // The hut's floor stands 0.3 m under the run's (as in clubhouse.ts), its door's sill 0.55 above that.
     this.pads.push({ ring: hut.p.map(([x, y]) => [hut.c[0] + x, hut.c[1] + y]), z: floor.pos[2] - 0.3 + 0.5 });
+    // The riders' terrace in front of the hut's door, level with its sill.
+    const terrace = junctionTerrace(track);
+    const edge = (s: number, out: number): [number, number] => {
+      const f = track.frame(s);
+      const u = lipAt(track, s, terrace.side > 0 ? 'left' : 'right') + terrace.side * out;
+      return [f.pos[0] + f.left[0] * u, f.pos[1] + f.left[1] * u];
+    };
+    const terraceRing: [number, number][] = [];
+    for (let s = terrace.s0; s <= terrace.s1 + 1e-6; s += (terrace.s1 - terrace.s0) / 4) terraceRing.push(edge(s, terrace.out0));
+    for (let s = terrace.s1; s >= terrace.s0 - 1e-6; s -= (terrace.s1 - terrace.s0) / 4) terraceRing.push(edge(s, terrace.out1));
+    if (signedArea(terraceRing) < 0) terraceRing.reverse();
+    this.pads.push({ ring: terraceRing, z: terrace.z });
     // The finish hut (see finishPlaces) stands on the run-out's bank: level the snow round it a little
     // above the bank, so the hut and the riders gathered at it stand on it rather than in it.
     const end = track.length;

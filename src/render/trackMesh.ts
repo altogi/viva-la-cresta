@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { CROSS_POINTS, FLOOR_SEGMENTS, SIDE_POINTS, type Track } from '../sim/track';
 import { colors, toThree } from './util';
+import { junctionTerrace } from './places';
 
 /** Lateral reach of the snow embankment beyond each lip (m). */
 export const SKIRT_WIDTH = 14;
@@ -12,6 +13,24 @@ export const SKIRT_WIDTH = 14;
 export const TERRAIN_BASE = 0.35;
 
 const MESH_STEP = 2; // every second station: 1 m
+
+/**
+ * The embankment beyond a lip, as two points out from it (distance, height above the floor): down
+ * gently to the ground, except beside the riders' terrace at Junction, where it drops as a wall to
+ * the terrace's level (easing back to the usual bank either end).
+ */
+export function skirtProfile(track: Track, s: number, side: 1 | -1, lipZ: number, floor: number) {
+  const mid = { out: SKIRT_WIDTH * 0.45, z: Math.max(lipZ * 0.35, TERRAIN_BASE + 0.15) };
+  const far = { out: SKIRT_WIDTH, z: TERRAIN_BASE - 0.9 };
+  const t = junctionTerrace(track);
+  if (side !== t.side || s < t.s0 - 4 || s > t.s1 + 4) return { mid, far };
+  const k = THREE.MathUtils.smoothstep(s, t.s0 - 4, t.s0) * (1 - THREE.MathUtils.smoothstep(s, t.s1, t.s1 + 4));
+  const level = Math.min(lipZ - 0.05, t.z - floor - 0.04);
+  return {
+    mid: { out: mid.out + (0.3 - mid.out) * k, z: mid.z + (level - mid.z) * k },
+    far: { out: far.out + (3 - far.out) * k, z: far.z + (level - 0.5 - far.z) * k },
+  };
+}
 
 export function buildTrackMesh(track: Track): THREE.Mesh {
   const rowLength = CROSS_POINTS + 4; // two skirt points on each side
@@ -27,12 +46,14 @@ export function buildTrackMesh(track: Track): THREE.Mesh {
     const right = pts[0];
     const left = pts[pts.length - 1];
     // Embankment: from the lip out and down into the ground.
+    const r = skirtProfile(track, st.s, -1, right.z, st.pos[2]);
+    const l = skirtProfile(track, st.s, 1, left.z, st.pos[2]);
     const local: { y: number; z: number; color: THREE.Color }[] = [
-      { y: right.y - SKIRT_WIDTH, z: TERRAIN_BASE - 0.9, color: colors.snow },
-      { y: right.y - SKIRT_WIDTH * 0.45, z: Math.max(right.z * 0.35, TERRAIN_BASE + 0.15), color: colors.snow },
+      { y: right.y - r.far.out, z: r.far.z, color: colors.snow },
+      { y: right.y - r.mid.out, z: r.mid.z, color: colors.snow },
       ...pts.map((p, i) => ({ y: p.y, z: p.z, color: crossColor(i, p.part, p.z, section.runoffRight, section.runoffLeft) })),
-      { y: left.y + SKIRT_WIDTH * 0.45, z: Math.max(left.z * 0.35, TERRAIN_BASE + 0.15), color: colors.snow },
-      { y: left.y + SKIRT_WIDTH, z: TERRAIN_BASE - 0.9, color: colors.snow },
+      { y: left.y + l.mid.out, z: l.mid.z, color: colors.snow },
+      { y: left.y + l.far.out, z: l.far.z, color: colors.snow },
     ];
     local.forEach((p, j) => {
       toThree(track.toWorld(st, p.y, p.z), v);
@@ -108,9 +129,8 @@ export function trackSurfaceHeight(track: Track, s: number, lateral: number): nu
   }
   const lip = lateral >= left.y ? left : right;
   const out = Math.abs(lateral - lip.y);
-  if (out > SKIRT_WIDTH) return null;
-  const mid = SKIRT_WIDTH * 0.45;
-  const midZ = Math.max(lip.z * 0.35, TERRAIN_BASE + 0.15);
-  if (out <= mid) return lip.z + (midZ - lip.z) * (out / mid);
-  return midZ + (TERRAIN_BASE - 0.9 - midZ) * ((out - mid) / (SKIRT_WIDTH - mid));
+  const { mid, far } = skirtProfile(track, s, lateral >= left.y ? 1 : -1, lip.z, track.elevation(s));
+  if (out > far.out) return null;
+  if (out <= mid.out) return lip.z + (mid.z - lip.z) * (out / mid.out);
+  return mid.z + (far.z - mid.z) * ((out - mid.out) / (far.out - mid.out));
 }
