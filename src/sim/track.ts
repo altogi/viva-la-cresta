@@ -7,6 +7,7 @@ import {
   BEND_EXIT_BLEND,
   DRIFTS,
   FLOOR_WIDTH,
+  JUNCTION_S,
   LIP_WIDTH,
   PROFILE,
   START_HEADING,
@@ -256,6 +257,10 @@ export class Track {
         else runoffRight = 'straw';
       }
     }
+    // At the Junction start the wall on the riders' side (the right) comes down from Thoma's exit
+    // bank to a low wall, so they can step in from the terrace and be seen there.
+    const low = smoothstep(JUNCTION_S - 9, JUNCTION_S - 4, s) * (1 - smoothstep(JUNCTION_S + 8, JUNCTION_S + 15, s));
+    if (low > 0) right = lerpWall(right, { radius: 0.3, height: 0.7 }, low);
     const outerSide = bend ? (bend.turn < 0 ? 'left' : 'right') : null;
     return { floorWidth, left, right, bend, outerSide, runoffLeft, runoffRight };
   }

@@ -76,7 +76,7 @@ export class Terrain {
   private readonly leftDir: [number, number];
   readonly bounds: { minX: number; maxX: number; minY: number; maxY: number };
   /** Level ground round the Junction hut and the finish hut: their footprints and the ground's height. */
-  private readonly pads: { ring: [number, number][]; z: number }[] = [];
+  private readonly pads: { ring: [number, number][]; z: number; flat?: number; edge?: number }[] = [];
 
   constructor(track: Track) {
     this.index = new TrackIndex(track);
@@ -125,7 +125,8 @@ export class Terrain {
       ring.push([c[0] + st.forward[0] * a + st.left[0] * b, c[1] + st.forward[1] * a + st.left[1] * b]);
     }
     if (signedArea(ring) < 0) ring.reverse();
-    this.pads.push({ ring, z: st.pos[2] + 0.72 });
+    // Level just round it, easing away over a wide margin, so no shelf stands out seen from the run.
+    this.pads.push({ ring, z: st.pos[2] + 0.72, flat: 1.6, edge: 11 });
     this.mesh = this.build();
   }
 
@@ -157,7 +158,9 @@ export class Terrain {
   private level(x: number, y: number, z: number) {
     for (const pad of this.pads) {
       const d = distanceToRing(x, y, pad.ring);
-      if (d < PAD_EDGE) z += (pad.z - z) * (1 - THREE.MathUtils.smoothstep(d, PAD_FLAT, PAD_EDGE));
+      const flat = pad.flat ?? PAD_FLAT;
+      const edge = pad.edge ?? PAD_EDGE;
+      if (d < edge) z += (pad.z - z) * (1 - THREE.MathUtils.smoothstep(d, flat, edge));
     }
     return z;
   }

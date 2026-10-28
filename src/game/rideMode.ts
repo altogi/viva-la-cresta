@@ -18,6 +18,8 @@ import { FallDebris } from '../render/particles';
 import type { Crowd } from '../render/crowd';
 import type { WeatherView } from '../render/weather';
 import { STEINBOCK_S, type Steinbock } from '../render/steinbock';
+import { junctionTerrace } from '../render/places';
+import { PADDING, type Padding } from '../render/padding';
 import { adjust, Lag, MOODS, rollMoods, WEATHER, weatherFor, type Mood, type Weather } from './conditions';
 import { groundHeight } from '../render/ground';
 import { toThree } from '../render/util';
@@ -129,6 +131,8 @@ export class RideMode {
   crowd: Crowd | null = null;
   /** The day's weather on screen. */
   weatherView: WeatherView | null = null;
+  /** The loose padded mats beyond Shuttlecock's straw. */
+  padding: Padding | null = null;
   /** The Steinbock that wanders onto the ice after Shuttlecock one ride in a hundred. */
   steinbock: Steinbock | null = null;
   /** Debug: always have him there (?steinbock). */
@@ -162,6 +166,7 @@ export class RideMode {
 
   /** On the ice after a fall (its song plays), until the next ride. */
   get fallen() {
+    if (this.left) return false;
     return this.stage === 'falling' || this.stage === 'replay' || (this.stage === 'done' && this.sim.state.phase === 'fallen');
   }
 
@@ -185,10 +190,15 @@ export class RideMode {
       if (!this.fallOnStraw) return;
       const { station } = terrain.distanceToTrack(pos.x, -pos.z);
       if (!station) return;
+      // Into the padded mats beyond Shuttlecock's straw: they take the blow, and move.
+      if (this.padding?.collide(pos, vel, 0.25, 40) && this.stage === 'falling' && Math.hypot(vel.x, vel.z) > 2) {
+        this.debris.burst(pos.clone(), vel.clone().multiplyScalar(-0.3), true, 0.5);
+      }
+      // And the board wall behind them stops anything that gets past.
       const pts = track.crossSection(station.s);
       const lateral = (pos.x - station.pos[0]) * station.left[0] + (-pos.z - station.pos[1]) * station.left[1];
       const side = this.sim.state.fall?.side === 'left' ? 1 : -1;
-      const pad = (side > 0 ? pts[pts.length - 1].y : pts[0].y) + side * 8.3;
+      const pad = (side > 0 ? pts[pts.length - 1].y : pts[0].y) + side * (PADDING.fence - 0.2);
       if (side * (lateral - pad) > 0) {
         const push = lateral - pad;
         pos.x -= station.left[0] * push;
@@ -226,6 +236,8 @@ export class RideMode {
 
   begin(setup: RideSetup) {
     this.setup = setup;
+    this.left = false;
+    this.padding?.reset();
     this.crowd?.populate();
     this.crowd?.endFinish();
     // A fresh start: whatever played for the last fall stops.
@@ -327,11 +339,17 @@ export class RideMode {
     this.stage = 'countdown';
     this.stageTime = 0;
     this.banner('', '');
+    this.crowd?.signalStart(this.setup.startS);
   }
+
+  /** The rider has left the ride (Continue or Menu): the fall's song is over. */
+  private left = false;
 
   private exit() {
     // Leave the camera as the menu and viewer expect it (no helmet lens).
     this.stage = 'done';
+    this.left = true;
+    this.onMusic();
     this.cam = 'chase';
     $('ride-cam').textContent = 'Chase';
     this.applyCam();
@@ -436,6 +454,7 @@ export class RideMode {
       this.placeRider();
       if (riding) this.sprayRakes(dt);
     }
+    this.padding?.update(realDt * (this.stage === 'falling' && this.stageTime < 2.4 ? 0.3 : 1));
     if (this.steinbockOut) this.steinbock?.update(realDt, this.stage === 'live' || this.stage === 'runout' ? this.sim.state.s : null);
     this.updateCamera(realDt);
     this.updateHud();
@@ -553,6 +572,7 @@ export class RideMode {
     const s = Math.min(snap.s, this.track.length);
     const frame = this.track.frame(s);
     const sp = surfaceAt(this.track.section(s), snap.u);
+    model.setCastShadow(sp.angle < 0.55);
     toThree(this.track.toWorld(frame, sp.y, sp.z), this.riderPos);
     const up = toThree([
       frame.left[0] * sp.ny + frame.up[0] * sp.nz,
@@ -763,13 +783,21 @@ export class RideMode {
         desiredLook.copy(this.riderPos).add(new THREE.Vector3(0, 0.9, 0));
       }
     } else if (this.stage === 'ready' || this.stage === 'countdown') {
-      // The start, seen from a little way down the run looking back up: rider, start and hut.
       const s0 = this.setup.startS;
-      const below = this.track.frame(s0 + 11);
-      toThree(this.track.toWorld(below, -1.6, 2.4), desiredPos);
-      const behind = this.track.frame(Math.max(0, s0 - 4));
-      toThree(this.track.toWorld(behind, 1.5, 1.6), desiredLook);
-      if (s0 < 4) desiredLook.addScaledVector(toThree(this.track.frame(0).forward), -6);
+      if (s0 > 4) {
+        // Junction: from across the run, the start line, the starter and the riders getting ready
+        // on the terrace by the hut, the walkway beyond.
+        const side = junctionTerrace(this.track).side;
+        toThree(this.track.toWorld(this.track.frame(s0 + 4), -side * 5.5, 4.8), desiredPos);
+        toThree(this.track.toWorld(this.track.frame(s0 - 2.5), side * 2.8, 0.9), desiredLook);
+      } else {
+        // Top: from a little way down the run looking back up: rider, start and hut.
+        const below = this.track.frame(s0 + 11);
+        toThree(this.track.toWorld(below, -1.6, 2.4), desiredPos);
+        const behind = this.track.frame(Math.max(0, s0 - 4));
+        toThree(this.track.toWorld(behind, 1.5, 1.6), desiredLook);
+        desiredLook.addScaledVector(toThree(this.track.frame(0).forward), -6);
+      }
     } else {
       const s = Math.min(st.s, this.track.length);
       const sp = surfaceAt(this.track.section(s), st.u);

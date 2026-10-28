@@ -20,6 +20,7 @@ import { Viewer } from './viewer/viewer';
 import { freeRideWeather, RideMode, type RideSetup } from './game/rideMode';
 import { WeatherView } from './render/weather';
 import { Steinbock } from './render/steinbock';
+import { Padding } from './render/padding';
 import { recordDescent, type DescentFrame } from './viewer/descent';
 import { Sound } from './audio/sound';
 import { Music } from './audio/music';
@@ -106,6 +107,9 @@ async function start() {
   if (debug) Object.assign(window, { crowd });
   world.scene.add(crowd.group);
   ride.crowd = crowd;
+  const padding = new Padding(track, terrain);
+  world.scene.add(padding.group);
+  ride.padding = padding;
   if (assets.models.steinbock) ride.steinbock = new Steinbock(assets.models.steinbock, track);
   ride.alwaysSteinbock = params.has('steinbock');
   const weather = new WeatherView(world);
@@ -183,6 +187,20 @@ async function start() {
     else music.stop();
   };
   ride.onMusic = () => updateMusic();
+  // The phone locked, or the player switched app or tab: everything stops, and picks up on return
+  // (a suspended page's audio would otherwise drift and break up).
+  const hide = () => {
+    music.stop(true);
+    sound.sleep();
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') hide();
+    else {
+      sound.start();
+      updateMusic();
+    }
+  });
+  window.addEventListener('pagehide', hide);
   onMode = updateMusic;
   musicButton.addEventListener('click', (e) => {
     e.stopPropagation();

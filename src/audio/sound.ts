@@ -76,6 +76,12 @@ export class Sound {
     return true;
   }
 
+  /** Silence everything while the page is hidden (the phone locked, another app or tab in front). */
+  sleep() {
+    if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend();
+    silentLoop?.pause();
+  }
+
   /** Phones suspend the audio after an interruption (a call, the screen locking): pick it up again. */
   private wake() {
     if (this.ctx && this.ctx.state !== 'running') void this.ctx.resume();

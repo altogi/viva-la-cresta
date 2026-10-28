@@ -121,12 +121,19 @@ export class Music {
     }
   }
 
-  /** Fade out and stop. */
-  stop() {
+  /** Fade out and stop (at once, when the page is going away). */
+  stop(now = false) {
     if (!this.playing) return;
     this.playing = false;
     const c = this.context();
     if (!c || !this.out) return;
+    if (now) {
+      this.out.gain.cancelScheduledValues(c.ctx.currentTime);
+      this.out.gain.setValueAtTime(0, c.ctx.currentTime);
+      if (this.timer !== null) window.clearInterval(this.timer);
+      this.timer = null;
+      return;
+    }
     this.out.gain.setTargetAtTime(0, c.ctx.currentTime, 0.4);
     window.setTimeout(() => {
       if (this.playing || this.timer === null) return;

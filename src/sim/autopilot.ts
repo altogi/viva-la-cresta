@@ -36,7 +36,8 @@ export const POLICIES: Record<string, Policy> = {
   beginner: {
     name: 'beginner',
     start: 'lying',
-    knives: [[JUNCTION_S, 650]],
+    // Forward off the start's level platform to get going, then back on the knives.
+    knives: [[JUNCTION_S + 12, 650]],
     rake: [
       [JUNCTION_S + 10, 560, 8.5],
       [560, 650, 8],

@@ -64,6 +64,8 @@ interface Agent {
   cheer?: number;
   cheerStyle?: 'clap' | 'wave';
   cheerRest?: number;
+  /** A starter's signal: seconds since it began (arm up, then down for go), or undefined. */
+  go?: number;
   stroll?: THREE.Vector3 | null;
   strollTimer?: number;
 }
@@ -548,6 +550,7 @@ export class Crowd {
     this.buildWaitingRiders();
     this.buildJunction();
     this.buildStandAndFinish();
+    this.buildStarters();
     this.populate();
   }
 
@@ -942,6 +945,29 @@ export class Crowd {
     this.topBanner = banner;
   }
 
+  /** The starters at Top and Junction, by the start line, facing up the run at the rider. */
+  private readonly starters: { agent: Agent; s: number }[] = [];
+
+  private buildStarters() {
+    for (const [s0, side] of [[0, -1], [JUNCTION_S, junctionTerrace(this.track).side]] as const) {
+      const s = s0 + 1.8;
+      const f = this.track.frame(s);
+      const u = lips(this.track.section(s))[side > 0 ? 'left' : 'right'] + side * 0.9;
+      const at = this.ground(s, u);
+      const body = bake(dressed('man', { height: 1.8, coat: '#e0561b', trousers: '#23262e', boots: '#1d1a17', skin: pick(SKINS), hair: '#4a3a2c', hat: '#1d2433', coatLength: 0.1, scarf: '#1d2433' }));
+      // Facing up the run, a little across it, towards where the rider waits.
+      const heading = Math.atan2(-f.forward[1], -f.forward[0]) - side * 0.5;
+      this.starters.push({ agent: this.placeStill(body, 'man', at, heading), s: s0 });
+    }
+  }
+
+  /** The starter at the start nearest `s` gives the signal: arm up, then down for go. */
+  signalStart(s: number) {
+    let best = this.starters[0];
+    for (const st of this.starters) if (Math.abs(st.s - s) < Math.abs(best.s - s)) best = st;
+    if (best) best.agent.go = 0;
+  }
+
   /** Back to waiting, for the next rider. */
   endFinish() {
     if (!this.partyCheer) return;
@@ -1065,6 +1091,22 @@ export class Crowd {
     if (pace > 0.1 || a.mode === 'flee') {
       for (let i = 0; i < 2; i++) arm[i][0] = -Math.sin(t + (i ? 0 : Math.PI)) * swing * 0.8 + (a.mode === 'flee' ? 0.3 : 0);
       elbow[0] = elbow[1] = 0.35 + swing * 0.6;
+      head = 0;
+    } else if (a.go !== undefined) {
+      // The starter's signal: the right arm goes straight up and is held, then chopped down and
+      // forward, pointing the rider off down the run.
+      a.go += dt;
+      const g = a.go;
+      if (g < 1.05) {
+        const up = Math.min(1, g / 0.35);
+        arm[1] = [2.95 * up, 0.12 * up];
+        elbow[1] = 0.05;
+      } else {
+        const down = Math.min(1, (g - 1.05) / 0.18);
+        arm[1] = [2.95 + (1.25 - 2.95) * down, 0.12];
+        elbow[1] = 0.05;
+      }
+      if (g > 3.2) a.go = undefined;
       head = 0;
     } else if ((a.cheer ?? 0) > 0) {
       const now = performance.now() / 1000;

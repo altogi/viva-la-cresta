@@ -6,7 +6,7 @@ import type { Assets } from './assets';
 import { MAT_LENGTH } from '../sim/physics';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { Track } from '../sim/track';
-import { BENDS, LANDMARKS, TRACK_LENGTH } from '../track/cresta';
+import { LANDMARKS, TRACK_LENGTH } from '../track/cresta';
 import { OSM_BUILDINGS, OSM_IDS, OSM_NEAR, OSM_TREES, OSM_WOODS } from '../track/osm';
 import { buildTownBuildings, placeTown } from './buildings';
 import { buildClubhouse, towerFlag } from './clubhouse';
@@ -35,9 +35,9 @@ export function buildScenery(track: Track, terrain: Terrain, assets: Assets): TH
     // The Junction walkway is part of the clubhouse model.
     if (lm.kind === 'bridge' && lm.name !== 'Junction walkway') group.add(assets.models.bridges ? placeBridge(ctx, lm.s, lm.name, assets.models.bridges) : buildBridge(ctx, lm.s, lm.name));
     if (lm.kind === 'timing' || lm.kind === 'start') group.add(buildTimingEye(ctx, lm.s));
+    if (lm.kind === 'start') group.add(buildStartLine(ctx, lm.s));
   }
   group.add(buildFinish(ctx));
-  group.add(buildShuttlecockRunoff(ctx));
   group.add(buildFinishMat(ctx), buildRunOutBank(ctx), buildFinishExit(ctx), buildCutting(ctx));
   if (assets.models.props) group.add(...placeProps(track, terrain, assets.models.props));
   return group;
@@ -609,49 +609,6 @@ function buildFinish(ctx: Placer): THREE.Group {
   return finish;
 }
 
-/** Straw beyond Shuttlecock's lip, then tiers of red padding and a wooden fence. */
-function buildShuttlecockRunoff(ctx: Placer): THREE.Group {
-  const group = new THREE.Group();
-  const bend = BENDS.find((b) => b.name === 'Shuttlecock')!;
-  const rng = mulberry32(5);
-  const pad = new THREE.BoxGeometry(2.4, 1.1, 0.7);
-  const fence = new THREE.BoxGeometry(3.2, 2.0, 0.25);
-  const padMats: THREE.Matrix4[] = [];
-  const fenceMats: THREE.Matrix4[] = [];
-  const bales: THREE.Matrix4[] = [];
-  const m = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  const up = new THREE.Vector3(0, 1, 0);
-  for (let s = bend.s0 - 4; s < bend.s1 + 14; s += 2.3) {
-    const ext = ctx.extent(s);
-    const h = ctx.heading(s);
-    q.setFromAxisAngle(up, h);
-    for (const tier of [0, 1]) {
-      const p = ctx.ground(s, ext.right - 9 - tier * 1.2, 0.55 + tier * 0.5);
-      m.compose(p, q, new THREE.Vector3(1, 1, 1));
-      padMats.push(m.clone());
-    }
-    const f = ctx.ground(s, ext.right - 12.5, 1.0);
-    m.compose(f, q, new THREE.Vector3(1, 1, 1));
-    fenceMats.push(m.clone());
-    for (let k = 0; k < 3; k++) {
-      const b = ctx.ground(s + rng() * 2, ext.right - 2 - rng() * 5, 0.05);
-      q.setFromAxisAngle(up, rng() * Math.PI);
-      m.compose(b, q, new THREE.Vector3(1 + rng(), 0.4 + rng() * 0.3, 1 + rng()));
-      bales.push(m.clone());
-    }
-  }
-  const pads = new THREE.InstancedMesh(pad, mat(colors.padding, { roughness: 0.6 }), padMats.length);
-  padMats.forEach((mm, i) => pads.setMatrixAt(i, mm));
-  const fences = new THREE.InstancedMesh(fence, mat('#d3a35b'), fenceMats.length);
-  fenceMats.forEach((mm, i) => fences.setMatrixAt(i, mm));
-  const straw = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.8, 0), mat(colors.straw, { roughness: 1 }), bales.length);
-  bales.forEach((mm, i) => straw.setMatrixAt(i, mm));
-  pads.castShadow = fences.castShadow = true;
-  group.add(pads, fences, straw);
-  return group;
-}
-
 /** The yellow mat across the end of the run-out at Celerina: it stops the toboggan, the rider slides on. */
 function buildFinishMat(ctx: Placer): THREE.Mesh {
   const track = ctx.track;
@@ -850,11 +807,40 @@ function buildCutting(ctx: Placer): THREE.Group {
 }
 
 /** A snow bank closing the end of the run-out, beyond the mat (and covering the cut in the ground). */
+/** The blue line painted across the ice at a start: where the rider sets off from. */
+function buildStartLine(ctx: Placer, s: number): THREE.Mesh {
+  const pts = ctx.track.crossSection(s);
+  const positions: number[] = [];
+  const index: number[] = [];
+  const half = 0.05;
+  // Across the floor and up the walls to the lips, just above the ice.
+  pts.forEach((p, i) => {
+    for (const ds of [-half, half]) {
+      const v = ctx.local(Math.max(0, s + ds), p.y, p.z + 0.012);
+      positions.push(v.x, v.y, v.z);
+    }
+    if (i > 0) {
+      const a = (i - 1) * 2;
+      index.push(a, a + 1, a + 3, a, a + 3, a + 2);
+    }
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(index);
+  geo.computeVertexNormals();
+  const line = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#1f5fd6', roughness: 0.4, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }));
+  line.receiveShadow = true;
+  return line;
+}
+
 function buildRunOutBank(ctx: Placer): THREE.Mesh {
   const s = ctx.track.length;
   const st = ctx.track.frame(s);
-  const bank = new THREE.Mesh(new RoundedBoxGeometry(9, 2.2, 34, 4, 1.0), mat(colors.snow, { flatShading: false, roughness: 0.95 }));
-  bank.position.copy(ctx.local(s, 0, 0)).add(new THREE.Vector3(st.forward[0] * 4.2, 0.3, -st.forward[1] * 4.2));
+  // A heap of snow half buried in the ground (no edges to stand out against the snow round it).
+  const geo = new THREE.SphereGeometry(1, 32, 16);
+  geo.scale(6, 2.6, 19);
+  const bank = new THREE.Mesh(geo, mat(colors.snow, { flatShading: false, roughness: 0.95 }));
+  bank.position.copy(ctx.local(s, 0, 0)).add(new THREE.Vector3(st.forward[0] * 5.5, -1.1, -st.forward[1] * 5.5));
   bank.rotation.y = ctx.heading(s);
   bank.castShadow = bank.receiveShadow = true;
   return bank;

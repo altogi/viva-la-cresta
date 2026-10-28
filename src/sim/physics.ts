@@ -144,8 +144,9 @@ export class RideSim {
     if (this.options.start === 'running' && this.stepsAllowed > 0) {
       this.state.phase = 'running';
     } else {
+      // A lying start: a push off with the hands, enough to carry the rider off the start's level platform.
       this.state.phase = 'riding';
-      this.state.v = 0.4;
+      this.state.v = 1.6;
     }
   }
 

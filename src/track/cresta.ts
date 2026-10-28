@@ -45,7 +45,7 @@ export interface Landmark {
 export const TRACK_LENGTH = 1212.25;
 /** End of the uphill run-out at Celerina, where a foam cushion stops the rider. */
 export const RUN_OUT_END = 1403;
-export const JUNCTION_S = 322.05;
+export const JUNCTION_S = 315;
 /** Heading at Top start, degrees from east (counter-clockwise): the run leaves Top towards the NNE. */
 export const START_HEADING = 27;
 

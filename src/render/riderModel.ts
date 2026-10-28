@@ -431,6 +431,20 @@ export class RiderModel {
     this.face.express(wink, open);
   }
 
+  private casting = true;
+
+  /**
+   * Whether the rider casts a shadow. High on a steep bank the low sun throws it metres away down
+   * the wall, where it reads as the rider flying; there the contact shadow alone grounds them.
+   */
+  setCastShadow(on: boolean) {
+    if (on === this.casting) return;
+    this.casting = on;
+    this.root.traverse((o) => {
+      if (o !== this.contactShadow) o.castShadow = on;
+    });
+  }
+
   /** Put the helmet on or take it off (off to celebrate). */
   setHelmet(on: boolean) {
     this.helmet.visible = on && this.look.helmet !== null;
@@ -603,24 +617,37 @@ export class RiderModel {
   }
 
   /** Bent over beside the toboggan, pushing it by the handles, legs striding. */
+  /**
+   * The running start: a crouched sprint beside the toboggan, pushing it. Hips low and the torso
+   * pitched well forward, head up to look down the run; both hands down on the toboggan's near rail;
+   * the legs driving, knees coming high and forward on the swing and pushing off behind on each step,
+   * the body dipping as each foot strikes.
+   */
   private runningTargets(phase: number): Targets {
     const s = this.look.scale;
-    const pelvis = V(-0.55, 0.9 * s, -0.42);
+    // Two dips a stride: one at each foot strike.
+    const bob = -0.04 * Math.abs(Math.sin(phase)) * s;
+    const pelvis = V(-0.46, 0.83 * s + bob, -0.38);
     const stride = (offset: number) => {
       const a = phase + offset;
-      return V(pelvis.x + 0.32 * Math.sin(a) * s, Math.max(0, 0.16 * Math.cos(a)) * s + 0.04, pelvis.z + (offset ? 0.1 : -0.1));
+      // Forward through the swing (cos > 0), lifting the foot high; back along the ground in contact.
+      const swing = Math.cos(a);
+      return V(pelvis.x - 0.04 + 0.4 * Math.sin(a) * s, 0.04 + Math.max(0, swing) * 0.26 * s, pelvis.z + (offset ? 0.12 : -0.12));
     };
     return {
       pelvis,
-      pitch: 0.55,
-      roll: 0,
-      headYaw: 0,
-      headTilt: 0,
+      pitch: 0.62,
+      roll: Math.sin(phase) * 0.05,
+      headYaw: 0.1,
+      headTilt: 0.55,
       headRoll: 0,
-      hands: [V(0.05, this.handleY + 0.04, -0.24), V(0.42, this.handleY + 0.04, -0.17)],
+      // Down on the near rail of the toboggan, which runs on the rider's right: the left hand behind,
+      // the right ahead.
+      hands: [V(-0.08, this.handleY + 0.03, -0.22), V(0.36, this.handleY + 0.03, -0.17)],
       feet: [stride(0), stride(Math.PI)],
-      elbowPoles: [V(-0.2, 0.4, -1), V(0.2, 0.4, -0.9)],
-      kneePoles: [V(pelvis.x + 1, 0.5, pelvis.z - 0.1), V(pelvis.x + 1, 0.5, pelvis.z + 0.1)],
+      elbowPoles: [V(pelvis.x - 0.2, 1.1 * s, -1.1), V(pelvis.x + 0.4, 1.1 * s, 0.2)],
+      // Knees forward and a little out, so they bend the right way as the hips sink.
+      kneePoles: [V(pelvis.x + 1.2, 0.55 * s, pelvis.z - 0.25), V(pelvis.x + 1.2, 0.55 * s, pelvis.z + 0.25)],
     };
   }
 
