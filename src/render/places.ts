@@ -43,9 +43,18 @@ export function platformFrame(track: Track, terrain: Terrain): THREE.Object3D {
 export function finishPlaces(track: Track, terrain: Terrain) {
   const end = track.length;
   const lip = lipAt(track, end - 3, 'left');
-  // On the drawn snow, whichever is higher there: the levelled ground or the run's embankment.
+  // On the drawn snow (the levelled ground or the run's embankment, whichever is higher), at the
+  // lowest point under its whole footprint, so its plinth sits into the snow everywhere rather than
+  // over a gap where the embankment falls away.
   const hut = besideRun(track, terrain, end - 10, lip + 4.6);
-  hut.position.y = groundHeight(track, terrain, hut.position.x, hut.position.z);
+  let y = Infinity;
+  for (let a = -2.2; a <= 2.21; a += 0.55) {
+    for (let b = -2.3; b <= 1.81; b += 0.55) {
+      const p = new THREE.Vector3(a, 0, -b).applyMatrix4(hut.matrixWorld);
+      y = Math.min(y, groundHeight(track, terrain, p.x, p.z));
+    }
+  }
+  hut.position.y = y;
   hut.updateMatrixWorld(true);
   return {
     end,

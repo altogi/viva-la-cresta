@@ -4,7 +4,9 @@
 
 import * as THREE from 'three';
 import type { Station, Track } from '../sim/track';
-import { TERRAIN_BASE } from './trackMesh';
+import { TERRAIN_BASE, trackSurfaceHeight } from './trackMesh';
+import { lips } from '../sim/surface';
+import { finishGround } from './finishGround';
 import { colors, valueNoise } from './util';
 import { CUTTING_EDGE, CUTTING_FLAT, cuttingHeight, junctionTerrace, lipAt } from './places';
 import { OSM_IDS, OSM_NEAR } from '../track/osm';
@@ -132,7 +134,7 @@ export class Terrain {
     // Level just round it, easing away over a wide margin, so no shelf stands out seen from the run.
     // Just over the embankment's crest beside the run, so the pad is the snow the hut and its riders stand on.
     this.pads.push({ ring, z: st.pos[2] + 0.64, flat: 2, edge: 14 });
-    this.mesh = this.build();
+    this.mesh = this.build(track);
   }
 
   /** Distance from the centreline, if within ~60 m. */
@@ -200,7 +202,7 @@ export class Terrain {
     return this.blend(x, y, station, distance);
   }
 
-  private build(): THREE.Mesh {
+  private build(track: Track): THREE.Mesh {
     const { minX, maxX, minY, maxY } = this.bounds;
     const nx = Math.ceil((maxX - minX) / CELL) + 1;
     const ny = Math.ceil((maxY - minY) / CELL) + 1;
@@ -218,10 +220,26 @@ export class Terrain {
         const k = j * nx + i;
         const past = !!station && station.s >= this.end - 1e-3 && (x - station.pos[0]) * station.forward[0] + (y - station.pos[1]) * station.forward[1] > 0;
         beyond[k] = past ? 1 : 0;
-        inside[k] = station && distance < CORRIDOR && !past ? 1 : 0;
+        // Round the finish the run-out bends hard (a hairpin), and most of the ground there lies within
+        // the corridor of one part of it or another: draw it all, kept under the ice where the run
+        // passes over it, so the embankments always have snow beneath them.
+        const finish = !!station && station.s > this.end - 70;
+        inside[k] = station && distance < CORRIDOR && !past && !finish ? 1 : 0;
         let z = this.blend(x, y, station, distance);
-        // Under the last of the run-out, kept below its floor, as those cells are drawn.
-        if (inside[k] && station!.s > this.end - 14) z = Math.min(z, station!.pos[2] - 0.3);
+        if (finish) {
+          // Within a cell of the channel, under its ice (a cell reaching across it mustn't show through
+          // the floor); beyond, just under the embankment where that is lower.
+          const lateral = (x - station!.pos[0]) * station!.left[0] + (y - station!.pos[1]) * station!.left[1];
+          const lip = lips(track.section(station!.s));
+          if (lateral < lip.left + CELL && lateral > lip.right - CELL) z = Math.min(z, station!.pos[2] - 0.3);
+          else {
+            const h = trackSurfaceHeight(track, station!.s, lateral);
+            if (h !== null) z = Math.min(z, station!.pos[2] + h - 0.12);
+          }
+          // And under the finish's own sheet of snow.
+          const sheet = finishGround(track).height(x, y);
+          if (sheet !== null) z = Math.min(z, sheet - 0.12);
+        }
         positions[k * 3] = x;
         positions[k * 3 + 1] = z;
         positions[k * 3 + 2] = -y;
@@ -229,6 +247,30 @@ export class Terrain {
         vertexColors[k * 3] = c.r;
         vertexColors[k * 3 + 1] = c.g;
         vertexColors[k * 3 + 2] = c.b;
+      }
+    }
+    // The ground's cut edge by the run tucks just under the embankment wherever that is lower, so the
+    // ground rises out from under it rather than floating over it with an open edge.
+    for (let j = 0; j < ny; j++) {
+      for (let i = 0; i < nx; i++) {
+        const k = j * nx + i;
+        if (inside[k]) continue;
+        let edge = false;
+        for (let dj = -1; dj <= 1 && !edge; dj++) {
+          for (let di = -1; di <= 1 && !edge; di++) {
+            const ii = i + di;
+            const jj = j + dj;
+            if (ii >= 0 && jj >= 0 && ii < nx && jj < ny && inside[jj * nx + ii]) edge = true;
+          }
+        }
+        if (!edge) continue;
+        const x = positions[k * 3];
+        const y = -positions[k * 3 + 2];
+        const { station } = this.index.nearest(x, y);
+        if (!station) continue;
+        const lateral = (x - station.pos[0]) * station.left[0] + (y - station.pos[1]) * station.left[1];
+        const h = trackSurfaceHeight(track, station.s, lateral);
+        if (h !== null) positions[k * 3 + 1] = Math.min(positions[k * 3 + 1], station.pos[2] + h - 0.12);
       }
     }
     const heights = new Float32Array(nx * ny);

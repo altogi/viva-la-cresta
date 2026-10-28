@@ -632,8 +632,10 @@ export class RiderModel {
     const s = this.look.scale;
     // Two dips a stride: one at each foot strike.
     const bob = -0.03 * Math.abs(Math.sin(phase)) * s;
-    // Doubled over beside the toboggan, back nearly flat, so the hands reach right down to it.
-    const pelvis = V(-0.5, 0.66 * s + bob, -0.44);
+    // Doubled over beside the toboggan, back nearly flat, so the hands reach right down to it. A
+    // heavier build runs a little taller and more upright, so the thighs don't drive into the belly.
+    const heavy = Math.max(0, this.look.build - 1);
+    const pelvis = V(-0.5, (0.66 + 0.07 * heavy) * s + bob, -0.44);
     const stride = (offset: number) => {
       const a = phase + offset;
       // Forward through the swing (cos > 0), lifting the foot; back along the ground in contact.
@@ -642,10 +644,11 @@ export class RiderModel {
     };
     return {
       pelvis,
-      pitch: 0.2,
+      pitch: 0.2 + 0.25 * heavy,
       roll: Math.sin(phase) * 0.04,
       headYaw: 0.1,
-      headTilt: 0.75,
+      // Eyes on the ice a few metres ahead, not up at the sky.
+      headTilt: 0.1 - 0.2 * heavy,
       headRoll: 0,
       // Both hands on the toboggan's near rail, down at ice level: the left behind, the right ahead.
       hands: [V(-0.06, this.handleY + 0.01, -0.2), V(0.3, this.handleY + 0.01, -0.17)],

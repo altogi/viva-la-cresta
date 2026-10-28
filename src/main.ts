@@ -5,6 +5,7 @@ import { Track } from './sim/track';
 import { JUNCTION_S } from './track/cresta';
 import { createWorld } from './render/world';
 import { buildTrackMesh } from './render/trackMesh';
+import { finishGround } from './render/finishGround';
 import { Terrain } from './render/terrain';
 import { buildScenery } from './render/scenery';
 import { loadAssets } from './render/assets';
@@ -81,7 +82,7 @@ async function start() {
   const track = new Track();
   const trackMesh = buildTrackMesh(track);
   const terrain = new Terrain(track);
-  world.scene.add(trackMesh, terrain.mesh, buildScenery(track, terrain, assets));
+  world.scene.add(trackMesh, terrain.mesh, finishGround(track).build(), buildScenery(track, terrain, assets));
   lap('scene');
 
   // The ghost rider behind the menu and in the viewer wears the chosen rider's kit.

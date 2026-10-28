@@ -357,18 +357,12 @@ function buildTopArea(ctx: Placer, model?: THREE.Object3D): THREE.Group {
   hut.position.set(osm.c[0], z0 + TOP_PLATFORM, -osm.c[1]);
   hut.rotation.y = heading;
   group.add(hut);
-  // A broad, level snow platform for the start area and the riders waiting their turn.
-  const platform = new THREE.Mesh(new THREE.CylinderGeometry(15, 19, 3, 16), mat(colors.snow, { flatShading: false, roughness: 0.95 }));
+  // A broad, level snow platform for the start area and the riders waiting their turn, ending just
+  // behind the start (any further and its edge stands up out of the run as the ice drops away).
+  const platform = new THREE.Mesh(new THREE.CylinderGeometry(11.7, 15, 3, 24), mat(colors.snow, { flatShading: false, roughness: 0.95 }));
   platform.position.set(-st.forward[0] * 12, z0 + TOP_PLATFORM - 1.5, st.forward[1] * 12); // top just below the ice
   platform.receiveShadow = true;
   group.add(platform);
-  // Snow wall closing the run behind the start.
-  const wall = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.4, 5), mat(colors.snow, { flatShading: false }));
-  // Far enough back to stay behind the chase camera at the start.
-  wall.position.set(-st.forward[0] * 9, z0 + 0.5, st.forward[1] * 9);
-  wall.rotation.y = heading;
-  wall.castShadow = wall.receiveShadow = true;
-  group.add(wall);
   // The grey timing box on its post above the start, as in the photographs.
   const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 3.2, 8), mat('#5b5f66'));
   const box = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.55, 0.55), mat('#c9ccd1', { roughness: 0.5 }));
@@ -578,11 +572,12 @@ function buildFinish(ctx: Placer): THREE.Group {
   const pts = ctx.track.crossSection(s);
   const st = ctx.track.frame(s);
   const flagTex = swissFlag();
-  for (const lat of [pts[0].y - 0.7, pts[pts.length - 1].y + 0.7]) {
+  for (const [lat, out] of [[pts[0].y - 0.7, -1], [pts[pts.length - 1].y + 0.7, 1]]) {
     const x = st.pos[0] + st.left[0] * lat;
     const y = st.pos[1] + st.left[1] * lat;
     const base = new THREE.Vector3(x, groundHeight(ctx.track, ctx.terrain, x, -y), -y);
-    finish.add(wavingFlag(base, 1.9, 0.45, flagTex, Math.atan2(st.forward[1], st.forward[0]) + Math.PI));
+    // Flying out from the run, square to it, so a rider coming down sees the cross full on.
+    finish.add(wavingFlag(base, 1.9, 0.45, flagTex, Math.atan2(st.forward[1], st.forward[0]) + (out * Math.PI) / 2));
   }
   return finish;
 }

@@ -575,8 +575,9 @@ export class Crowd {
 
   /**
    * A trodden path of packed snow alongside the run, from Junction to the finish hut's door. Laid
-   * densely, a few centimetres over the drawn ground (the terrain's triangles and the embankment's),
-   * so it neither floats over the hollows between samples nor sinks into the ridges and flickers.
+   * densely, nine centimetres over the drawn ground (the terrain's triangles and the embankment's,
+   * whose 1 m sections it would otherwise show through as stripes), and drawn in front of it at a
+   * distance, so it neither floats over the hollows nor sinks into the ridges and flickers.
    */
   private buildPath(): THREE.Mesh {
     const positions: number[] = [];
@@ -591,7 +592,7 @@ export class Crowd {
       const w = Math.min(1, (end - s) / 3 + 0.15);
       for (const a of ACROSS) {
         this.ground(s, u + a * w, p);
-        positions.push(p.x, p.y + 0.03, p.z);
+        positions.push(p.x, p.y + 0.09, p.z);
       }
       if (row > 0) {
         const n = ACROSS.length;
@@ -605,7 +606,7 @@ export class Crowd {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setIndex(index);
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#dcd6ca', roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#dcd6ca', roughness: 1, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -24 }));
     mesh.receiveShadow = true;
     return mesh;
   }

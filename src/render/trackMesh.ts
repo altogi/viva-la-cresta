@@ -22,6 +22,19 @@ const MESH_STEP = 2; // every second station: 1 m
 export function skirtProfile(track: Track, s: number, side: 1 | -1, lipZ: number, floor: number) {
   const mid = { out: SKIRT_WIDTH * 0.45, z: Math.max(lipZ * 0.35, TERRAIN_BASE + 0.15) };
   const far = { out: SKIRT_WIDTH, z: TERRAIN_BASE - 0.9 };
+  // On the inside of a tight curve (the run-out's hairpin) a full-width embankment would reach past
+  // the curve's centre and fold over itself: there it stops short of the centre, dipping into the
+  // ground drawn beneath (terrain.ts).
+  const inward = track.curvature(s) * side;
+  if (inward > 0.92 / (SKIRT_WIDTH + 6)) {
+    const pts = track.crossSection(s);
+    const lip = Math.abs(pts[side > 0 ? pts.length - 1 : 0].y);
+    const room = Math.max(2, 0.92 / inward - lip);
+    if (room < far.out) {
+      far.out = room;
+      mid.out = Math.min(mid.out, room * 0.55);
+    }
+  }
   const t = junctionTerrace(track);
   if (side !== t.side || s < t.s0 - 4 || s > t.s1 + 4) return { mid, far };
   const k = THREE.MathUtils.smoothstep(s, t.s0 - 4, t.s0) * (1 - THREE.MathUtils.smoothstep(s, t.s1, t.s1 + 4));
