@@ -578,11 +578,11 @@ function buildFinish(ctx: Placer): THREE.Group {
   const pts = ctx.track.crossSection(s);
   const st = ctx.track.frame(s);
   const flagTex = swissFlag();
-  for (const lat of [pts[0].y - 1.1, pts[pts.length - 1].y + 1.1]) {
+  for (const lat of [pts[0].y - 0.7, pts[pts.length - 1].y + 0.7]) {
     const x = st.pos[0] + st.left[0] * lat;
     const y = st.pos[1] + st.left[1] * lat;
     const base = new THREE.Vector3(x, groundHeight(ctx.track, ctx.terrain, x, -y), -y);
-    finish.add(wavingFlag(base, 5.5, 1.4, flagTex, Math.atan2(st.forward[1], st.forward[0]) + Math.PI));
+    finish.add(wavingFlag(base, 1.9, 0.45, flagTex, Math.atan2(st.forward[1], st.forward[0]) + Math.PI));
   }
   return finish;
 }
@@ -592,14 +592,16 @@ function wavingFlag(base: THREE.Vector3, height: number, w: number, map: THREE.T
   const g = new THREE.Group();
   g.position.copy(base);
   g.rotation.y = heading;
-  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.06, height, 10), mat('#f2f2f0', { roughness: 0.5 }));
+  // Pole, finial and the flutter all in proportion to the flag.
+  const k0 = Math.min(1, w / 1.4 + 0.25);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04 * k0, 0.06 * k0, height, 10), mat('#f2f2f0', { roughness: 0.5 }));
   pole.position.y = height / 2;
   pole.castShadow = true;
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), new THREE.MeshStandardMaterial({ color: '#c9a640', metalness: 0.8, roughness: 0.3 }));
-  ball.position.y = height + 0.06;
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.08 * k0, 10, 8), new THREE.MeshStandardMaterial({ color: '#c9a640', metalness: 0.8, roughness: 0.3 }));
+  ball.position.y = height + 0.06 * k0;
   g.add(pole, ball);
   const geo = new THREE.PlaneGeometry(w, w, 14, 8);
-  geo.translate(w / 2 + 0.05, height - w / 2 - 0.12, 0);
+  geo.translate(w / 2 + 0.05 * k0, height - w / 2 - 0.12 * k0, 0);
   const rest = (geo.attributes.position.array as Float32Array).slice();
   const flag = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map, roughness: 0.8, side: THREE.DoubleSide }));
   flag.castShadow = true;
@@ -611,7 +613,8 @@ function wavingFlag(base: THREE.Vector3, height: number, w: number, map: THREE.T
       const fx = rest[i * 3];
       const fy = rest[i * 3 + 1];
       const k = Math.min(1, fx / w);
-      pos.setXYZ(i, fx - k * k * 0.12, fy - k * 0.08, (Math.sin(fx * 2.4 - t * 5 + fy * 0.5) * 0.14 + Math.sin(fx * 4.1 - t * 7.7) * 0.04) * k);
+      const a = w / 1.4;
+      pos.setXYZ(i, fx - k * k * 0.12 * a, fy - k * 0.08 * a, (Math.sin((fx / a) * 2.4 - t * 5 + (fy / a) * 0.5) * 0.14 + Math.sin((fx / a) * 4.1 - t * 7.7) * 0.04) * k * a);
     }
     pos.needsUpdate = true;
     geo.computeVertexNormals();

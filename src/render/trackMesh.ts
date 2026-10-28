@@ -51,7 +51,7 @@ export function buildTrackMesh(track: Track): THREE.Mesh {
     const local: { y: number; z: number; color: THREE.Color }[] = [
       { y: right.y - r.far.out, z: r.far.z, color: colors.snow },
       { y: right.y - r.mid.out, z: r.mid.z, color: colors.snow },
-      ...pts.map((p, i) => ({ y: p.y, z: p.z, color: crossColor(i, p.part, p.z, section.runoffRight, section.runoffLeft) })),
+      ...pts.map((p, i) => ({ y: p.y, z: p.z, color: crossColor(i, p.part, p.z) })),
       { y: left.y + l.mid.out, z: l.mid.z, color: colors.snow },
       { y: left.y + l.far.out, z: l.far.z, color: colors.snow },
     ];
@@ -97,11 +97,9 @@ export function buildTrackMesh(track: Track): THREE.Mesh {
 const floorStart = SIDE_POINTS - 1;
 const floorEnd = floorStart + FLOOR_SEGMENTS;
 
-function crossColor(i: number, part: string, z: number, runoffRight: string, runoffLeft: string): THREE.Color {
-  if (part === 'lip') {
-    const straw = i === 0 ? runoffRight === 'straw' : runoffLeft === 'straw';
-    return straw ? colors.straw : colors.snow;
-  }
+function crossColor(i: number, part: string, z: number): THREE.Color {
+  // Lips are snow (the straw beyond Shuttlecock's lip is its own heap: padding.ts).
+  if (part === 'lip') return colors.snow;
   if (part === 'floor' && i >= floorStart && i <= floorEnd) return colors.ice;
   // Walls whiten towards the top, where snow clings.
   return z > 1.2 ? colors.wall : colors.ice;

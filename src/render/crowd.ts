@@ -573,28 +573,39 @@ export class Crowd {
     return out.set(x, groundHeight(this.track, this.terrain, x, -y), -y);
   }
 
-  /** A trodden path of packed snow alongside the run, from Junction to the finish. */
+  /**
+   * A trodden path of packed snow alongside the run, from Junction to the finish hut's door. Laid
+   * densely, a few centimetres over the drawn ground (the terrain's triangles and the embankment's),
+   * so it neither floats over the hollows between samples nor sinks into the ridges and flickers.
+   */
   private buildPath(): THREE.Mesh {
     const positions: number[] = [];
     const index: number[] = [];
-    const a = new THREE.Vector3();
-    const b = new THREE.Vector3();
+    const p = new THREE.Vector3();
+    const ACROSS = [-0.8, -0.4, 0, 0.4, 0.8];
+    const end = this.track.length - 13;
     let row = 0;
-    for (let s = 335; s <= this.track.length - 10; s += 2, row++) {
+    for (let s = 335; s <= end + 1e-6; s += 0.5, row++) {
       const u = this.pathU(s);
-      this.ground(s, u - 0.8, a);
-      this.ground(s, u + 0.8, b);
-      positions.push(a.x, a.y + 0.04, a.z, b.x, b.y + 0.04, b.z);
+      // Narrowing to nothing at the hut's door.
+      const w = Math.min(1, (end - s) / 3 + 0.15);
+      for (const a of ACROSS) {
+        this.ground(s, u + a * w, p);
+        positions.push(p.x, p.y + 0.03, p.z);
+      }
       if (row > 0) {
-        const i = row * 2;
-        index.push(i - 2, i, i - 1, i - 1, i, i + 1);
+        const n = ACROSS.length;
+        for (let k = 0; k < n - 1; k++) {
+          const i = row * n + k;
+          index.push(i - n, i, i - n + 1, i - n + 1, i, i + 1);
+        }
       }
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setIndex(index);
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#dcd6ca', roughness: 1, polygonOffset: true, polygonOffsetFactor: -2 }));
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: '#dcd6ca', roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
     mesh.receiveShadow = true;
     return mesh;
   }

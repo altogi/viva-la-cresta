@@ -12,8 +12,11 @@ export interface World {
   resize(): void;
 }
 
-/** Low winter sun from the south-south-west. */
-const SUN_DIRECTION = new THREE.Vector3(-0.35, 0.55, 0.75).normalize();
+/**
+ * Winter sun from the south-south-west, about 45 degrees up: low enough for long winter shadows on
+ * the snow, high enough that a rider up a steep bank throws theirs close by, not metres down the wall.
+ */
+const SUN_DIRECTION = new THREE.Vector3(-0.35, 0.82, 0.75).normalize();
 
 export function createWorld(canvas: HTMLCanvasElement): World {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });

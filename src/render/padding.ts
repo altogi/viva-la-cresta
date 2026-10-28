@@ -57,25 +57,37 @@ export class Padding {
     });
     const boards = new THREE.MeshStandardMaterial({ map: boardTexture(), roughness: 0.8 });
     const post = new THREE.MeshStandardMaterial({ color: '#8a6a44', roughness: 0.85 });
+    // The straw: a lumpy heap half a metre high along the run's lip, a bed thinning out beyond it,
+    // and loose tufts kicked across the snow towards the mats.
     const strawPos: number[] = [];
     const strawUv: number[] = [];
     const strawIdx: number[] = [];
+    const lump = (s: number, k: number) => 0.75 + 0.5 * (0.5 + 0.5 * Math.sin(s * 1.7 + k * 2.3) * Math.cos(s * 0.63 + k));
+    const profile: [number, number][] = [
+      [0.05, 0.02],
+      [0.4, 0.3],
+      [0.9, 0.5],
+      [1.5, 0.42],
+      [2.0, 0.22],
+      [2.5, 0.08],
+      [PADDING.straw + 0.3, 0.0],
+    ];
     let row = 0;
-    for (let s = bend.s0 - 6; s <= bend.s1 + 16; s += 1) {
+    for (let s = bend.s0 - 6; s <= bend.s1 + 16; s += 0.5) {
       const st = track.frame(s);
       const lip = lips(track.section(s)).right;
-      // The straw bed: a soft strip from just over the lip outwards, lying on the ground.
-      for (const [out, v] of [[0.2, 0], [PADDING.straw * 0.5, 0.5], [PADDING.straw, 1]] as const) {
-        const u = lip - out;
+      profile.forEach(([out, h], k) => {
+        const u = lip - out * (0.9 + 0.2 * lump(s, k + 7) - 0.1);
         const x = st.pos[0] + st.left[0] * u;
         const y = st.pos[1] + st.left[1] * u;
-        strawPos.push(x, this.ground(x, y) + 0.06 + (out < 1 ? 0.04 : 0), -y);
-        strawUv.push(s / 2.4, v * 3);
-      }
+        strawPos.push(x, this.ground(x, y) + 0.03 + h * lump(s, k), -y);
+        strawUv.push(s / 1.1, out / 1.1);
+      });
       if (row > 0) {
-        const a = (row - 1) * 3;
-        const b = row * 3;
-        for (let k = 0; k < 2; k++) strawIdx.push(a + k, b + k, a + k + 1, a + k + 1, b + k, b + k + 1);
+        const n = profile.length;
+        const a = (row - 1) * n;
+        const b = row * n;
+        for (let k = 0; k < n - 1; k++) strawIdx.push(a + k, a + k + 1, b + k, a + k + 1, b + k + 1, b + k);
       }
       row++;
     }
@@ -84,9 +96,26 @@ export class Padding {
     strawGeo.setAttribute('uv', new THREE.Float32BufferAttribute(strawUv, 2));
     strawGeo.setIndex(strawIdx);
     strawGeo.computeVertexNormals();
+    straw.side = THREE.DoubleSide;
     const bed = new THREE.Mesh(strawGeo, straw);
-    bed.receiveShadow = true;
+    bed.receiveShadow = bed.castShadow = true;
     this.group.add(bed);
+    // Loose tufts on the snow between the heap and the mats.
+    const tuft = new THREE.IcosahedronGeometry(1, 1);
+    const tufts = new THREE.InstancedMesh(tuft, straw, 70);
+    const tm = new THREE.Matrix4();
+    for (let i = 0; i < 70; i++) {
+      const s = bend.s0 - 4 + rng() * (bend.s1 - bend.s0 + 18);
+      const st = track.frame(s);
+      const u = lips(track.section(s)).right - PADDING.straw - rng() * 0.6;
+      const x = st.pos[0] + st.left[0] * u;
+      const y = st.pos[1] + st.left[1] * u;
+      const r = 0.12 + rng() * 0.22;
+      tm.compose(new THREE.Vector3(x, this.ground(x, y) + 0.02, -y), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rng() * 6), new THREE.Vector3(r * 1.5, r * 0.45, r));
+      tufts.setMatrixAt(i, tm);
+    }
+    tufts.castShadow = tufts.receiveShadow = true;
+    this.group.add(tufts);
     // The mats, two rows staggered, and the board wall behind.
     for (const [out, offset, lift] of [[PADDING.front, 0, 0], [PADDING.back, MAT.length / 2, 0.35]] as const) {
       for (let s = bend.s0 - 4 + offset; s < bend.s1 + 14; s += MAT.length + 0.08) {

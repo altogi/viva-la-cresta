@@ -78,8 +78,12 @@ export class Terrain {
   /** Level ground round the Junction hut and the finish hut: their footprints and the ground's height. */
   private readonly pads: { ring: [number, number][]; z: number; flat?: number; edge?: number }[] = [];
 
+  /** Where the run ends: there is no embankment past it to cover a hole in the ground. */
+  private readonly end: number;
+
   constructor(track: Track) {
     this.index = new TrackIndex(track);
+    this.end = track.length;
     this.plane = fitPlane(track.stations);
     const first = track.stations[0].pos;
     const last = track.stations[track.stations.length - 1].pos;
@@ -126,7 +130,8 @@ export class Terrain {
     }
     if (signedArea(ring) < 0) ring.reverse();
     // Level just round it, easing away over a wide margin, so no shelf stands out seen from the run.
-    this.pads.push({ ring, z: st.pos[2] + 0.72, flat: 1.6, edge: 11 });
+    // At the embankment's height beside the run, so the path, the embankment and the pad meet flush.
+    this.pads.push({ ring, z: st.pos[2] + 0.5, flat: 2, edge: 14 });
     this.mesh = this.build();
   }
 
@@ -202,6 +207,8 @@ export class Terrain {
     const positions = new Float32Array(nx * ny * 3);
     const vertexColors = new Float32Array(nx * ny * 3);
     const inside = new Uint8Array(nx * ny);
+    // Ground past the end of the run, which must be drawn (with the cells reaching back to the run's end).
+    const beyond = new Uint8Array(nx * ny);
     const c = new THREE.Color();
     for (let j = 0; j < ny; j++) {
       for (let i = 0; i < nx; i++) {
@@ -209,8 +216,12 @@ export class Terrain {
         const y = minY + j * CELL;
         const { station, distance } = this.index.nearest(x, y);
         const k = j * nx + i;
-        inside[k] = station && distance < CORRIDOR ? 1 : 0;
-        const z = this.blend(x, y, station, distance);
+        const past = !!station && station.s >= this.end - 1e-3 && (x - station.pos[0]) * station.forward[0] + (y - station.pos[1]) * station.forward[1] > 0;
+        beyond[k] = past ? 1 : 0;
+        inside[k] = station && distance < CORRIDOR && !past ? 1 : 0;
+        let z = this.blend(x, y, station, distance);
+        // Under the last of the run-out, kept below its floor, as those cells are drawn.
+        if (inside[k] && station!.s > this.end - 14) z = Math.min(z, station!.pos[2] - 0.3);
         positions[k * 3] = x;
         positions[k * 3 + 1] = z;
         positions[k * 3 + 2] = -y;
@@ -230,7 +241,7 @@ export class Terrain {
         const b = a + 1;
         const d = a + nx;
         const e = d + 1;
-        if (inside[a] || inside[b] || inside[d] || inside[e]) continue;
+        if ((inside[a] || inside[b] || inside[d] || inside[e]) && !(beyond[a] || beyond[b] || beyond[d] || beyond[e])) continue;
         // Grid rows run north (−z in Three.js); wind counter-clockwise seen from above.
         indices.push(a, b, d, b, e, d);
       }
