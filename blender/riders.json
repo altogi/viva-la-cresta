@@ -98,9 +98,10 @@
   "skin": "#c98d6c",
   "hair": {
    "style": "shaggy",
-   "color": "#4a3524"
+   "color": "#6a625a"
   },
-  "stubble": "#5a4433",
+  "beard": "#a19c94",
+  "longBeard": true,
   "headwear": "bushhat",
   "helmet": null,
   "outfit": {

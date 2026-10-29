@@ -312,6 +312,43 @@ function stubbleShade(stubble: string, skin: THREE.Color): THREE.Color {
   return new THREE.Color(k(c.r, skin.r), k(c.g, skin.g), k(c.b, skin.b));
 }
 
+/**
+ * A long beard hanging from the chin to the chest: wide and full at the jaw, narrowing to a point,
+ * curving forward a little over the chest, the strands running down it.
+ */
+function longBeard(color: string): THREE.Mesh {
+  const rings = 24;
+  const around = 24;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const index: number[] = [];
+  for (let i = 0; i <= rings; i++) {
+    const t = i / rings;
+    const cx = 0.066 + 0.05 * t;
+    const cy = -0.08 - 0.2 * t;
+    const w = 0.06 * Math.pow(1 - t, 0.75) + 0.004;
+    const d = 0.032 * (1 - 0.65 * t) + 0.002;
+    for (let k = 0; k <= around; k++) {
+      const a = (k / around) * Math.PI * 2;
+      const wave = 1 + 0.07 * Math.sin(a * 6 + t * 11);
+      pos.push(cx + Math.cos(a) * d * wave, cy, Math.sin(a) * w * wave);
+      uv.push((k / around) * 3, t * 2);
+    }
+  }
+  for (let i = 0; i < rings; i++) {
+    for (let k = 0; k < around; k++) {
+      const a = i * (around + 1) + k, b = a + 1, c = a + around + 1, d = c + 1;
+      index.push(a, c, b, b, c, d);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(index);
+  geo.computeVertexNormals();
+  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, map: strandTexture(53), roughness: 0.85, side: THREE.DoubleSide }));
+}
+
 export interface FaceRig {
   group: THREE.Group;
   /** Hair gathered at the back (Adelaide's bun), hidden under the helmet. */
@@ -552,6 +589,7 @@ export function buildFace(look: RiderLook): FaceRig {
       ([y, z]) => new THREE.Vector3(shape.surfaceX(y, z) + 0.0035, y, z),
     );
     group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.0052, 8), beardMat));
+    if (look.longBeard) group.add(longBeard(look.beard));
   }
 
   if (look.moustache) {

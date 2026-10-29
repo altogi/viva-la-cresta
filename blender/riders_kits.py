@@ -37,6 +37,10 @@ def vest_half(z, j, s, b):
     return (0.035 + 0.085 * k ** 0.8) * s * b
 
 
+# How far down the thigh Kletus's shorts reach.
+SHORTS_HEM = 0.48
+
+
 def armhole(j, s):
     """Kletus's armholes: how far out (|x|) and down to the armpit (z)."""
     return abs(j["shoulder_L"][0]) - 0.01 * s, j["shoulder_L"][2] - 0.1 * s
@@ -68,7 +72,7 @@ def kit_zone(p, normal, j, look, bone):
             return "forearm"
         if base == "thigh":
             ragged = 0.03 * math.sin(p.x * 190 + p.y * 260) + 0.02 * math.sin(p.y * 410)
-            return "pelvis" if along(p, j, bone) < 0.34 + ragged else "skin"
+            return "pelvis" if along(p, j, bone) < SHORTS_HEM + ragged else "skin"
     if kit == "dungarees":
         # The trousers up to the waist; the bib and braces over the sweater are made on their own.
         if base == "hips":
@@ -159,14 +163,53 @@ def bush_kit(rid, j, s, look, body, mats):
     h = surf.hit((0, -1, bottom - 0.005 * s), (0, 1, 0), 0.02)
     if h:
         parts.append(oriented_box(f"buckle_{rid}", h[0], Vector((1, 0, 0)), Vector((0, 0, 1)), Vector((0, -1, 0)), (0.035 * s, 0.026 * s, 0.006 * s), brass, 0.3))
+    # The shorts: denim cut loose round the legs (the body under them is denim too), wider towards
+    # the frayed hems, but close on the inside of the thighs so the legs never meet through them.
+    pel = [i for i, m in enumerate(body.data.materials) if m.name == f"{rid}_pelvis"][0]
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if f.material_index != pel], context="FACES")
+    bm.normal_update()
+    crotch = j["pelvis"][2] - 0.04 * s
+    moves = []
+    for v in bm.verts:
+        push = 0.006 * s
+        if v.co.z < crotch + 0.06 * s and abs(v.co.x) > 0.004:
+            side = "L" if v.co.x > 0 else "R"
+            hip, knee = Vector(j[f"hip_{side}"]), Vector(j[f"knee_{side}"])
+            d = knee - hip
+            t = clamp01((v.co - hip).dot(d) / d.length_squared)
+            radial = v.co - (hip + d * t)
+            radial.z = 0
+            inner = radial.length > 1e-6 and radial.normalized().x * (1 if side == "L" else -1) < -0.35
+            loose = clamp01(t / SHORTS_HEM) ** 1.2 * clamp01((crotch + 0.06 * s - v.co.z) / (0.06 * s))
+            push = (0.006 + 0.024 * loose) * s * (0.3 if inner else 1)
+        moves.append((v, v.normal.copy() * push))
+    for v, m in moves:
+        v.co += m
+    # Denim doesn't follow the cleft at the seat or between the legs: smooth across it.
+    seat = [v for v in bm.verts if abs(v.co.x) < 0.065 * s and crotch - 0.03 * s < v.co.z < j["pelvis"][2] + 0.1 * s]
+    for _ in range(14):
+        bmesh.ops.smooth_vert(bm, verts=seat, factor=0.7, use_axis_x=True, use_axis_y=True, use_axis_z=False)
+    hem = [(v.co.copy(), "L" if v.co.x > 0 else "R") for v in bm.verts if v.is_boundary and v.co.z < crotch - 0.05 * s]
+    me = bpy.data.meshes.new(f"shorts_{rid}")
+    bm.to_mesh(me)
+    bm.free()
+    shorts = bpy.data.objects.new(f"shorts_{rid}", me)
+    bpy.context.scene.collection.objects.link(shorts)
+    shorts.data.materials.clear()
+    shorts.data.materials.append(mats["pelvis"])
+    for poly in shorts.data.polygons:
+        poly.material_index = 0
+    sol = shorts.modifiers.new("thick", "SOLIDIFY")
+    sol.thickness = 0.004 * s
+    apply_all(shorts)
+    parts.append(shorts)
     # Frayed hems: loose white threads hanging from the cut-off denim.
-    for side in "LR":
-        hip, knee = Vector(j[f"hip_{side}"]), Vector(j[f"knee_{side}"])
-        d = (knee - hip).normalized()
-        ring = ring_around(surf, hip + (knee - hip) * 0.36, d, 0.002, n=40, reach=0.13)
-        for k, p in enumerate(ring):
-            length = (0.012 + 0.014 * ((k * 7) % 5) / 4) * s
-            parts.append(tube_along(f"fray_{rid}_{side}{k}", [p - d * 0.004 * s, p + d * length], 0.0022 * s, fray))
+    for k, (p, side) in enumerate(hem):
+        d = (Vector(j[f"knee_{side}"]) - Vector(j[f"hip_{side}"])).normalized()
+        length = (0.01 + 0.016 * ((k * 7) % 5) / 4) * s
+        parts.append(tube_along(f"fray_{rid}_{k}", [p - d * 0.006 * s, p + d * length], 0.0022 * s, fray))
     # The machete on his back: the handle up over the right shoulder, the blade down to the left hip,
     # in a pair of leather loops, on a strap across the chest.
     a0 = surf.hit((-0.11 * s, 1, j["neck"][2] - 0.03 * s), (0, -1, 0), 0.0)
@@ -570,79 +613,135 @@ def cap(rid):
 
 
 def dark_helmet(rid):
-    gloss = lib.material(f"{rid}_helmet", (0.01, 0.01, 0.012), 0.1, metallic=0.45)
-    lens = lib.material(f"{rid}_lens", (0.006, 0.006, 0.008), 0.04, metallic=0.3)
-    silver = lib.material(f"{rid}_grille", (0.62, 0.63, 0.66), 0.3, metallic=1.0)
-    rx, ry, rz = 0.122, 0.136, 0.15
+    """After the real thing: a dome with a crest from brow to back and a heavy brow over the eyes,
+    the flare falling round the sides and back; under the brow the mask: big domed lenses in deep
+    sockets, the nose bridge, cheeks swept down to a triangle of grille bars over the mouth with a
+    stud at each corner, and below it the chin with its triangle of mesh."""
+    gloss = lib.material(f"{rid}_helmet", (0.014, 0.014, 0.017), 0.12, metallic=0.55)
+    lens = lib.material(f"{rid}_lens", (0.16, 0.16, 0.18), 0.04, metallic=1.0)
+    cheek = lib.material(f"{rid}_cheeks", (0.05, 0.05, 0.056), 0.12, metallic=0.7)
+    bars = lib.material(f"{rid}_grille", (0.3, 0.3, 0.32), 0.3, metallic=1.0)
+    pale = lib.material(f"{rid}_studs", (0.75, 0.75, 0.74), 0.35)
+    mesh_mat = lib.material(f"{rid}_mesh", (0.05, 0.05, 0.055), 0.55, metallic=0.6)
+    rx, ry, rz = 0.126, 0.142, 0.152
+    ss = lambda x, a, b: clamp01((x - a) / (b - a)) ** 2 * (3 - 2 * clamp01((x - a) / (b - a)))
+
+    def front_of(a):
+        return ss(-math.sin(a), 0.62, 0.86)
+
+    def crest(x, z):
+        """The raised ridge down the middle, a groove either side of it."""
+        ax = abs(x)
+        return (0.01 * math.exp(-((x / 0.013) ** 2)) - 0.005 * math.exp(-(((ax - 0.028) / 0.008) ** 2))) * ss(z, 0.0, 0.05)
 
     def dome(u, v):
         a = u * math.tau
         ca, sa = math.cos(a), math.sin(a)
-        front = max(0.0, -sa)
-        bottom = 0.028 - 0.012 * front ** 4  # the brow, low over the eyes at the front
-        z = rz * 0.99 - (rz * 0.99 - bottom) * v
+        f = front_of(a)
+        bottom = 0.036 * f
+        z = rz * 0.995 - (rz * 0.995 - bottom) * v
         h = math.sqrt(max(0.0, 1 - (z / rz) ** 2))
-        # A crest from the brow over the top to the back.
-        crest = 0.006 * math.exp(-((ca / 0.12) ** 2))
-        brow = 0.012 * front ** 2 * math.exp(-(((z - bottom) / 0.02) ** 2))
-        r = 1 + crest + brow / rx
-        return Vector((rx * h * ca * r, ry * h * sa * r - brow * 0.5, z))
+        x, y = rx * h * ca, ry * h * sa
+        out = crest(x, z)
+        # The brow: a heavy lip over the eyes, standing out from the dome.
+        out += 0.012 * f * ss(-(z - bottom - 0.03), 0.0, 0.03)
+        n = Vector((ca / rx, sa / ry, 0)).normalized()
+        return Vector((x, y, z)) + n * out
 
-    parts = [surface_grid(f"dome_{rid}", 48, 14, dome, gloss)]
+    parts = [surface_grid(f"dome_{rid}", 72, 22, dome, gloss)]
 
-    # The flare: round the sides and back, down over the neck and out over the shoulders.
+    # The flare: round the sides and back from cheek to cheek, straight down then out.
     def flare(u, v):
-        a = math.radians(-32 + 244 * u)  # from the left cheek round the back (+y) to the right
+        a = math.radians(-48 + 276 * u)
         ca, sa = math.cos(a), math.sin(a)
-        z = 0.03 - 0.23 * v
-        out = 0.11 * v ** 1.7
-        return Vector((ca * (rx + out) * 1.0, sa * (ry + out) + 0.0, z))
+        f = front_of(a)
+        top = 0.036 * f
+        z = top - (top + 0.215 - 0.03 * f) * v
+        out = 0.008 * v + 0.085 * v ** 2.3
+        return Vector((ca * (rx + out), sa * (ry + out), z))
 
-    fl = surface_grid(f"flare_{rid}", 40, 8, flare, gloss, closed_u=False)
+    fl = surface_grid(f"flare_{rid}", 56, 12, flare, gloss, closed_u=False)
     sol = fl.modifiers.new("thick", "SOLIDIFY")
     sol.thickness = 0.006
     apply_all(fl)
     parts.append(fl)
-    # The mask: under the brow, the cheeks swept hard back, narrowing to a pointed chin; the
-    # mouth a triangle of grille pushed forward below the nose.
+
+    def mouth_half(z):
+        return 0.042 * clamp01((-0.042 - z) / 0.073)
+
     def mask_y(x, z):
-        y = -0.13 + 5.5 * x * x + 0.05 * max(0.0, -z - 0.05)
-        w = 0.008 + max(0.0, (-0.03 - z)) * 0.42
-        inside = max(0.0, 1 - abs(x) / max(w, 1e-4)) if z < -0.025 else 0.0
-        y -= 0.03 * inside ** 0.6 * min(1.0, (-0.025 - z) / 0.03)
-        y -= 0.012 * math.exp(-((x / 0.012) ** 2)) * math.exp(-(((z + 0.012) / 0.02) ** 2))  # the nose
-        y += 0.008 * math.exp(-(((abs(x) - 0.04) / 0.015) ** 2)) * math.exp(-(((z - 0.005) / 0.018) ** 2))  # the sockets
+        ax = abs(x)
+        chin = ss(-z, 0.118, 0.14)
+        # Curving back at the sides under the flare; the lower face jutting forward to the mouth,
+        # the chin stepping back under it.
+        y = -0.12 + 6.5 * x * x - 0.024 * ss(-z, 0.0, 0.115) + chin * (0.03 - 2.5 * x * x)
+        # Deep sockets for the eyes.
+        socket = math.exp(-(((ax - 0.041) / 0.027) ** 4) - (((z - 0.006) / 0.021) ** 4))
+        y += 0.016 * socket
+        # The nose bridge between them, down to the nose.
+        y -= 0.009 * math.exp(-((x / 0.011) ** 2)) * ss(z, -0.045, -0.035) * (1 - ss(z, 0.03, 0.04))
+        # The cheeks: planes swept down and out from the nose, standing out round the mouth.
+        m = mouth_half(z)
+        band = ss(z, -0.12, -0.11) * (1 - ss(z, -0.026, -0.012))
+        y -= 0.02 * band * ss(ax, m, m + 0.006) * (1 - ss(ax, 0.07, 0.088)) * (0.6 + 0.4 * ss(-z, 0.02, 0.1))
+        # The mouth, set back behind its bars.
+        y += 0.006 * band * (1 - ss(ax, m - 0.004, m + 0.002)) * (z < -0.042)
         return y
 
     def mask(u, v):
-        xn = (u - 0.5) * 2
-        z = 0.03 - (0.15 + 0.04 * (1 - abs(xn)) ** 1.5) * v
-        x = xn * 0.1 * (1 - 0.3 * v ** 1.5)
+        z = 0.042 - 0.257 * v
+        w = 0.09 - 0.022 * ss(-z, 0.115, 0.145)
+        x = (u - 0.5) * 2 * w
         return Vector((x, mask_y(x, z), z))
 
-    mk = surface_grid(f"mask_{rid}", 28, 20, mask, gloss, closed_u=False)
+    mk = surface_grid(f"mask_{rid}", 56, 64, mask, gloss, closed_u=False)
+    # The cheek planes catch the light, as in the photographs: a lighter, silvery black.
+    mk.data.materials.append(cheek)
+    for poly in mk.data.polygons:
+        c = poly.center
+        m = mouth_half(c.z)
+        if -0.118 < c.z < -0.02 and m + 0.004 < abs(c.x) < 0.075:
+            poly.material_index = 1
     sol = mk.modifiers.new("thick", "SOLIDIFY")
-    sol.thickness = 0.006
+    sol.thickness = 0.005
     apply_all(mk)
     parts.append(mk)
-    # The eyes: big lenses, slanting down to the outside.
+    # The lenses: domed, almost mirrors, the inner corners a little higher.
     for sx in (-1, 1):
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=20, ring_count=12, radius=1, location=(sx * 0.038, mask_y(0.038, 0.006) - 0.004, 0.006))
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=14, radius=1, location=(sx * 0.041, mask_y(0.041, 0.006) - 0.003, 0.006))
         e = bpy.context.active_object
         e.name = f"lens_{rid}_{sx}"
-        e.scale = (0.026, 0.008, 0.016)
-        e.rotation_euler = (0, sx * 0.3, sx * 0.45)
+        e.scale = (0.027, 0.012, 0.02)
+        e.rotation_euler = (0, sx * 0.12, -sx * 0.25)
         e.data.materials.append(lens)
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         bpy.ops.object.shade_smooth()
         parts.append(e)
-    # The grille: silver bars down the front of the mouth, and the two tusks at its sides.
-    for k in range(-2, 3):
-        x = k * 0.0075
-        pts = [Vector((x, mask_y(x, z) - 0.004, z)) for z in (-0.05 - 0.065 * t / 4 for t in range(5))]
-        parts.append(tube_along(f"bar_{rid}_{k}", pts, 0.0018, silver))
+    # Ridges across the bridge of the nose, and the pale nose piece below.
+    for k, z in enumerate((0.022, 0.012, 0.002)):
+        parts.append(tube_along(f"ridge_{rid}_{k}", [Vector((x, mask_y(x, z) - 0.0035, z)) for x in (-0.008, 0.0, 0.008)], 0.0018, gloss))
+    parts.append(oriented_box(f"nose_{rid}", Vector((0, mask_y(0, -0.037) - 0.005, -0.037)), Vector((1, 0, 0)), Vector((0, 0, 1)), Vector((0, -1, 0)), (0.009, 0.008, 0.005), pale, 0.6))
+    # The grille: bars down the mouth, a bar along the bottom with a stud at each end.
+    for k in range(-3, 4):
+        x = k * 0.0095
+        top = -0.042 - 0.073 * abs(x) / 0.042 - 0.004
+        pts = [Vector((x, mask_y(x, z) - 0.0065, z)) for z in (top + (-0.112 - top) * t / 4 for t in range(5))]
+        parts.append(tube_along(f"bar_{rid}_{k}", pts, 0.0021, bars))
+    parts.append(tube_along(f"barbottom_{rid}", [Vector((x, mask_y(x, -0.115) - 0.006, -0.115)) for x in (-0.05, -0.025, 0.0, 0.025, 0.05)], 0.003, bars))
     for sx in (-1, 1):
-        parts.append(tube_along(f"tusk_{rid}_{sx}", [Vector((sx * 0.047, mask_y(0.047, -0.08) - 0.003, -0.08)), Vector((sx * 0.043, mask_y(0.043, -0.125) - 0.003, -0.125))], 0.0045, silver))
+        parts.append(sphere_at(f"stud_{rid}_{sx}", Vector((sx * 0.052, mask_y(0.052, -0.116) - 0.007, -0.116)), 0.005, pale))
+    # The chin: a triangle of mesh pointing down.
+    tri = [(-0.044, -0.128), (0.044, -0.128), (0.0, -0.182)]
+    verts = [tuple(Vector((x, mask_y(x, z) - 0.002, z))) for x, z in tri]
+    chin = lib.mesh_object(f"chinmesh_{rid}", verts, [(0, 2, 1)], None, mesh_mat)
+    sol = chin.modifiers.new("thick", "SOLIDIFY")
+    sol.thickness = 0.002
+    apply_all(chin)
+    parts.append(chin)
+    for k in range(1, 6):
+        z = -0.128 - 0.054 * k / 6
+        half = 0.044 * (1 - k / 6)
+        parts.append(tube_along(f"meshline_{rid}_{k}", [Vector((x, mask_y(x, z) - 0.0035, z)) for x in (-half, 0.0, half)], 0.0009, bars))
     return lib.join(parts, f"head_{rid}")
 
 
