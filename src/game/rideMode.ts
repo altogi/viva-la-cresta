@@ -40,6 +40,8 @@ export interface RideSetup {
     race?: boolean;
     /** The rider's first ride from Top: a crowd turns out for it. */
     firstTop?: boolean;
+    /** The career's best from this start on any toboggan, to beat for a Hello Hello (null: none yet). */
+    best?: number | null;
     /** The day's weather (announced in the hub as the day began). */
     weather?: Weather | null;
     /** No luck, good or bad, for beginners (the first rides, and learning the flat-top or Top). */
@@ -504,6 +506,7 @@ export class RideMode {
   }
 
   private storedBest(): number | null {
+    if (this.setup.career) return this.setup.career.best ?? null;
     try {
       return Number(localStorage.getItem(this.bestKey())) || null;
     } catch {

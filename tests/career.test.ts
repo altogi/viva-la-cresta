@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dateOf, goal, handicap, newCareer, nextDay, nextPractice, recordPractice, startConversion, SEASON_DAYS, TOP_OPENS, towerHandicap, type Career } from '../src/career/career';
+import { dateOf, goal, handicap, newCareer, nextDay, nextPractice, recordPractice, startBest, startConversion, SEASON_DAYS, TOP_OPENS, towerHandicap, type Career } from '../src/career/career';
 import { RACES, cannotEnter, npcField, raceOn, standings, standingsAfter } from '../src/career/races';
 
 const ride = (c: Career, time: number | null) => recordPractice(c, nextPractice(c), time, time === null ? 'Shuttlecock' : null, 60);
@@ -76,6 +76,19 @@ describe('career progression', () => {
     }
     expect(seen).toEqual(['fL', 'f7']);
     expect(c.flattop).toBe('yes');
+  });
+
+  it('keeps one best from each start, on any toboggan, for a Hello Hello', () => {
+    const c = newCareer('x', 'G', 'maximilian');
+    expect(startBest(c, 'junction')).toBeNull();
+    c.rides.push(
+      { day: 0, season: 1, start: 'junction', toboggan: 'traditional', style: 'running', time: 47.1, fall: null, speed: 0 },
+      { day: 1, season: 1, start: 'junction', toboggan: 'flattop', style: 'running', time: 45.9, fall: null, speed: 0 },
+      { day: 1, season: 1, start: 'junction', toboggan: 'flattop', style: 'running', time: null, fall: 'Shuttlecock', speed: 0 },
+      { day: 2, season: 1, start: 'top', toboggan: 'traditional', style: 'lying', time: 63.4, fall: null, speed: 0 },
+    );
+    expect(startBest(c, 'junction')).toBe(45.9);
+    expect(startBest(c, 'top')).toBe(63.4);
   });
 
   it('opens Top after three of five flat-top Junction rides under 47 s', () => {

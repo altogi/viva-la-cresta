@@ -273,13 +273,14 @@ export class TrophyRoom {
     // Close: from the hands under the trophy to just over the head (on a narrow phone the elbows
     // go off the sides), a little from above so the head is against the mountains, not the sky.
     const head = rider.head.getWorldPosition(new THREE.Vector3());
-    // Over the head, or over the trophy where it's the taller (the Morgan).
+    // The head three quarters of the way up the view, the mountains and fireworks over it; the
+    // trophy's foot at the bottom (all of the Morgan in view, however tall).
+    const bottom = hands.y - 0.1;
     const cup = v.trophy.children.length ? new THREE.Box3().setFromObject(v.trophy).max.y + 0.12 : 0;
-    const top = Math.max(head.y + 0.16, cup);
-    const tall = top - (hands.y - 0.1);
+    const tall = Math.max((head.y - bottom) / 0.75, cup - bottom);
     const dist = tall / 2 / tan;
-    const centre = new THREE.Vector3(hands.x, (top + hands.y - 0.1) / 2, cup > head.y + 0.16 ? hands.z : (hands.z + head.z) / 2);
-    const down = 0.22; // radians
+    const centre = new THREE.Vector3(hands.x, bottom + tall / 2, cup > head.y + 0.16 ? hands.z : (hands.z + head.z) / 2);
+    const down = 0.1; // radians: only a little from above
     cam.position.set(centre.x, centre.y + Math.sin(down) * dist, centre.z + Math.cos(down) * dist);
     cam.lookAt(centre);
     cam.updateMatrixWorld();
@@ -1311,8 +1312,8 @@ class Fireworks {
     const positions = new Float32Array(n * 3);
     const vel = new Float32Array(n * 3);
     // Over the mountains, 7 to 16 degrees up: the band of the view above the trophy.
-    const d = 1300 + Math.random() * 500;
-    const up = THREE.MathUtils.degToRad(this.low ? Math.random() * 4 : 7 + Math.random() * 9);
+    const d = this.low ? 650 + Math.random() * 250 : 1300 + Math.random() * 500;
+    const up = THREE.MathUtils.degToRad(this.low ? 3 + Math.random() * 7 : 7 + Math.random() * 9);
     const across = THREE.MathUtils.degToRad((Math.random() - 0.5) * (this.low ? 30 : 34));
     const centre = new THREE.Vector3(Math.sin(across) * d, 1 + Math.tan(up) * d, -Math.cos(across) * d);
     const speed = 70 + Math.random() * 50;

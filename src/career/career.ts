@@ -301,6 +301,15 @@ export function memberRides(c: Career): number {
   return c.rides.filter((r) => r.time !== null && r.time < MEMBER_TIME).length;
 }
 
+/** The best time from a start on any toboggan (what a Hello Hello beats), or null before the first clean ride. */
+export function startBest(c: Career, start: Start): number | null {
+  const times = [
+    ...c.rides.filter((r) => r.start === start && r.time !== null).map((r) => r.time!),
+    ...Object.entries(c.best).filter(([k, v]) => k.startsWith(`${start}-`) && typeof v === 'number').map(([, v]) => v as number),
+  ];
+  return times.length ? Math.min(...times) : null;
+}
+
 export function noteBest(c: Career, start: Start, toboggan: TobogganId, time: number): boolean {
   const key = bestKey(start, toboggan);
   const prev = c.best[key];
