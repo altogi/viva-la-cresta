@@ -181,6 +181,14 @@ export function placeTown(terrain: Terrain, town: THREE.Object3D): THREE.Group {
     });
   });
   for (const [material, geos] of merged) {
+    // The painted details lie on the walls (a centimetre or two off, or flush): with the view
+    // reaching to the mountains the depth buffer can't tell them apart at any distance, and they
+    // come and go in patches. Drawn as decals, they always win against their wall.
+    if (DECALS.has(material.name)) {
+      material.polygonOffset = true;
+      material.polygonOffsetFactor = -2;
+      material.polygonOffsetUnits = -4;
+    }
     const geo = mergeGeometries(geos.map((g) => (g.index ? g.toNonIndexed() : g)));
     if (!geo) continue;
     const mesh = new THREE.Mesh(geo, material);
@@ -194,6 +202,9 @@ export function placeTown(terrain: Terrain, town: THREE.Object3D): THREE.Group {
   }
   return group;
 }
+
+/** Materials of blender/town.py painted onto the walls: corner stones, frieze, doors, eaves trim. */
+const DECALS = new Set(['quoin', 'frieze', 'door', 'trim']);
 
 /** Every mapped building as an oriented box, in the order blender/buildings.json lists them. */
 export function allBoxes(): BoxBuilding[] {

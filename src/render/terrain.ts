@@ -212,6 +212,7 @@ export class Terrain {
     // Ground past the end of the run, which must be drawn (with the cells reaching back to the run's end).
     const beyond = new Uint8Array(nx * ny);
     const c = new THREE.Color();
+    const terrace = junctionTerrace(track);
     for (let j = 0; j < ny; j++) {
       for (let i = 0; i < nx; i++) {
         const x = minX + i * CELL;
@@ -224,8 +225,25 @@ export class Terrain {
         // the corridor of one part of it or another: draw it all, kept under the ice where the run
         // passes over it, so the embankments always have snow beneath them.
         const finish = !!station && station.s > this.end - 70;
-        inside[k] = station && distance < CORRIDOR && !past && !finish ? 1 : 0;
+        // The riders' terrace by the Junction hut reaches into the corridor: the ground under it is
+        // drawn too (else the sky shows through where the riders wait), on the hut's side of the run.
+        const onTerrace =
+          !!station &&
+          station.s > terrace.s0 - CELL &&
+          station.s < terrace.s1 + CELL &&
+          ((x - station.pos[0]) * station.left[0] + (y - station.pos[1]) * station.left[1]) * terrace.side > 0;
+        inside[k] = station && distance < CORRIDOR && !past && !finish && !onTerrace ? 1 : 0;
         let z = this.blend(x, y, station, distance);
+        if (onTerrace && distance < CORRIDOR + CELL) {
+          // Under the ice within a cell of the channel; beyond, just under the embankment.
+          const lateral = (x - station!.pos[0]) * station!.left[0] + (y - station!.pos[1]) * station!.left[1];
+          const lip = lips(track.section(station!.s));
+          if (lateral < lip.left + CELL && lateral > lip.right - CELL) z = Math.min(z, station!.pos[2] - 0.3);
+          else {
+            const h = trackSurfaceHeight(track, station!.s, lateral);
+            if (h !== null) z = Math.min(z, station!.pos[2] + h - 0.12);
+          }
+        }
         if (finish) {
           // Within a cell of the channel, under its ice (a cell reaching across it mustn't show through
           // the floor); beyond, just under the embankment where that is lower.

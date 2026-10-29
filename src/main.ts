@@ -179,11 +179,19 @@ async function start() {
     trophyRoom.open(c);
   };
   trophyRoom.onClose = () => career.hub();
+  // The aerial view of the run is seen in clear air whatever the day's weather (a snowy day's
+  // white-out would hide the run and the line), and the weather comes back on leaving.
+  let timesWeather: ReturnType<typeof freeRideWeather> | null = null;
   career.onTimes = (c) => {
+    timesWeather = weather.weather;
+    weather.set(null);
     setMode('times');
     times.open(c);
   };
-  times.onClose = () => career.hub();
+  times.onClose = () => {
+    weather.set(timesWeather);
+    career.hub();
+  };
   career.onWin = (c, raceId, next) => {
     setMode('trophies');
     trophyRoom.celebrate(c, raceId, next);
@@ -194,6 +202,21 @@ async function start() {
     setTimeout(() => sound.applause(), 350);
   };
   for (const img of document.querySelectorAll<HTMLImageElement>('.badge, .badge-small')) clearBadgeBackground(img);
+  // No zooming the page: Safari on iPhone ignores user-scalable=no and touch-action for its pinch
+  // and double-tap zoom, so those are stopped here (a two-finger touch on the ice is steering).
+  for (const type of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(type, (e) => e.preventDefault());
+  document.addEventListener('touchmove', (e) => e.touches.length > 1 && e.preventDefault(), { passive: false });
+  let lastTap = 0;
+  document.addEventListener(
+    'touchend',
+    (e) => {
+      const now = e.timeStamp;
+      // A second tap within 300 ms would zoom; buttons still get their click.
+      if (now - lastTap < 300 && !(e.target as HTMLElement).closest('button, a, input, select, textarea')) e.preventDefault();
+      lastTap = now;
+    },
+    { passive: false },
+  );
   // Phones only let sound start from a touch, and pause it again after a call, the lock screen or
   // a switch of app: any touch, click or key anywhere wakes it.
   // Music in the menus and between rides (not on the ice), unless turned off.

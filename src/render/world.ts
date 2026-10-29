@@ -29,8 +29,8 @@ export function createWorld(canvas: HTMLCanvasElement): World {
 
   const scene = new THREE.Scene();
   scene.background = HAZE.clone();
-  // Alpine haze: the far mountains fade towards the pale horizon.
-  scene.fog = new THREE.Fog(HAZE, 900, 16000);
+  // Alpine haze, light: the mountains stand crisp in the dry winter air, only the farthest paling.
+  scene.fog = new THREE.Fog(HAZE, 2500, 30000);
   const sky = buildSky();
   sky.name = 'sky';
   scene.add(sky);

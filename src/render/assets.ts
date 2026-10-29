@@ -58,6 +58,13 @@ function prepareFoliage(parts: Record<string, Part[]>) {
         m.emissive = new THREE.Color('#ffffff');
         m.emissiveMap = m.map;
         m.emissiveIntensity = 0.18;
+        // Larches in winter: dark grey-brown twigs, not a golden autumn (the tint pulls the
+        // picture's copper towards grey).
+        if (name.startsWith('larch')) {
+          m.color.setRGB(0.075, 0.07, 0.085);
+          m.emissive.setRGB(0.5, 0.5, 0.6);
+          m.emissiveIntensity = 0.05;
+        }
         if (name.endsWith('_far')) billboard(p);
         else softCrown(p);
       }

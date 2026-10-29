@@ -15,10 +15,27 @@ import { toThree } from '../render/util';
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const MPH = 2.23694;
 /**
- * The colour scales (mph) through this stretch, one for each start so a ride's slow and fast
- * stretches show: from Junction riders come through at 30-37, from Top at 34-45.
+ * The colour scale (mph) for a ride: from its own slowest to its fastest through this stretch, so
+ * every ride shows where it was slow and where fast (on a fixed scale the best rides all came out one
+ * colour). Whole miles an hour, at least 4 apart.
  */
-const SCALE: Record<Start, [number, number]> = { junction: [28, 40], top: [30, 50] };
+export function rideScale(line: number[]): [number, number] {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 1; i < line.length; i += 2) {
+    lo = Math.min(lo, line[i] * MPH);
+    hi = Math.max(hi, line[i] * MPH);
+  }
+  if (!Number.isFinite(lo)) return [28, 40];
+  let slow = Math.floor(lo);
+  let fast = Math.ceil(hi);
+  if (fast - slow < 4) {
+    const mid = (slow + fast) / 2;
+    slow = Math.floor(mid - 2);
+    fast = slow + 4;
+  }
+  return [slow, fast];
+}
 
 /** Blue (slow) through green and yellow to red (fast). */
 export function speedColour(mph: number, [slow, fast]: [number, number], out = new THREE.Color()): THREE.Color {
@@ -60,11 +77,12 @@ export class TimesView {
     this.frameRegion();
   }
 
-  /** The colour bar down the right of the view, for this start's scale. */
-  private colourBar() {
-    const scale = SCALE[this.start];
-    const [slow, fast] = scale;
+  /** The colour bar down the left of the view, for the chosen ride's scale (hidden without a line). */
+  private colourBar(scale: [number, number] | null) {
     const bar = $('times-colorbar');
+    bar.style.display = scale ? '' : 'none';
+    if (!scale) return;
+    const [slow, fast] = scale;
     bar.querySelector<HTMLElement>('.bar')!.style.background = `linear-gradient(to top, ${[0, 0.25, 0.5, 0.75, 1].map((k) => `#${speedColour(slow + k * (fast - slow), scale).getHexString()}`).join(', ')})`;
     bar.querySelector('.hi')!.textContent = `${fast}`;
     bar.querySelector('.mid')!.textContent = `${(slow + fast) / 2}`;
@@ -107,7 +125,6 @@ export class TimesView {
   private refresh() {
     const c = this.career!;
     for (const b of document.querySelectorAll<HTMLElement>('[data-times-start]')) b.classList.toggle('chosen', b.dataset.timesStart === this.start);
-    this.colourBar();
     this.rows = c.rides.filter((r) => r.start === this.start && r.time !== null).sort((x, y) => x.time! - y.time!);
     this.chosen = 0;
     const list = $('times-list');
@@ -140,7 +157,9 @@ export class TimesView {
     this.ribbon = null;
     const ride = this.rows[this.chosen];
     $('times-note').textContent = !ride ? '' : ride.line?.length ? '' : 'No line recorded for this ride (it was ridden before lines were kept).';
+    this.colourBar(ride?.line?.length ? rideScale(ride.line) : null);
     if (!ride?.line?.length) return;
+    const scale = rideScale(ride.line);
     const positions: number[] = [];
     const colours: number[] = [];
     const index: number[] = [];
@@ -159,7 +178,7 @@ export class TimesView {
         const half = 0.45 * side;
         toThree(this.track.toWorld(frame, sp.y + sp.ty * half + sp.ny * 0.06, sp.z + sp.tz * half + sp.nz * 0.06), v);
         positions.push(v.x, v.y, v.z);
-        speedColour(mph, SCALE[this.start], c);
+        speedColour(mph, scale, c);
         colours.push(c.r, c.g, c.b);
       }
       if (i > 0) {
@@ -184,7 +203,18 @@ export class TimesView {
     const h = canvas.clientHeight;
     const side = w >= 760 && w >= h;
     cam.fov = 40;
-    const panel = document.querySelector<HTMLElement>('#times .select-panel')?.offsetHeight ?? h * 0.5;
+    const panelEl = document.querySelector<HTMLElement>('#times .select-panel');
+    const panel = panelEl?.offsetHeight ?? h * 0.5;
+    // The colour bar fits the space above the panel (on a short phone it would run into the times).
+    const bar = $('times-colorbar');
+    if (!side && panelEl) {
+      const room = panelEl.getBoundingClientRect().top - bar.getBoundingClientRect().top - 12;
+      bar.style.height = `${Math.max(0, Math.min(room, h * 0.3))}px`;
+      bar.style.visibility = room < 80 ? 'hidden' : '';
+    } else {
+      bar.style.height = '';
+      bar.style.visibility = '';
+    }
     const wanted = side ? 1 : THREE.MathUtils.clamp((h - panel) / h, 0.3, 1);
     this.visible = this.visible ? this.visible + (wanted - this.visible) * (1 - Math.exp(-dt * 6)) : wanted;
     if (side) cam.setViewOffset(w, h, 200, 0, w, h);

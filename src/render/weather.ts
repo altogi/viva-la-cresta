@@ -12,13 +12,13 @@ const BOX = 46;
 export class WeatherView {
   private readonly flakes: THREE.Points;
   private readonly speed = new Float32Array(FLAKES);
-  private readonly clear: { exposure: number; sun: number; fog: [number, number]; background: THREE.Color };
+  private readonly clear: { exposure: number; sun: number; env: number; fog: [number, number]; background: THREE.Color };
   private current: Weather | null = null;
   private time = 0;
 
   constructor(private readonly world: World) {
     const fog = world.scene.fog as THREE.Fog;
-    this.clear = { exposure: world.renderer.toneMappingExposure, sun: world.sun.intensity, fog: [fog.near, fog.far], background: (world.scene.background as THREE.Color).clone() };
+    this.clear = { exposure: world.renderer.toneMappingExposure, sun: world.sun.intensity, env: world.scene.environmentIntensity, fog: [fog.near, fog.far], background: (world.scene.background as THREE.Color).clone() };
     const pos = new Float32Array(FLAKES * 3);
     for (let i = 0; i < FLAKES; i++) {
       pos[i * 3] = (Math.random() - 0.5) * BOX;
@@ -56,6 +56,9 @@ export class WeatherView {
     renderer.toneMappingExposure = this.clear.exposure * (weather === 'hot' ? 1.22 : weather === 'snow' ? 0.95 : weather === 'cold' ? 0.97 : 1);
     sun.intensity = this.clear.sun * (weather === 'hot' ? 1.2 : weather === 'snow' ? 0.18 : 1);
     sun.color.set(weather === 'hot' ? '#fff0d0' : '#fff3e2');
+    // Under cloud there is no blue sky to mirror: without this the glossy ice, and the apron round
+    // the start at Junction, would glare against the dull snow about them.
+    scene.environmentIntensity = this.clear.env * (weather === 'snow' ? 0.35 : 1);
     if (weather === 'snow') {
       fog.color.set('#d9dee5');
       fog.near = 12;
