@@ -22,22 +22,24 @@ export interface Joints {
   knee: [THREE.Vector3, THREE.Vector3];
   ankle: [THREE.Vector3, THREE.Vector3];
   toe: [THREE.Vector3, THREE.Vector3];
+  /** Extra turn of each forearm about itself (radians), to turn the palms (the hands follow). */
+  forearmRoll?: [number, number];
 }
 
 /** Bone, the joints it runs between, and (for the hips and chest) the pair that sets its twist. */
-const BONES: [string, (j: Joints) => THREE.Vector3, (j: Joints) => THREE.Vector3, ((j: Joints) => [THREE.Vector3, THREE.Vector3])?][] = [
+const BONES: [string, (j: Joints) => THREE.Vector3, (j: Joints) => THREE.Vector3, ((j: Joints) => [THREE.Vector3, THREE.Vector3])?, ((j: Joints) => number)?][] = [
   ['hips', (j) => j.pelvis, (j) => j.waist, (j) => [j.hip[0], j.hip[1]]],
   ['spine', (j) => j.waist, (j) => j.chest],
   ['chest', (j) => j.chest, (j) => j.neck, (j) => [j.shoulder[0], j.shoulder[1]]],
   ['neck', (j) => j.neck, (j) => j.neckTop],
   ...(['L', 'R'] as const).flatMap((s, i) => [
     [`upperarm${s}`, (j: Joints) => j.shoulder[i], (j: Joints) => j.elbow[i]],
-    [`forearm${s}`, (j: Joints) => j.elbow[i], (j: Joints) => j.wrist[i]],
+    [`forearm${s}`, (j: Joints) => j.elbow[i], (j: Joints) => j.wrist[i], undefined, (j: Joints) => j.forearmRoll?.[i] ?? 0],
     [`hand${s}`, (j: Joints) => j.wrist[i], (j: Joints) => j.fingers[i]],
     [`thigh${s}`, (j: Joints) => j.hip[i], (j: Joints) => j.knee[i]],
     [`shin${s}`, (j: Joints) => j.knee[i], (j: Joints) => j.ankle[i]],
     [`foot${s}`, (j: Joints) => j.ankle[i], (j: Joints) => j.toe[i]],
-  ] as [string, (j: Joints) => THREE.Vector3, (j: Joints) => THREE.Vector3][]),
+  ] as (typeof BONES)[number][]),
 ];
 
 /** Material name suffix (blender/riders.py zones) to the look's colour. */
@@ -66,7 +68,7 @@ const Y = new THREE.Vector3(0, 1, 0);
 
 export class RiderBody {
   readonly root: THREE.Object3D;
-  private readonly bones: { bone: THREE.Bone; rest: THREE.Quaternion; from: (j: Joints) => THREE.Vector3; to: (j: Joints) => THREE.Vector3; twist?: (j: Joints) => [THREE.Vector3, THREE.Vector3]; lateral?: THREE.Vector3 }[] = [];
+  private readonly bones: { bone: THREE.Bone; rest: THREE.Quaternion; from: (j: Joints) => THREE.Vector3; to: (j: Joints) => THREE.Vector3; twist?: (j: Joints) => [THREE.Vector3, THREE.Vector3]; lateral?: THREE.Vector3; roll?: (j: Joints) => number }[] = [];
   private readonly hips: THREE.Bone;
 
   constructor(template: THREE.Object3D, look: RiderLook) {
@@ -90,10 +92,10 @@ export class RiderBody {
         mesh.material = Array.isArray(mesh.material) ? mesh.material.map(recolour) : recolour(mesh.material);
       }
     });
-    for (const [name, from, to, twist] of BONES) {
+    for (const [name, from, to, twist, roll] of BONES) {
       const bone = byName.get(name);
       if (!bone) continue;
-      const entry: (typeof this.bones)[number] = { bone, rest: bone.quaternion.clone(), from, to, twist };
+      const entry: (typeof this.bones)[number] = { bone, rest: bone.quaternion.clone(), from, to, twist, roll };
       if (twist) {
         // The line between the two child joints (hips or shoulders), in this bone's own frame.
         const kids = name === 'hips' ? ['thighL', 'thighR'] : ['upperarmL', 'upperarmR'];
@@ -142,6 +144,8 @@ export class RiderBody {
           w.premultiply(new THREE.Quaternion().setFromAxisAngle(target, angle));
         }
       }
+      const roll = b.roll?.(j);
+      if (roll) w.premultiply(new THREE.Quaternion().setFromAxisAngle(target, roll));
       b.bone.quaternion.copy(inv.copy(parentQ).invert().multiply(w));
       b.bone.updateMatrixWorld(true);
     }

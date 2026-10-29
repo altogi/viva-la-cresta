@@ -20,7 +20,7 @@ import { RiderBody, type Joints } from './riderBody';
 import { LOOKS, type RiderLook } from './riderLooks';
 
 export type IdleAction = 'comb' | 'flirt' | 'burp';
-export type StandPosture = 'stand' | 'sit' | 'lean';
+export type StandPosture = 'stand' | 'sit' | 'lean' | 'hold';
 export type Prop = 'cigarette' | 'cola';
 
 export interface RiderPose {
@@ -108,6 +108,8 @@ interface Targets {
   feet: [THREE.Vector3, THREE.Vector3];
   elbowPoles: [THREE.Vector3, THREE.Vector3];
   kneePoles: [THREE.Vector3, THREE.Vector3];
+  /** Each forearm turned about itself (radians), for the palms; not blended. */
+  forearmRoll?: [number, number];
 }
 
 export class RiderModel {
@@ -135,7 +137,7 @@ export class RiderModel {
   private readonly legLength: number;
   private readonly seat: number;
   private readonly handleY: number;
-  private readonly look: RiderLook;
+  readonly look: RiderLook;
   private standing = false;
   private tip: THREE.Object3D | null = null;
   private readonly smoke: THREE.Mesh[] = [];
@@ -474,6 +476,7 @@ export class RiderModel {
       const posture = p.stand.posture ?? 'stand';
       if (posture === 'sit') targets = this.sittingTargets(p.stand.time);
       else if (posture === 'lean') targets = this.leaningTargets(p.stand.time);
+      else if (posture === 'hold') ({ targets, open } = this.holdingTargets(p.stand.time));
       else ({ targets, wink, open } = this.standingTargets(p.stand.time, p.stand.action, p.stand.t));
       targets.headYaw += p.stand.look ?? 0;
     } else {
@@ -490,7 +493,7 @@ export class RiderModel {
       }
     }
     this.apply(targets);
-    if (this.skinned) this.skinned.pose(this.joints());
+    if (this.skinned) this.skinned.pose({ ...this.joints(), forearmRoll: targets.forearmRoll });
     this.express(wink, open);
     if (this.smoke.length && p.stand) this.puff(p.stand.time);
     const cushion = this.toboggan.getObjectByName('cushion');
@@ -796,6 +799,32 @@ export class RiderModel {
       targets.elbowPoles[1] = V(pelvis.x, pelvis.y, pelvis.z + 1.2);
     }
     return { targets, wink, open };
+  }
+
+  /**
+   * Holding a trophy for the photographer, facing +X: both hands in front of the chest (where
+   * `handAt` puts them, for the trophy), elbows in, a smile and a slow, small nod.
+   */
+  private holdingTargets(time: number): { targets: Targets; open: number } {
+    const s = this.look.scale;
+    const breath = Math.sin((time * Math.PI * 2) / 3.4);
+    const pelvis = V(0, 0.9 * s + breath * 0.01, -0.75);
+    const hand = (side: number) => V(pelvis.x + 0.3 * s, pelvis.y + 0.22 * s, pelvis.z + side * 0.12 * this.look.build);
+    const targets: Targets = {
+      pelvis,
+      pitch: Math.PI / 2 + 0.02 - breath * 0.015,
+      roll: 0,
+      headYaw: 0,
+      // A nod every couple of seconds: down a touch and back up.
+      headTilt: 0.06 - Math.max(0, Math.sin(time * 2.4)) * 0.12,
+      headRoll: 0,
+      hands: [hand(-1), hand(1)],
+      feet: [V(pelvis.x + 0.03, 0.06, pelvis.z - 0.17), V(pelvis.x + 0.03, 0.06, pelvis.z + 0.17)],
+      elbowPoles: [V(pelvis.x - 0.3, pelvis.y - 0.6, pelvis.z - 1), V(pelvis.x - 0.3, pelvis.y - 0.6, pelvis.z + 1)],
+      kneePoles: [V(pelvis.x + 1, 0.45, pelvis.z - 0.2), V(pelvis.x + 1, 0.45, pelvis.z + 0.2)],
+      forearmRoll: [-1.7, 1.7], // palms up, under the trophy
+    };
+    return { targets, open: 0.25 };
   }
 
   /** Sitting on a bench (seat 0.46 m), leaning back a touch, hands on the thighs; a smoke now and then. */

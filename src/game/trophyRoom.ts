@@ -206,10 +206,15 @@ export class TrophyRoom {
     void this.load().then(() => {
       if (!this.victory) return;
       const model = (this.models![won?.model ?? 'cup'] ?? this.models!.cup).clone();
+      // Held in both hands, a cup's size (the tall Morgan smaller still, or it hides the face).
+      const big = won?.model === 'morgan' ? 0.5 : 0.7;
+      const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
+      model.scale.multiplyScalar(big * Math.min(0.42 / size.y, 0.46 / Math.max(size.x, size.z)));
       this.victory.trophy.add(model);
       this.scene.add(this.victory.trophy);
     });
-    this.fireworks.setOn(!!won?.colours);
+    // Fireworks for every win, behind the winner.
+    this.fireworks.setOn(true, true);
     this.applause();
   }
 
@@ -245,14 +250,12 @@ export class TrophyRoom {
     const offset = new THREE.Vector3(0.25, 0, 0.62).applyAxisAngle(new THREE.Vector3(0, 1, 0), v.heading);
     rider.root.position.copy(v.at).add(offset);
     rider.root.rotation.y = v.heading;
-    rider.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, cheer: 1, cheerTime: v.time });
-    // The trophy in whichever hand is held highest, standing upright on it.
-    const left = rider.handAt(0);
-    const right = rider.handAt(1);
-    const hand = left.y > right.y ? left : right;
-    v.trophy.position.copy(hand).add(new THREE.Vector3(0, -0.04, 0));
-    v.trophy.rotation.y = v.heading - Math.PI / 2 + Math.sin(v.time * 1.3) * 0.15;
-    // The camera: the whole rider and the trophy over them, the mountains behind.
+    rider.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, stand: { time: v.time, action: null, t: 0, posture: 'hold' } });
+    // The trophy standing on both palms, facing the camera.
+    const hands = rider.handAt(0).add(rider.handAt(1)).multiplyScalar(0.5);
+    v.trophy.position.copy(hands).add(new THREE.Vector3(0, 0.03, 0));
+    v.trophy.rotation.y = v.heading - Math.PI / 2;
+    // The camera: the rider from the waist up, the mountains behind.
     const cam = this.camera;
     const canvas = this.renderer.domElement;
     const w = canvas.clientWidth;
@@ -266,11 +269,14 @@ export class TrophyRoom {
     else cam.setViewOffset(w, h, 0, h * (0.5 - this.visible / 2), w, h);
     cam.updateProjectionMatrix();
     const tan = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * this.visible;
-    const tall = 2.5;
-    const dist = Math.max(tall / 2 / tan, 1.4 / (tan * Math.min(1.4, (side ? w - 400 : w) / (h * this.visible))));
-    const centre = new THREE.Vector3(v.at.x, tall / 2 - 0.1, v.at.z);
-    const yaw = Math.sin(v.time * 0.2) * 0.1;
-    cam.position.set(centre.x + Math.sin(yaw) * dist, centre.y + 0.2, centre.z + Math.cos(yaw) * dist);
+    // Close: from the hands under the trophy to just over the head (on a narrow phone the elbows
+    // go off the sides), a little from above so the head is against the mountains, not the sky.
+    const head = rider.head.getWorldPosition(new THREE.Vector3());
+    const tall = head.y + 0.16 - (hands.y - 0.1);
+    const dist = tall / 2 / tan;
+    const centre = new THREE.Vector3(hands.x, (head.y + 0.16 + hands.y - 0.1) / 2, (hands.z + head.z) / 2);
+    const down = 0.22; // radians
+    cam.position.set(centre.x, centre.y + Math.sin(down) * dist, centre.z + Math.cos(down) * dist);
     cam.lookAt(centre);
     cam.updateMatrixWorld();
   }
@@ -1244,12 +1250,15 @@ function biplane(): THREE.Group {
 class Fireworks {
   readonly group = new THREE.Group();
   private on = false;
+  /** Low over the mountains, just over the winner's head (in the close-up), not high in the sky. */
+  private low = false;
   private wait = 0;
   private bursts: { points: THREE.Points; vel: Float32Array; age: number; life: number }[] = [];
   private readonly texture = sparkleTexture();
 
-  setOn(on: boolean) {
+  setOn(on: boolean, low = false) {
     this.on = on;
+    this.low = low;
     this.wait = 0.4;
   }
 
@@ -1299,8 +1308,8 @@ class Fireworks {
     const vel = new Float32Array(n * 3);
     // Over the mountains, 7 to 16 degrees up: the band of the view above the trophy.
     const d = 1300 + Math.random() * 500;
-    const up = THREE.MathUtils.degToRad(7 + Math.random() * 9);
-    const across = THREE.MathUtils.degToRad((Math.random() - 0.5) * 34);
+    const up = THREE.MathUtils.degToRad(this.low ? Math.random() * 4 : 7 + Math.random() * 9);
+    const across = THREE.MathUtils.degToRad((Math.random() - 0.5) * (this.low ? 30 : 34));
     const centre = new THREE.Vector3(Math.sin(across) * d, 1 + Math.tan(up) * d, -Math.cos(across) * d);
     const speed = 70 + Math.random() * 50;
     for (let i = 0; i < n; i++) {
