@@ -311,13 +311,13 @@ export function noteBest(c: Career, start: Start, toboggan: TobogganId, time: nu
   return false;
 }
 
-/** Begin converting: to the flat-top (three lying starts at Junction) or to Top (one lying start). */
+/** Begin converting: to the flat-top (a lying start at Junction, then straight to the full running start) or to Top (one lying start). */
 export function startConversion(c: Career, to: 'flattop' | 'top') {
   c.choicePending = false;
   if (to === 'flattop') {
     c.flattop = 'converting';
     c.toboggan = 'flattop';
-    c.conversion = { start: 'junction', toboggan: 'flattop', lying: 3, steps: [...CONVERSION_STEPS] };
+    c.conversion = { start: 'junction', toboggan: 'flattop', lying: LYING_RIDES, steps: [FULL_STEPS] };
   } else {
     c.top = 'converting';
     c.start = 'top';

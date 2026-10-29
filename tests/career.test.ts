@@ -64,7 +64,7 @@ describe('career progression', () => {
     expect(c.member).toBe(true);
   });
 
-  it('converts to the flat-top with three lying starts then a running conversion', () => {
+  it('converts to the flat-top with a lying start then straight to the full running start', () => {
     const c = newCareer('x', 'G', 'maximilian');
     c.member = true;
     startConversion(c, 'flattop');
@@ -74,7 +74,7 @@ describe('career progression', () => {
       seen.push(`${s.toboggan[0]}${s.style === 'lying' ? 'L' : s.steps}`);
       ride(c, 47);
     }
-    expect(seen).toEqual(['fL', 'fL', 'fL', 'f2', 'f7']);
+    expect(seen).toEqual(['fL', 'f7']);
     expect(c.flattop).toBe('yes');
   });
 

@@ -372,7 +372,7 @@ export class CareerMode {
         );
       if (outcome.unlocked)
         moments.push(() =>
-          this.modal(outcome.unlocked === 'top' ? 'Top is open' : 'The flat-top is yours', outcome.unlocked === 'top' ? 'Your first ride from Top is a lying start. Rake hard down Church Leap.' : 'Three lying starts from Junction on the flat-top, then the running start again.', [{ label: 'Onwards', primary: true, run: next }]),
+          this.modal(outcome.unlocked === 'top' ? 'Top is open' : 'The flat-top is yours', outcome.unlocked === 'top' ? 'Your first ride from Top is a lying start. Rake hard down Church Leap.' : 'One lying start from Junction on the flat-top, then the full running start.', [{ label: 'Onwards', primary: true, run: next }]),
         );
       if (c.ridesToday >= RIDES_PER_DAY) moments.push(() => this.modal('The run is closed', `That's ${RIDES_PER_DAY} rides for today.`, [{ label: 'Next day', primary: true, run: () => (nextDay(c), this.save(), next()) }]));
       const next = () => (moments.length ? moments.shift()!() : this.hub());
