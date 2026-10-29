@@ -184,6 +184,15 @@ async function start() {
     times.open(c);
   };
   times.onClose = () => career.hub();
+  career.onWin = (c, raceId, next) => {
+    setMode('trophies');
+    trophyRoom.celebrate(c, raceId, next);
+  };
+  // A strong applause for a win: two crowds' worth at once.
+  trophyRoom.applause = () => {
+    sound.applause();
+    setTimeout(() => sound.applause(), 350);
+  };
   for (const img of document.querySelectorAll<HTMLImageElement>('.badge, .badge-small')) clearBadgeBackground(img);
   // Phones only let sound start from a touch, and pause it again after a call, the lock screen or
   // a switch of app: any touch, click or key anywhere wakes it.

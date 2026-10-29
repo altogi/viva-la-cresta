@@ -9,6 +9,7 @@ import {
   TOP_OPENS,
   dateOf,
   goal,
+  form,
   handicap,
   newCareer,
   nextDay,
@@ -41,6 +42,8 @@ export class CareerMode {
   onTrophies: (c: Career) => void = () => {};
   /** Open "My times" for this career. */
   onTimes: (c: Career) => void = () => {};
+  /** A race won: celebrate it (the rider on the terrace with the trophy), then carry on. */
+  onWin: (c: Career, raceId: string, next: () => void) => void = (_c, _r, next) => next();
 
   constructor(
     private readonly ride: RideMode,
@@ -415,6 +418,7 @@ export class CareerMode {
         handicap: race.kind === 'handicap' ? handicap(c, race.start) : 0,
         dq: false,
         seed: Math.floor(Math.random() * 1e9),
+        form: form(c, race.start) ?? undefined,
       };
       this.save();
     }
@@ -468,7 +472,7 @@ export class CareerMode {
     const c = this.career!;
     const entry = c.race!;
     const courses = entry.raceDay * 3 + entry.course;
-    const field: Entrant[] = [...npcField(race, entry.seed), playerEntrant(entry, RIDERS[c.rider].name, NATIONS[c.rider], null)];
+    const field: Entrant[] = [...npcField(race, entry.seed, { form: entry.form, handicap: entry.handicap, player: entry.times }), playerEntrant(entry, RIDERS[c.rider].name, NATIONS[c.rider], null)];
     const rows = standingsAfter(race, field, courses);
     const me = rows.findIndex((r) => r.entrant.player);
     const ranked = rows.filter((r) => r.rank !== null).length;
@@ -506,7 +510,7 @@ export class CareerMode {
   private dayDone(race: Race, fallZone: string | null) {
     const c = this.career!;
     const entry = c.race!;
-    const field: Entrant[] = [...npcField(race, entry.seed), playerEntrant(entry, RIDERS[c.rider].name, NATIONS[c.rider], fallZone)];
+    const field: Entrant[] = [...npcField(race, entry.seed, { form: entry.form, handicap: entry.handicap, player: entry.times }), playerEntrant(entry, RIDERS[c.rider].name, NATIONS[c.rider], fallZone)];
     const last = entry.dq || entry.raceDay + 1 >= race.days;
     this.sheet(race, field, entry.raceDay, c.day);
     this.afterSheet = () => {
@@ -530,12 +534,14 @@ export class CareerMode {
     if (wonGN) c.gnWon = true;
     nextDay(c);
     this.save();
-    if (wonGN)
-      return this.modal(
+    const gnModal = () =>
+      this.modal(
         'Winner of the Grand National',
         `${RIDERS[c.rider].name} has won the Grand National, the oldest race on the Cresta, on scratch from Top. Your name goes up on the board in the clubhouse, and everyone at the Sunny Bar wants to buy you a drink.<br><br>The run is yours: ride on as long as you like.`,
         [{ label: 'Viva la Cresta!', primary: true, run: () => this.hub() }],
       );
+    // A win: up to the Sunny Bar's terrace with the trophy first.
+    if (me.rank === 1 && !entry.dq) return this.onWin(c, race.id, () => (wonGN ? gnModal() : this.hub()));
     const text = entry.dq ? 'Disqualified after a fall. There is always the next race.' : `${ordinal(me.rank!)} of ${rows.filter((r) => r.rank !== null).length}${race.kind === 'handicap' ? ` on net time (${me.net!.toFixed(2)})` : ` in ${me.total!.toFixed(2)}`}.`;
     this.modal(race.name, text, [{ label: 'Back to the clubhouse', primary: true, run: () => this.hub() }]);
   }
@@ -569,7 +575,7 @@ export class CareerMode {
     const of = multi ? ` of ${day === 0 ? 'First' : 'Second'} Day` : ' of Race';
     const next = upcoming(seasonDay, 1)[0];
     const tomorrow = multi && day + 1 < race.days ? `${race.name.toUpperCase()} (Second Day)` : next ? `${next.name.toUpperCase()} on ${dateOf(next.day).label}` : 'PRACTICE';
-    $('sheet-paper').innerHTML = `
+    $('sheet-paper').innerHTML = `<div class="sheet-fit">
       <div class="sheet-club">CRESTA RUN</div>
       <div class="sheet-race">${race.name.toUpperCase()}</div>
       ${race.note ? `<div class="sheet-note">${race.note}</div>` : ''}
@@ -581,9 +587,9 @@ export class CareerMode {
         ${fastest.time ? `<div>Fastest Time${of}: ${fastest.time[0]} ${fastest.time[1].toFixed(2)}</div>` : ''}
         ${fastest.speed ? `<div>Fastest Speed${of}: ${fastest.speed[0]} ${fastest.speed[1].toFixed(2)} mph</div>` : ''}
         <div class="sheet-next">TOMORROW ${tomorrow}</div>
-      </div>`;
+      </div></div>`;
     $('sheet').hidden = false;
-    $('sheet-paper').scrollTop = 0;
+    fitSheet();
   }
 
   // ---------- A card with buttons ----------
@@ -615,4 +621,21 @@ function describe(s: Setup): string {
 }
 
 const ordinal = (n: number) => `${n}${n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd' : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th'}`;
+
+/**
+ * The whole sheet on screen at once, no zooming or scrolling: laid out at a paper's width, then
+ * scaled down to fit the space (again whenever the screen turns or resizes).
+ */
+function fitSheet() {
+  const paper = document.getElementById('sheet-paper')!;
+  const fit = paper.querySelector<HTMLElement>('.sheet-fit');
+  if (!fit || document.getElementById('sheet')!.hidden) return;
+  fit.style.transform = '';
+  const style = getComputedStyle(paper);
+  const w = paper.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  const h = paper.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+  const scale = Math.min(1, w / fit.offsetWidth, h / fit.offsetHeight);
+  fit.style.transform = `scale(${scale})`;
+}
+window.addEventListener('resize', fitSheet);
 

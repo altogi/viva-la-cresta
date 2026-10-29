@@ -248,6 +248,13 @@ export class RiderModel {
     this.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0 });
   }
 
+  /** Where a hand is now, in world space (0 left, 1 right): for something held to follow it. */
+  handAt(side: 0 | 1, out = new THREE.Vector3()): THREE.Vector3 {
+    this.root.updateMatrixWorld(true);
+    const arm = this.arms[side];
+    return out.set(arm.lower + 0.07 * this.look.scale, 0, 0).applyMatrix4(arm.mid.matrixWorld);
+  }
+
   /** Where the skeleton's joints are now, in world space, for the Blender body to follow. */
   private joints(): Joints {
     this.root.updateMatrixWorld(true);

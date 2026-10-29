@@ -41,6 +41,8 @@ export interface RaceEntry {
   handicap: number;
   dq: boolean;
   seed: number;
+  /** The rider's form from this start when they entered (the field is matched to it). */
+  form?: number;
 }
 
 export interface RaceResult {
@@ -338,12 +340,18 @@ export function nextDay(c: Career) {
  * 0.1 s, from scratch to 13 s. Based on the best three of the last six clean rides from that start.
  */
 export function handicap(c: Career, start: Start): number {
-  const recent = c.rides.filter((r) => r.start === start && r.time !== null && r.style === 'running').slice(-6);
+  const avg = form(c, start);
   // No form from this start yet: a middling allowance until the Tower has seen you ride.
-  if (recent.length === 0) return start === 'top' ? 8 : 6;
-  const best = recent.map((r) => r.time!).sort((a, b) => a - b).slice(0, 3);
-  const avg = best.reduce((a, b) => a + b, 0) / best.length;
+  if (avg === null) return start === 'top' ? 8 : 6;
   return towerHandicap(start, avg);
+}
+
+/** A rider's current form from a start: the average of the best three of their last six clean rides. */
+export function form(c: Career, start: Start): number | null {
+  const recent = c.rides.filter((r) => r.start === start && r.time !== null && r.style === 'running').slice(-6);
+  if (recent.length === 0) return null;
+  const best = recent.map((r) => r.time!).sort((a, b) => a - b).slice(0, 3);
+  return best.reduce((a, b) => a + b, 0) / best.length;
 }
 
 export function towerHandicap(start: Start, average: number): number {

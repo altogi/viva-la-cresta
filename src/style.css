@@ -1570,7 +1570,9 @@ body.screen-hub #hub {
 #sheet-paper {
   flex: 1;
   width: min(100%, 640px);
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  justify-content: center;
   background: #fbfaf5;
   color: #1a1a1a;
   font-family: 'Times New Roman', Times, serif;
@@ -1581,6 +1583,13 @@ body.screen-hub #hub {
 
 #sheet button {
   width: min(100%, 640px);
+}
+
+/* The sheet's content at a paper's width, scaled to fit the screen (fitSheet). */
+.sheet-fit {
+  flex: none;
+  width: 560px;
+  transform-origin: top center;
 }
 
 .sheet-club {
@@ -2523,3 +2532,32 @@ body.times-room #times {
 }
 
 
+
+/* A race just won: the congratulations instead of the cards. */
+#trophy-celebrate,
+#trophies.celebrating #trophy-cards,
+#trophies.celebrating #trophy-swipe {
+  display: none;
+}
+
+#trophies.celebrating #trophy-celebrate {
+  display: block;
+}
+
+#trophy-celebrate .trophy-title {
+  font-size: 22px;
+}
+
+#trophy-celebrate button {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 6px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 14px;
+  text-transform: uppercase;
+}

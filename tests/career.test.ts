@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dateOf, goal, handicap, newCareer, nextDay, nextPractice, recordPractice, startConversion, SEASON_DAYS, TOP_OPENS, type Career } from '../src/career/career';
+import { dateOf, goal, handicap, newCareer, nextDay, nextPractice, recordPractice, startConversion, SEASON_DAYS, TOP_OPENS, towerHandicap, type Career } from '../src/career/career';
 import { RACES, cannotEnter, npcField, raceOn, standings, standingsAfter } from '../src/career/races';
 
 const ride = (c: Career, time: number | null) => recordPractice(c, nextPractice(c), time, time === null ? 'Shuttlecock' : null, 60);
@@ -174,3 +174,35 @@ describe('races', () => {
     expect(npcField(race, 5)[0].name).toBe(npcField(race, 5)[0].name);
   });
 });
+
+describe('opponents matched to the player', () => {
+  const race = RACES.find((r) => r.id === 'heaton')!;
+  const avgNet = (e: { times: (number | null | undefined)[][]; handicap: number }) => {
+    const ridden = e.times.flat().filter((t): t is number => typeof t === 'number');
+    return ridden.reduce((a, b) => a + b, 0) / ridden.length - e.handicap;
+  };
+
+  it('sets the best of the field to beat a quick player\'s usual net time', () => {
+    const form = 45.2;
+    const hcp = towerHandicap('junction', form);
+    const field = npcField(race, 9, { form, handicap: hcp });
+    const best = Math.min(...field.slice(0, 3).map(avgNet));
+    expect(best).toBeLessThanOrEqual(form - hcp - 0.1);
+  });
+
+  it('never makes the field easier for a slow player', () => {
+    const plain = npcField(race, 9);
+    const matched = npcField(race, 9, { form: 60, handicap: 12 });
+    expect(matched[0].times).toEqual(plain[0].times);
+  });
+
+  it('rallies the leaders when the player leads', () => {
+    const form = 46;
+    const hcp = towerHandicap('junction', form);
+    const calm = npcField(race, 9, { form, handicap: hcp, player: [[form + 3]] });
+    const chased = npcField(race, 9, { form, handicap: hcp, player: [[form - 3]] });
+    const second = (f: typeof calm) => Math.min(...f.map((e) => e.times[0][1]).filter((t): t is number => typeof t === 'number'));
+    expect(second(chased)).toBeLessThan(second(calm));
+  });
+});
+

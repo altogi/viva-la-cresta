@@ -11,6 +11,8 @@ import type { Career } from '../career/career';
 import { riderRecord, unwon, wins, type RiderRecord, type Unwon, type Win } from '../career/trophies';
 import { RIDERS } from '../sim/rider';
 import type { Part } from '../render/assets';
+import { RiderModel } from '../render/riderModel';
+import { LOOKS } from '../render/riderLooks';
 import { skater } from '../render/crowd';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -57,7 +59,8 @@ export class TrophyRoom {
   ) {
     this.rink = new Rink(view.trees);
     this.build(view.balloon, view.trees);
-    $('trophies-back').addEventListener('click', () => this.onClose());
+    $('trophies-back').addEventListener('click', () => (this.victory ? this.finishCelebration() : this.onClose()));
+    $('trophy-celebrate-go').addEventListener('click', () => this.finishCelebration());
     window.addEventListener('keydown', (e) => {
       if (!document.body.classList.contains('trophy-room')) return;
       if (e.key === 'ArrowLeft') this.step(-1);
@@ -93,7 +96,8 @@ export class TrophyRoom {
     glint.name = 'glint';
     scene.add(glint);
 
-    scene.add(terrace(), railing(), table(), lake(), tents(), backdrop(), this.rink.group);
+    this.table = table();
+    scene.add(terrace(), railing(), this.table, lake(), tents(), backdrop(), this.rink.group);
     if (trees) scene.add(woods(trees));
     this.sky.build(scene, balloon);
     scene.add(this.fireworks.group);
@@ -172,6 +176,103 @@ export class TrophyRoom {
     this.outgoing?.removeFromParent();
     this.current = this.outgoing = null;
     this.fireworks.clear();
+    this.endCelebration();
+  }
+
+  // ---------- A race won: the rider on the terrace with the trophy ----------
+
+  private table!: THREE.Object3D;
+  private victory: { rider: RiderModel; trophy: THREE.Object3D; at: THREE.Vector3; heading: number; time: number; cheered: number; done: () => void } | null = null;
+
+  /**
+   * The rider has just won a race: on the Sunny Bar's terrace, helmet off, holding the trophy up and
+   * celebrating in their own way, to loud applause (and fireworks for a colour race).
+   */
+  celebrate(c: Career, raceId: string, done: () => void) {
+    this.endCelebration();
+    document.querySelector('#trophies')!.classList.add('celebrating');
+    const won = wins(c).find((w) => w.raceId === raceId);
+    $('trophy-celebrate-race').textContent = won ? won.name : '';
+    this.visible = 0;
+    this.time = 0;
+    this.fit.set(0, 0);
+    this.table.visible = false;
+    const rider = new RiderModel(LOOKS[c.rider], c.flattop === 'yes' ? c.toboggan : 'traditional', { helmet: false });
+    rider.setHelmet(false);
+    this.scene.add(rider.root);
+    const at = new THREE.Vector3(SPOT.x, 0, SPOT.z + 0.1);
+    const heading = -Math.PI / 2; // facing the camera (riders face their +x), back to the view
+    this.victory = { rider, trophy: new THREE.Group(), at, heading, time: 0, cheered: 0, done };
+    void this.load().then(() => {
+      if (!this.victory) return;
+      const model = (this.models![won?.model ?? 'cup'] ?? this.models!.cup).clone();
+      this.victory.trophy.add(model);
+      this.scene.add(this.victory.trophy);
+    });
+    this.fireworks.setOn(!!won?.colours);
+    this.applause();
+  }
+
+  /** The applause, from the room's owner (the game's sound). */
+  applause: () => void = () => {};
+
+  private endCelebration() {
+    if (!this.victory) return;
+    this.victory.rider.root.removeFromParent();
+    this.victory.trophy.removeFromParent();
+    this.victory = null;
+    this.table.visible = true;
+    document.querySelector('#trophies')!.classList.remove('celebrating');
+  }
+
+  /** Continue from the celebration, to wherever the game goes next. */
+  private finishCelebration() {
+    const done = this.victory?.done;
+    this.endCelebration();
+    done?.();
+  }
+
+  private updateVictory(dt: number) {
+    const v = this.victory!;
+    v.time += dt;
+    // A second round of applause as the first dies away.
+    if (v.cheered === 0 && v.time > 4.2) {
+      v.cheered = 1;
+      this.applause();
+    }
+    const { rider } = v;
+    // The body stands at `at` (the model's origin is beside it, where the toboggan is).
+    const offset = new THREE.Vector3(0.25, 0, 0.62).applyAxisAngle(new THREE.Vector3(0, 1, 0), v.heading);
+    rider.root.position.copy(v.at).add(offset);
+    rider.root.rotation.y = v.heading;
+    rider.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, cheer: 1, cheerTime: v.time });
+    // The trophy in whichever hand is held highest, standing upright on it.
+    const left = rider.handAt(0);
+    const right = rider.handAt(1);
+    const hand = left.y > right.y ? left : right;
+    v.trophy.position.copy(hand).add(new THREE.Vector3(0, -0.04, 0));
+    v.trophy.rotation.y = v.heading - Math.PI / 2 + Math.sin(v.time * 1.3) * 0.15;
+    // The camera: the whole rider and the trophy over them, the mountains behind.
+    const cam = this.camera;
+    const canvas = this.renderer.domElement;
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    cam.aspect = w / Math.max(1, h);
+    const side = w >= 760 && w >= h;
+    const panel = document.querySelector<HTMLElement>('#trophies .select-panel')?.offsetHeight ?? h * 0.4;
+    const wanted = side ? 1 : THREE.MathUtils.clamp((h - panel) / h, 0.3, 1);
+    this.visible = this.visible ? this.visible + (wanted - this.visible) * (1 - Math.exp(-dt * 6)) : wanted;
+    if (side) cam.setViewOffset(w, h, 200, 0, w, h);
+    else cam.setViewOffset(w, h, 0, h * (0.5 - this.visible / 2), w, h);
+    cam.updateProjectionMatrix();
+    const tan = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * this.visible;
+    const tall = 2.5;
+    const dist = Math.max(tall / 2 / tan, 1.4 / (tan * Math.min(1.4, (side ? w - 400 : w) / (h * this.visible))));
+    const centre = new THREE.Vector3(v.at.x, tall / 2 - 0.1, v.at.z);
+    const yaw = Math.sin(v.time * 0.2) * 0.1;
+    cam.position.set(centre.x + Math.sin(yaw) * dist, centre.y + 0.2, centre.z + Math.cos(yaw) * dist);
+    cam.lookAt(centre);
+    cam.updateMatrixWorld();
   }
 
   /** The text for what's on the table, sliding in from the side it came from. */
@@ -242,11 +343,14 @@ export class TrophyRoom {
 
   update(dt: number) {
     this.time += dt;
-    this.frame(dt);
-    this.slide(dt);
-    this.turn();
-    this.glint();
-    this.sparkle(dt);
+    if (this.victory) this.updateVictory(dt);
+    else {
+      this.frame(dt);
+      this.slide(dt);
+      this.turn();
+      this.glint();
+      this.sparkle(dt);
+    }
     this.sky.update(dt, this.time);
     this.rink.update(dt);
     this.fireworks.update(dt);

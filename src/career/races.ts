@@ -39,7 +39,7 @@ const top = (id: string, name: string, day: number, field = 42): Race => ({ id, 
  * Cup, the Brabazon Trophy, the Grand National) among handicaps from both starts.
  */
 export const RACES: Race[] = [
-  jct('bartley-bear', 'The Bartley Bear', seasonDay('Dec', 17), 30),
+  jct('bartley-bear', 'The Bartley Bear', seasonDay('Dec', 24), 30),
   jct('lowe-portago', 'The Lowe Portago Challenge', seasonDay('Dec', 27)),
   jct('nino-bibbia', 'The Nino Bibbia Challenge Cup', seasonDay('Dec', 28)),
   jct('fairchilds-maccarthy', 'The Fairchilds MacCarthy Cup', seasonDay('Dec', 29)),
@@ -72,7 +72,7 @@ export const RACES: Race[] = [
 /** Everything on the club's calendar, by season day: the races above and the club's other events. */
 export const CALENDAR: { day: number; name: string }[] = [
   ...([
-    ['Dec', 17, 'The Bartley Bear'], ['Dec', 21, 'The University Challenge'], ['Dec', 27, 'The Lowe Portago Challenge'],
+    ['Dec', 21, 'The University Challenge'], ['Dec', 24, 'The Bartley Bear'], ['Dec', 27, 'The Lowe Portago Challenge'],
     ['Dec', 28, 'The Nino Bibbia Challenge Cup'], ['Dec', 29, 'The Fairchilds MacCarthy Cup'], ['Dec', 31, 'Fathers + Sons and Brothers Races'],
     ['Dec', 31, 'The Family Event'], ['Jan', 1, 'The Bledisloe Cup'], ['Jan', 1, "Children's"], ['Jan', 2, 'The Bucherer Trophy'],
     ['Jan', 2, 'The Heaton Gold Cup'], ['Jan', 3, 'The Baron Oertzen Cup'], ['Jan', 6, 'The Lightning Cup'], ['Jan', 9, 'The Curzon Cup'],
@@ -125,8 +125,25 @@ export interface Entrant {
   player?: boolean;
 }
 
-/** The NPC field for a race (the same every time it is generated for that entry). */
-export function npcField(race: Race, seed: number): Entrant[] {
+export interface FieldOptions {
+  /** The player's form from the race's start (their recent average course time). */
+  form?: number;
+  /** The player's handicap in the race. */
+  handicap?: number;
+  /** The player's course times so far, day by day. */
+  player?: (number | null)[][];
+}
+
+/** How much the field's best riders are expected to beat the player's form by, per course (net). */
+const EDGE = 0.12;
+
+/**
+ * The NPC field for a race (the same every time it is generated for that entry and the player's
+ * rides so far). Matched to the player's form, so the best of the field ride a touch better than
+ * the player usually does; and the leaders rally as the race goes on, improving a little every
+ * course and clawing back half of any lead the player has opened. Winning takes the ride of your life.
+ */
+export function npcField(race: Race, seed: number, options: FieldOptions = {}): Entrant[] {
   const rand = mulberry32(seed);
   const out: Entrant[] = [];
   for (let i = 0; i < race.field; i++) {
@@ -169,7 +186,67 @@ export function npcField(race: Race, seed: number): Entrant[] {
     }
     out.push({ name, nation, handicap, times, speeds, fallAt, sl: false });
   }
+  if (options.form !== undefined) matchForm(race, out, options.form, options.handicap ?? 0);
+  if (options.player) rally(race, out, options.player, options.handicap ?? 0);
   return out;
+}
+
+/** Each course time of an NPC, flattened across the days (null a fall, undefined not ridden). */
+const flat = (e: Entrant) => e.times.flat();
+const net = (race: Race, time: number, hcp: number) => time - (race.kind === 'handicap' ? hcp : 0);
+
+/** Shift the whole field so its best three are expected to beat the player's usual (net) course by EDGE. */
+function matchForm(race: Race, field: Entrant[], form: number, handicap: number) {
+  const playerNet = net(race, form, handicap);
+  let topNet = Infinity;
+  for (const e of field.slice(0, 3)) {
+    const ridden = flat(e).filter((t): t is number => typeof t === 'number');
+    if (ridden.length) topNet = Math.min(topNet, net(race, ridden.reduce((a, b) => a + b, 0) / ridden.length, e.handicap));
+  }
+  const delta = topNet - (playerNet - EDGE);
+  // Only ever harder: a field already quicker than the player stays as it is.
+  if (!(delta > 0) || !Number.isFinite(delta)) return;
+  for (const e of field) shiftCourses(e, 0, delta);
+}
+
+/** Take `by` seconds off an NPC's courses from flat index `from` on (with a matching gain in speed). */
+function shiftCourses(e: Entrant, from: number, by: number, only?: number) {
+  for (let d = 0; d < e.times.length; d++) {
+    for (let k = 0; k < e.times[d].length; k++) {
+      const i = d * 3 + k;
+      if (i < from || (only !== undefined && i !== only)) continue;
+      const t = e.times[d][k];
+      if (typeof t !== 'number') continue;
+      e.times[d][k] = round2(t - by);
+      e.speeds[d][k] = round2(e.speeds[d][k] + by * 1.1);
+    }
+  }
+}
+
+/**
+ * The leaders rally: on each course after the first, the three best placed NPCs ride a little
+ * quicker, and if the player leads, quicker still, by half the lead (at most a second a course).
+ */
+function rally(race: Race, field: Entrant[], player: (number | null)[][], handicap: number) {
+  const mine = player.flat();
+  const courses = race.days * 3;
+  for (let c = 1; c < courses; c++) {
+    // Only once the player has ridden the courses before this one, cleanly.
+    const ridden = mine.slice(0, c);
+    if (ridden.length < c || ridden.some((t) => typeof t !== 'number')) return;
+    const playerNet = (ridden as number[]).reduce((a, b) => a + net(race, b, handicap), 0);
+    const standing = field
+      .map((e) => {
+        const t = flat(e).slice(0, c);
+        return { e, total: t.some((x) => typeof x !== 'number') ? Infinity : (t as number[]).reduce((a, b) => a + net(race, b, e.handicap), 0) };
+      })
+      .filter((s) => Number.isFinite(s.total))
+      .sort((a, b) => a.total - b.total);
+    if (!standing.length) return;
+    const lead = standing[0].total - playerNet;
+    const surge = Math.min(1, 0.08 + Math.max(0, lead) * 0.5);
+    for (const s of standing.slice(0, 3)) shiftCourses(s.e, c, surge, c);
+  }
 }
 
 function gauss(rand: () => number) {
