@@ -206,8 +206,8 @@ export class TrophyRoom {
     void this.load().then(() => {
       if (!this.victory) return;
       const model = (this.models![won?.model ?? 'cup'] ?? this.models!.cup).clone();
-      // Held in both hands, a cup's size (the tall Morgan smaller still, or it hides the face).
-      const big = won?.model === 'morgan' ? 0.5 : 0.7;
+      // Held in both hands, a cup's size; the Morgan, absurdly big, hiding the winner's face.
+      const big = won?.model === 'morgan' ? 1.3 : 0.7;
       const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
       model.scale.multiplyScalar(big * Math.min(0.42 / size.y, 0.46 / Math.max(size.x, size.z)));
       this.victory.trophy.add(model);
@@ -272,9 +272,12 @@ export class TrophyRoom {
     // Close: from the hands under the trophy to just over the head (on a narrow phone the elbows
     // go off the sides), a little from above so the head is against the mountains, not the sky.
     const head = rider.head.getWorldPosition(new THREE.Vector3());
-    const tall = head.y + 0.16 - (hands.y - 0.1);
+    // Over the head, or over the trophy where it's the taller (the Morgan).
+    const cup = v.trophy.children.length ? new THREE.Box3().setFromObject(v.trophy).max.y + 0.12 : 0;
+    const top = Math.max(head.y + 0.16, cup);
+    const tall = top - (hands.y - 0.1);
     const dist = tall / 2 / tan;
-    const centre = new THREE.Vector3(hands.x, (head.y + 0.16 + hands.y - 0.1) / 2, (hands.z + head.z) / 2);
+    const centre = new THREE.Vector3(hands.x, (top + hands.y - 0.1) / 2, cup > head.y + 0.16 ? hands.z : (hands.z + head.z) / 2);
     const down = 0.22; // radians
     cam.position.set(centre.x, centre.y + Math.sin(down) * dist, centre.z + Math.cos(down) * dist);
     cam.lookAt(centre);
