@@ -2451,10 +2451,11 @@ body.times-room #times {
   font-weight: 800;
 }
 
-/* The speed scale, down the right of the aerial view. */
+/* The speed scale, down the left of the aerial view (Shuttlecock's bank is on the right), under
+   the music button. */
 #times-colorbar {
   position: fixed;
-  right: 14px;
+  left: 14px;
   top: calc(var(--safe-top) + 76px);
   width: 46px;
   height: 30vh;
@@ -2488,7 +2489,7 @@ body.times-room #times {
 
 #times-note {
   position: fixed;
-  left: 16px;
+  left: 76px;
   right: 76px;
   top: calc(var(--safe-top) + 14px);
   margin: 0;
@@ -2498,9 +2499,6 @@ body.times-room #times {
 }
 
 @media (min-width: 760px) and (min-aspect-ratio: 1/1) {
-  #times-colorbar {
-    right: 414px;
-  }
   #times .select-panel {
     max-height: none;
   }
