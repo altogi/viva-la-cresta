@@ -36,11 +36,6 @@
         <div id="save-list"></div>
         <p id="saves-empty" class="muted">No saved games yet.</p>
         <button id="new-game" class="primary">New game</button>
-        <!-- Free ride and the track viewer: for development, at ?free and ?viewer -->
-        <div class="row quiet" hidden>
-          <button id="free-ride">Free ride</button>
-          <button id="saves-viewer">Track viewer</button>
-        </div>
       </div>
     </section>
 
@@ -59,10 +54,10 @@
         <button id="hub-practice" class="primary">Practice</button>
         <p id="hub-practice-note" class="muted"></p>
         <button id="hub-next-day">Next day</button>
-        <div class="hub-more">
-          <button id="hub-times">My times</button>
+        <button id="hub-times">My times</button>
+        <div class="hub-pair">
           <button id="hub-calendar">Race calendar</button>
-          <button id="hub-trophies" hidden>My trophies</button>
+          <button id="hub-trophies">My trophies</button>
         </div>
         <p id="hub-record" class="muted"></p>
       </div>
@@ -117,7 +112,6 @@
       <div class="choices">
         <button data-ride="junction-running" class="primary">Junction · running start</button>
         <button data-ride="top-running">Top · running start</button>
-        <button id="open-viewer" class="quiet">Track viewer</button>
         <button id="menu-back" class="quiet">Back to your games</button>
       </div>
       <details class="how">

@@ -255,7 +255,9 @@ async function start() {
     setGhost(sel);
     setMode('menu');
   };
-  document.getElementById('free-ride')!.addEventListener('click', () => {
+  // Free ride and the track viewer are for development only (at ?debug&free and ?debug&viewer):
+  // players start a game.
+  document.getElementById('free-ride')?.addEventListener('click', () => {
     sound.start();
     ride.selection = chosen;
     setGhost(chosen);
@@ -275,12 +277,12 @@ async function start() {
       ride.begin(RIDES[button.dataset.ride!]);
     });
   }
-  document.getElementById('open-viewer')!.addEventListener('click', () => ((viewerReturn = 'menu'), setMode('viewer')));
-  document.getElementById('saves-viewer')!.addEventListener('click', () => ((viewerReturn = 'saves'), setMode('viewer')));
+  document.getElementById('open-viewer')?.addEventListener('click', () => ((viewerReturn = 'menu'), setMode('viewer')));
+  document.getElementById('saves-viewer')?.addEventListener('click', () => ((viewerReturn = 'saves'), setMode('viewer')));
   document.getElementById('viewer-close')!.addEventListener('click', () => (viewerReturn === 'saves' ? career.saves() : setMode(viewerReturn)));
   ride.onExit = () => setMode('menu');
-  if (params.has('viewer')) setMode('viewer');
-  else if (params.has('free')) setMode('menu');
+  if (debug && params.has('viewer')) setMode('viewer');
+  else if (debug && params.has('free')) setMode('menu');
   else career.intro();
 
   const clock = new THREE.Clock();

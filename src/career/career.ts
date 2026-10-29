@@ -91,6 +91,8 @@ export interface Career {
   rideCounts?: Record<Start, number>;
   /** The banks the rider has fallen at: a member of each one's club. */
   clubs?: string[];
+  /** A preview career: every race's trophy already in the trophy room, open from the start (new Adelaide games, for now). */
+  showcase?: boolean;
 }
 
 /** The banks with a club for those who have come off in them. */

@@ -2,7 +2,7 @@
 // they've come off at) and the trophies they've won, each the club's own where it's known.
 
 import { CLUBS, dateOf, type Career, type Start } from './career';
-import { raceById } from './races';
+import { RACES, raceById } from './races';
 
 /** The trophy models (trophies.glb holds `trophy_<id>`). */
 export type TrophyModel =
@@ -111,8 +111,35 @@ export interface Win {
   colours: boolean;
 }
 
-/** The races the rider has won, in the order they were won. */
+/** The races the rider has won, in the order they were won (with every race's trophy first in a showcase career). */
 export function wins(c: Career): Win[] {
+  return [...(c.showcase ? showcaseWins() : []), ...wonRaces(c)];
+}
+
+/** Every race on the calendar won in the first season, each with its own trophy. */
+export function showcaseWins(): Win[] {
+  return RACES.map((race) => {
+    const trophy = trophyFor(race.id);
+    const d = dateOf(race.day + race.days - 1, 1);
+    const courses = race.days * 3;
+    const total = Math.round(((race.start === 'top' ? 59.4 : 45.3) * courses + Math.random() * 2) * 100) / 100;
+    return {
+      raceId: race.id,
+      name: race.name,
+      note: race.note,
+      season: 1,
+      date: `${d.label} ${d.year}`,
+      total,
+      net: race.kind === 'handicap' ? Math.round((total - courses * 4.2) * 100) / 100 : null,
+      of: race.field + 1,
+      model: trophy.model,
+      text: trophy.text,
+      colours: COLOUR_RACES.includes(race.id),
+    };
+  });
+}
+
+function wonRaces(c: Career): Win[] {
   return c.results
     .filter((r) => r.position === 1 && r.total !== null)
     .map((r) => {

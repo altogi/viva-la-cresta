@@ -2333,15 +2333,20 @@ body.trophy-room #trophies {
 }
 
 /* ---------- The hub's other rooms ---------- */
-.hub-more {
+/* Race calendar and My trophies, side by side under My times. */
+.hub-pair {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
-  margin-top: 10px;
 }
 
-.hub-more button {
+.hub-pair button {
   margin: 0;
+}
+
+/* Not a member yet: the trophy room is there, but shut. */
+#hub-trophies:disabled {
+  opacity: 0.45;
 }
 
 /* ---------- My times ---------- */
