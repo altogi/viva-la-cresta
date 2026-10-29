@@ -648,6 +648,8 @@ export class RideMode {
     root.matrixAutoUpdate = true;
     root.matrix.decompose(root.position, root.quaternion, root.scale);
     root.updateMatrixWorld(true);
+    // The mats beyond Shuttlecock are recorded as they fly too, for the replay.
+    this.padding?.record();
     this.ragdoll.start(
       [
         { object: this.model.body, radius: 0.25, kick: 2.2 },
@@ -677,6 +679,7 @@ export class RideMode {
     this.stageTime = 0;
     this.orbitTime = 0;
     this.replayClock = Math.max(this.history[0]?.t ?? this.fallTime, this.fallTime - REPLAY_BEFORE);
+    this.padding?.stopRecording();
     if (!this.replayModel) {
       this.replayModel = new RiderModel(LOOKS[this.selection.rider], this.selection.toboggan);
       this.world.scene.add(this.replayModel.root);
@@ -689,6 +692,7 @@ export class RideMode {
     this.replayClock += realDt * REPLAY_SPEED;
     this.orbitTime += realDt;
     const model = this.replayModel!;
+    this.padding?.showAt(this.replayClock - this.fallTime);
     if (this.replayClock < this.fallTime) {
       const snap = this.historyAt(this.replayClock);
       model.root.visible = true;
@@ -730,6 +734,7 @@ export class RideMode {
 
   private endReplay() {
     this.replayModel!.root.visible = false;
+    this.padding?.live();
     this.ragdoll.setVisible(true);
     this.ragdoll.showAt(this.ragdoll.duration);
     $('ride-banner').classList.remove('replay');

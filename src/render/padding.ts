@@ -37,6 +37,12 @@ interface Mat {
 export class Padding {
   readonly group = new THREE.Group();
   private readonly mats: Mat[] = [];
+  /** The mats as they flew in a fall, for its replay: seconds since the fall, then each mat's position and turn. */
+  private takes: { t: number; poses: Float32Array }[] = [];
+  /** Seconds since the fall while recording it; -1 when not. */
+  private clock = -1;
+  /** The replay is showing the recorded mats: the live ones wait. */
+  private replaying = false;
 
   constructor(
     private readonly track: Track,
@@ -213,6 +219,15 @@ export class Padding {
 
   /** Mats in the air fly and tumble; on the snow they bounce, slide and settle on a face. */
   update(dt: number) {
+    if (this.replaying) return;
+    this.step(dt);
+    if (this.clock >= 0) {
+      this.clock += dt;
+      this.take();
+    }
+  }
+
+  private step(dt: number) {
     for (const m of this.mats) {
       if (!m.moving) continue;
       m.vel.y -= GRAVITY * dt;
@@ -249,8 +264,68 @@ export class Padding {
     }
   }
 
+  /** A fall: record how the mats fly from now on, for the replay. */
+  record() {
+    this.takes = [];
+    this.clock = 0;
+    this.replaying = false;
+    this.take();
+  }
+
+  /** The replay begins: the recording is done. */
+  stopRecording() {
+    this.clock = -1;
+  }
+
+  private take() {
+    const poses = new Float32Array(this.mats.length * 7);
+    this.mats.forEach((m, i) => {
+      m.mesh.position.toArray(poses, i * 7);
+      m.mesh.quaternion.toArray(poses, i * 7 + 3);
+    });
+    this.takes.push({ t: this.clock, poses });
+  }
+
+  /** The mats as they were `t` seconds after the fall (as they stood before it, for t < 0). */
+  showAt(t: number) {
+    const takes = this.takes;
+    if (!takes.length) return;
+    this.replaying = true;
+    let i = takes.findIndex((x) => x.t >= t);
+    if (i < 0) i = takes.length - 1;
+    const b = takes[i];
+    const a = takes[Math.max(0, i - 1)];
+    const k = b.t > a.t ? THREE.MathUtils.clamp((t - a.t) / (b.t - a.t), 0, 1) : 1;
+    const qa = new THREE.Quaternion();
+    const qb = new THREE.Quaternion();
+    this.mats.forEach((m, j) => {
+      const o = j * 7;
+      m.mesh.position.set(
+        THREE.MathUtils.lerp(a.poses[o], b.poses[o], k),
+        THREE.MathUtils.lerp(a.poses[o + 1], b.poses[o + 1], k),
+        THREE.MathUtils.lerp(a.poses[o + 2], b.poses[o + 2], k),
+      );
+      qa.fromArray(a.poses, o + 3);
+      qb.fromArray(b.poses, o + 3);
+      m.mesh.quaternion.slerpQuaternions(qa, qb, k);
+    });
+  }
+
+  /** After the replay: the mats where they really are, carrying on from there. */
+  live() {
+    this.replaying = false;
+    for (const m of this.mats) {
+      m.mesh.position.copy(m.pos);
+      m.mesh.rotation.set(0, m.heading + m.spin, 0);
+      m.mesh.rotateX(-m.tip);
+    }
+  }
+
   /** All back as they were, for the next ride. */
   reset() {
+    this.takes = [];
+    this.clock = -1;
+    this.replaying = false;
     for (const m of this.mats) {
       m.pos.copy(m.home);
       m.vel.set(0, 0, 0);

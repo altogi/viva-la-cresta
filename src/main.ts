@@ -14,6 +14,7 @@ import { loadAssets } from './render/assets';
 import { RiderModel } from './render/riderModel';
 import { LOOKS } from './render/riderLooks';
 import { loadSelection, type Selection } from './game/selection';
+import { unlockedRiders } from './career/unlocks';
 import { SelectMode } from './game/selectMode';
 import { CareerMode } from './game/careerMode';
 import { clearBadgeBackground } from './ui/badge';
@@ -159,7 +160,9 @@ async function start() {
     viewer.setAttract(attract);
     onMode?.();
   };
-  const setGhost = (sel: Selection) => {
+  const setGhost = (picked: Selection) => {
+    // Never a rider still to unlock behind the menus.
+    const sel = unlockedRiders().has(picked.rider) ? picked : { ...picked, rider: 'adelaide' as const };
     ghost.removeFromParent();
     ghostModel = new RiderModel(LOOKS[sel.rider], sel.toboggan);
     ghost = ghostModel.root;
