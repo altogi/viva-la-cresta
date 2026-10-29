@@ -822,7 +822,7 @@ export class RiderModel {
       feet: [V(pelvis.x + 0.03, 0.06, pelvis.z - 0.17), V(pelvis.x + 0.03, 0.06, pelvis.z + 0.17)],
       elbowPoles: [V(pelvis.x - 0.3, pelvis.y - 0.6, pelvis.z - 1), V(pelvis.x - 0.3, pelvis.y - 0.6, pelvis.z + 1)],
       kneePoles: [V(pelvis.x + 1, 0.45, pelvis.z - 0.2), V(pelvis.x + 1, 0.45, pelvis.z + 0.2)],
-      forearmRoll: [-1.7, 1.7], // palms up, under the trophy
+      forearmRoll: [-2.05, 2.05], // palms up, under the trophy
     };
     return { targets, open: 0.25 };
   }

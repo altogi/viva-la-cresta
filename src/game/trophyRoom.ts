@@ -206,8 +206,9 @@ export class TrophyRoom {
     void this.load().then(() => {
       if (!this.victory) return;
       const model = (this.models![won?.model ?? 'cup'] ?? this.models!.cup).clone();
-      // Held in both hands, a cup's size; the Morgan, absurdly big, hiding the winner's face.
-      const big = won?.model === 'morgan' ? 1.3 : 0.7;
+      // Held in both hands, a cup's size; the Grand National bigger, and the Morgan, absurdly big,
+      // hiding the winner's face.
+      const big = won?.model === 'morgan' ? 1.3 : won?.model === 'grand-national' ? 0.9 : 0.7;
       const size = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3());
       model.scale.multiplyScalar(big * Math.min(0.42 / size.y, 0.46 / Math.max(size.x, size.z)));
       this.victory.trophy.add(model);
@@ -253,7 +254,7 @@ export class TrophyRoom {
     rider.setPose({ posture: 0, steer: 0, rakeLeft: 0, rakeRight: 0, mount: 1, runPhase: 0, stand: { time: v.time, action: null, t: 0, posture: 'hold' } });
     // The trophy standing on both palms, facing the camera.
     const hands = rider.handAt(0).add(rider.handAt(1)).multiplyScalar(0.5);
-    v.trophy.position.copy(hands).add(new THREE.Vector3(0, 0.03, 0));
+    v.trophy.position.copy(hands).add(new THREE.Vector3(0, 0.07, 0)); // resting on the palms, clear of the fingers
     v.trophy.rotation.y = v.heading - Math.PI / 2;
     // The camera: the rider from the waist up, the mountains behind.
     const cam = this.camera;
