@@ -376,15 +376,20 @@ export class SelectMode {
     }
   }
 
-  /** Swipe across the scene (or tap an arrow) for the next rider. */
+  /**
+   * Swipe across the scene (or tap an arrow) for the next rider. Listened for on the whole page, not
+   * the canvas: on a phone other layers can sit over the canvas and take its touches.
+   */
   private listenOnScene() {
     const canvas = this.world.renderer.domElement;
-    let start: { x: number; y: number; t: number } | null = null;
-    canvas.addEventListener('pointerdown', (e) => {
-      if (document.body.classList.contains('selecting') && this.stage === 'rider') start = { x: e.clientX, y: e.clientY, t: performance.now() };
+    const onScene = (e: PointerEvent) =>
+      document.body.classList.contains('selecting') && this.stage === 'rider' && !(e.target as HTMLElement).closest('.select-panel, button, a, input');
+    let start: { x: number; y: number } | null = null;
+    window.addEventListener('pointerdown', (e) => {
+      start = onScene(e) ? { x: e.clientX, y: e.clientY } : null;
     });
-    canvas.addEventListener('pointerup', (e) => {
-      if (!start || !document.body.classList.contains('selecting')) return;
+    window.addEventListener('pointerup', (e) => {
+      if (!start || !onScene(e)) return;
       const dx = e.clientX - start.x;
       const dy = e.clientY - start.y;
       start = null;
@@ -392,16 +397,20 @@ export class SelectMode {
         this.step(dx < 0 ? 1 : -1);
         return;
       }
-      // A tap: on an arrow?
+      // A tap: on an arrow? (Generously: anywhere on the arrow's side of the view, level with it.)
       const rect = canvas.getBoundingClientRect();
       const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
       const ray = new THREE.Raycaster();
       ray.setFromCamera(ndc, this.world.camera);
       const hit = ray.intersectObjects(this.arrows.children, true)[0];
-      if (hit) {
-        let node: THREE.Object3D | null = hit.object;
-        while (node && node.userData.side === undefined) node = node.parent;
-        if (node) this.step(node.userData.side as number);
+      let node: THREE.Object3D | null = hit?.object ?? null;
+      while (node && node.userData.side === undefined) node = node.parent;
+      if (node) return this.step(node.userData.side as number);
+      for (const arrow of this.arrows.children) {
+        const p = arrow.getWorldPosition(new THREE.Vector3()).project(this.world.camera);
+        const x = rect.left + ((p.x + 1) / 2) * rect.width;
+        const y = rect.top + ((1 - p.y) / 2) * rect.height;
+        if (Math.abs(e.clientX - x) < 48 && Math.abs(e.clientY - y) < 56) return this.step(arrow.userData.side as number);
       }
     });
   }

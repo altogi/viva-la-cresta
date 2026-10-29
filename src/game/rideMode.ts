@@ -1,6 +1,7 @@
 // One ride down the Cresta: "Rider on the ice", the bell, the start, the ride itself with the
 // chase camera, then the finish, or a fall in slow motion and the disqualification.
 
+import { LINE } from '../career/lines';
 import * as THREE from 'three';
 import { Controls } from '../input/controls';
 import { RideSim, type StartStyle } from '../sim/physics';
@@ -56,6 +57,8 @@ export interface RideResult {
   fall: { kind: string; zone: string } | null;
   /** Finish speed, mph. */
   speed: number;
+  /** The line through Shuttlecock: u (m) and speed (m/s) at each sample (see career/lines). */
+  line: number[];
 }
 
 type Stage = 'ready' | 'countdown' | 'live' | 'runout' | 'celebrate' | 'falling' | 'replay' | 'done';
@@ -112,6 +115,9 @@ export class RideMode {
   private mountTime = 0;
   private wasRunning = false;
   private history: Snapshot[] = [];
+  /** This ride's line through Shuttlecock, and the next distance down the run to sample it at. */
+  private line: number[] = [];
+  private nextLineS = LINE.from;
   private fallTime = 0;
   private readonly fallPoint = new THREE.Vector3();
   private readonly closeUpSide = new THREE.Vector3();
@@ -262,6 +268,8 @@ export class RideMode {
     this.replayModel?.root.removeFromParent();
     this.replayModel = null;
     this.history = [];
+    this.line = [];
+    this.nextLineS = LINE.from;
     if (this.model) this.model.root.removeFromParent();
     const { rider, toboggan } = this.selection;
     this.model = new RiderModel(LOOKS[rider], toboggan);
@@ -361,7 +369,7 @@ export class RideMode {
     this.sound.update({ speed: 0, posture: 0, rake: 0, riding: false });
     this.setup.career?.coach?.hide();
     const career = this.setup.career;
-    if (career) career.onDone(this.result ?? (this.sim.state.fall ? { time: null, fall: { kind: this.sim.state.fall.kind, zone: this.sim.state.fall.zone }, speed: 0 } : null));
+    if (career) career.onDone(this.result ?? (this.sim.state.fall ? { time: null, fall: { kind: this.sim.state.fall.kind, zone: this.sim.state.fall.zone }, speed: 0, line: this.line.slice() } : null));
     else this.onExit();
   }
 
@@ -542,6 +550,11 @@ export class RideMode {
 
   private record() {
     this.history.push(this.snapshot());
+    const st = this.sim.state;
+    while (st.s >= this.nextLineS && this.nextLineS <= LINE.to) {
+      this.line.push(Math.round(st.u * 100) / 100, Math.round(Math.hypot(st.v, st.w) * 10) / 10);
+      this.nextLineS += LINE.step;
+    }
     while (this.history.length && this.history[0].t < this.simClock - REPLAY_BEFORE - 0.5) this.history.shift();
   }
 
@@ -715,7 +728,7 @@ export class RideMode {
     $('ride-banner').classList.remove('replay');
     this.banner('', '');
     const fall = this.sim.state.fall!;
-    this.result = { time: null, fall: { kind: fall.kind, zone: fall.zone }, speed: 0 };
+    this.result = { time: null, fall: { kind: fall.kind, zone: fall.zone }, speed: 0, line: this.line.slice() };
     this.card(`Fall at ${fall.zone}`, `You ${FALL_TEXT[fall.kind]}.${this.setup.career?.race ? ' Disqualified.' : ''}`, this.setup.career?.fallLines?.(fall.kind, fall.zone) ?? []);
     $('ride-replay').hidden = false;
     this.stage = 'done';
@@ -733,7 +746,7 @@ export class RideMode {
     }
     // "Hello Hello!" only when beating a best that already stood.
     const beaten = this.hello;
-    this.result = { time, fall: null, speed: (st.finishSpeed ?? 0) * MPH };
+    this.result = { time, fall: null, speed: (st.finishSpeed ?? 0) * MPH, line: this.line.slice() };
     const lines: string[] = [];
     if (beaten) lines.push(`New best · previous ${best!.toFixed(2)}`);
     else if (best) lines.push(`Best ${best.toFixed(2)}`);

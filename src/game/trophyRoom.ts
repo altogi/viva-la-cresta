@@ -8,10 +8,10 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Career } from '../career/career';
-import { CLUB_LORE, riderRecord, wins, type RiderRecord, type Win } from '../career/trophies';
+import { riderRecord, wins, type RiderRecord, type Win } from '../career/trophies';
 import { RIDERS } from '../sim/rider';
-import { buildArrows } from './selectMode';
 import type { Part } from '../render/assets';
+import { skater } from '../render/crowd';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const base = import.meta.env.BASE_URL;
@@ -44,10 +44,10 @@ export class TrophyRoom {
   private outgoing: THREE.Object3D | null = null;
   private models: Record<string, THREE.Object3D> | null = null;
   private loading: Promise<void> | null = null;
-  private readonly arrows = buildArrows();
   private readonly sparkles: THREE.Sprite[] = [];
   private readonly fireworks = new Fireworks();
   private readonly sky = new SkyTraffic();
+  private readonly rink = new Rink();
   private scrollTarget: number | null = null;
   private name = '';
   onClose: () => void = () => {};
@@ -105,11 +105,10 @@ export class TrophyRoom {
     glint.name = 'glint';
     scene.add(glint);
 
-    scene.add(terrace(), railing(), table(), lake(), tents(), backdrop());
+    scene.add(terrace(), railing(), table(), lake(), tents(), backdrop(), this.rink.group);
     if (trees) scene.add(woods(trees));
     this.sky.build(scene, balloon);
     scene.add(this.fireworks.group);
-    scene.add(this.arrows);
     const star = sparkleTexture();
     for (let i = 0; i < 5; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: star, color: '#ffffff', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
@@ -179,6 +178,7 @@ export class TrophyRoom {
     const dots = $('trophy-dots');
     list.replaceChildren();
     dots.replaceChildren();
+    $('trophy-swipe').hidden = this.items.length < 2;
     this.items.forEach((item, i) => {
       const card = document.createElement('div');
       card.className = 'trophy-card';
@@ -255,8 +255,8 @@ export class TrophyRoom {
     this.glint();
     this.sparkle(dt);
     this.sky.update(dt, this.time);
+    this.rink.update(dt);
     this.fireworks.update(dt);
-    this.placeArrows();
   }
 
   /** Framed in the space above the panel (or left of it on a wide screen), drifting a little. */
@@ -287,7 +287,6 @@ export class TrophyRoom {
     this.fit.y += (wantedY - this.fit.y) * k;
     const dist = this.fit.x;
     const centre = new THREE.Vector3(SPOT.x, this.fit.y, SPOT.z);
-    this.arrowAt.set(centre.y, Math.max(0.36, Math.max(size.x, size.z)) / 2 + 0.1);
     const yaw = Math.sin(this.time * 0.18) * 0.12;
     cam.position.set(centre.x + Math.sin(yaw) * dist, centre.y + 0.05, centre.z + Math.cos(yaw) * dist);
     // Look above the trophy, so it stands a fifth of the view below the middle.
@@ -361,48 +360,22 @@ export class TrophyRoom {
     }
   }
 
-  /** Height of the middle of what's on the table, and how far out from it the arrows float. */
-  private readonly arrowAt = new THREE.Vector2(1, 0.35);
-
-  /** The arrows float either side of the trophy, level with its middle, pulsing outward. */
-  private placeArrows() {
-    const cam = this.camera;
-    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0).setY(0).normalize();
-    const pulse = 0.015 * Math.sin(this.time * 4);
-    // Beside the trophy, but never off the edge of a narrow screen.
-    const depth = cam.position.distanceTo(new THREE.Vector3(SPOT.x, this.arrowAt.x, SPOT.z + 0.15));
-    const halfWidth = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * cam.aspect * depth;
-    const out = Math.min(this.arrowAt.y, halfWidth * 0.8);
-    for (const arrow of this.arrows.children) {
-      const side = arrow.userData.side as number;
-      arrow.position.set(SPOT.x, this.arrowAt.x, SPOT.z + 0.15).addScaledVector(right, side * (out + pulse));
-      arrow.quaternion.copy(cam.quaternion);
-      arrow.scale.setScalar(0.32);
-      arrow.visible = this.swap >= 1 && (side < 0 ? this.index > 0 : this.index < this.items.length - 1);
-    }
-  }
-
-  /** Swipe across the view (or tap an arrow) for the next. */
+  /**
+   * Swipe across the view for the next. Listened for on the whole page, not the canvas: on a phone
+   * other layers can sit over the canvas and take its touches.
+   */
   private listenOnScene() {
-    const canvas = this.renderer.domElement;
+    const onScene = (e: PointerEvent) => document.body.classList.contains('trophy-room') && !(e.target as HTMLElement).closest('.select-panel, button');
     let start: { x: number; y: number } | null = null;
-    canvas.addEventListener('pointerdown', (e) => {
-      if (document.body.classList.contains('trophy-room')) start = { x: e.clientX, y: e.clientY };
+    window.addEventListener('pointerdown', (e) => {
+      start = onScene(e) ? { x: e.clientX, y: e.clientY } : null;
     });
-    canvas.addEventListener('pointerup', (e) => {
-      if (!start || !document.body.classList.contains('trophy-room')) return;
+    window.addEventListener('pointerup', (e) => {
+      if (!start || !onScene(e)) return;
       const dx = e.clientX - start.x;
       const dy = e.clientY - start.y;
       start = null;
-      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) return this.step(dx < 0 ? 1 : -1);
-      const rect = canvas.getBoundingClientRect();
-      const ndc = new THREE.Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
-      const ray = new THREE.Raycaster();
-      ray.setFromCamera(ndc, this.camera);
-      const hit = ray.intersectObjects(this.arrows.children, true)[0];
-      let node: THREE.Object3D | null = hit?.object ?? null;
-      while (node && node.userData.side === undefined) node = node.parent;
-      if (node) this.step(node.userData.side as number);
+      if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) this.step(dx < 0 ? 1 : -1);
     });
   }
 }
@@ -428,9 +401,6 @@ function sizeOf(obj: THREE.Object3D): THREE.Vector3 {
 const fmt = (t: number | null) => (t === null ? '—' : `${t.toFixed(2)} s`);
 
 function recordHtml(name: string, season: number, r: RiderRecord, trophies: number): string {
-  const clubs = r.clubs.length
-    ? r.clubs.map((club) => `<li><b>The ${club} Club</b><span>${CLUB_LORE[club]}</span></li>`).join('')
-    : '<li><span>No clubs yet: you have never come off at a bank. Long may it last.</span></li>';
   return `
     <div class="trophy-kicker">Season ${season} · Record</div>
     <div class="trophy-title">${name}</div>
@@ -440,9 +410,7 @@ function recordHtml(name: string, season: number, r: RiderRecord, trophies: numb
       <div><span>Best from Junction</span><b>${fmt(r.bestJunction)}</b></div>
       <div><span>Best from Top</span><b>${fmt(r.bestTop)}</b></div>
     </div>
-    <h3>Clubs</h3>
-    <ul class="trophy-clubs">${clubs}</ul>
-    <p class="trophy-hint">${trophies ? `${trophies} troph${trophies > 1 ? 'ies' : 'y'} won. Swipe to see ${trophies > 1 ? 'them' : 'it'}.` : 'No trophies yet. Win a race and it will stand here.'}</p>`;
+    <p class="trophy-hint">${r.clubs.length ? `Member of ${r.clubs.length} bank club${r.clubs.length > 1 ? 's' : ''} (on the board). ` : ''}${trophies ? `${trophies} troph${trophies > 1 ? 'ies' : 'y'} won.` : 'No trophies yet. Win a race and it will stand here.'}</p>`;
 }
 
 function winHtml(w: Win): string {
@@ -829,6 +797,89 @@ function recordBoard(name: string, r: RiderRecord): THREE.Object3D {
   board.traverse((o) => (o.castShadow = true));
   group.add(board, foot);
   return group;
+}
+
+// ---------- The rink on the frozen lake: skaters going round, a game of hockey ----------
+
+/** Where the rink lies on the lake (far enough out to show over the railing, short of the shore woods). */
+const RINK = { x: 0, z: -300, w: 170, d: 90 };
+
+class Rink {
+  readonly group = new THREE.Group();
+  private skaters: { figure: ReturnType<typeof skater>; r: number; speed: number; a: number; phase: number }[] = [];
+  private players: { figure: ReturnType<typeof skater>; pos: THREE.Vector2; heading: number; phase: number; team: number }[] = [];
+  private puck = new THREE.Vector2(RINK.x + 40, RINK.z);
+  private puckGoal = new THREE.Vector2(RINK.x + 40, RINK.z);
+  private built = false;
+
+  constructor() {
+    // Swept ice, darker and glossier than the snow on the lake, banked round with snow.
+    const ice = new THREE.Mesh(new THREE.PlaneGeometry(RINK.w, RINK.d), new THREE.MeshStandardMaterial({ color: '#b9cbd9', roughness: 0.25, metalness: 0.1 }));
+    ice.rotation.x = -Math.PI / 2;
+    ice.position.set(RINK.x, LAKE + 0.03, RINK.z);
+    this.group.add(ice);
+    const snow = mat('#f4f7fb', 0.95);
+    for (const [w, d, x, z] of [[RINK.w + 6, 3, 0, RINK.d / 2 + 1.5], [RINK.w + 6, 3, 0, -RINK.d / 2 - 1.5], [3, RINK.d, RINK.w / 2 + 1.5, 0], [3, RINK.d, -RINK.w / 2 - 1.5, 0]]) {
+      const bank = new THREE.Mesh(new THREE.BoxGeometry(w, 1.2, d), snow);
+      bank.position.set(RINK.x + x, LAKE + 0.4, RINK.z + z);
+      this.group.add(bank);
+    }
+    // Two red goals at the hockey end (the right half).
+    const red = mat('#c0181a', 0.5);
+    for (const gx of [RINK.x + 12, RINK.x + 78]) {
+      const goal = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.8), red);
+      goal.position.set(gx, LAKE + 0.6, RINK.z);
+      this.group.add(goal);
+    }
+  }
+
+  /** The figures, once the visitors' models are loaded (on the first frame the room is shown). */
+  private build() {
+    this.built = true;
+    const kinds = ['man', 'mother', 'child'] as const;
+    // Skaters going round the left half, at their own pace, some a pair.
+    for (let i = 0; i < 11; i++) {
+      const figure = skater(kinds[i % 3]);
+      figure.group.scale.setScalar(1.5); // a little larger than life: they're 300 m off
+      this.group.add(figure.group);
+      this.skaters.push({ figure, r: 10 + (i % 4) * 7, speed: 2.5 + (i % 3) * 0.8, a: (i / 11) * Math.PI * 2, phase: i });
+    }
+    for (let i = 0; i < 6; i++) {
+      const figure = skater(i % 3 === 2 ? 'child' : 'man', true);
+      figure.group.scale.setScalar(1.5);
+      this.group.add(figure.group);
+      this.players.push({ figure, pos: new THREE.Vector2(RINK.x + 20 + i * 9, RINK.z + (i % 2 ? 10 : -10)), heading: 0, phase: i * 0.7, team: i % 2 });
+    }
+  }
+
+  update(dt: number) {
+    if (!this.built) this.build();
+    for (const s of this.skaters) {
+      s.a += (s.speed / s.r) * dt;
+      s.phase += dt * 3;
+      const cx = RINK.x - 42;
+      s.figure.group.position.set(cx + Math.cos(s.a) * s.r * 1.4, LAKE + 0.05, RINK.z + Math.sin(s.a) * s.r * 0.8);
+      // Facing the way they're going round (the figures face +x, as the crowd's do).
+      s.figure.group.rotation.y = Math.atan2(-Math.cos(s.a) * 0.8, -Math.sin(s.a) * 1.4);
+      s.figure.pose(s.phase);
+    }
+    // The puck moves on now and then; the players chase it, jostling.
+    if (this.puck.distanceTo(this.puckGoal) < 1) this.puckGoal.set(RINK.x + 14 + Math.random() * 62, RINK.z + (Math.random() - 0.5) * (RINK.d - 20));
+    this.puck.lerp(this.puckGoal, Math.min(1, dt * 0.8));
+    for (const p of this.players) {
+      const want = this.puck.clone().add(new THREE.Vector2(p.team ? 3 : -3, (p.phase % 3) - 1.5));
+      const to = want.sub(p.pos);
+      const d = to.length();
+      const speed = Math.min(5, d * 0.8);
+      if (d > 0.3) p.heading = Math.atan2(-to.y, to.x);
+      p.pos.x += Math.cos(p.heading) * speed * dt;
+      p.pos.y -= Math.sin(p.heading) * speed * dt;
+      p.phase += dt * (1 + speed);
+      p.figure.group.position.set(p.pos.x, LAKE + 0.05, p.pos.y);
+      p.figure.group.rotation.y = p.heading;
+      p.figure.pose(p.phase);
+    }
+  }
 }
 
 // ---------- Sky traffic: clouds, a biplane, a balloon ----------

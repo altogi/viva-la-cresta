@@ -2331,3 +2331,193 @@ body.trophy-room #trophies {
     right: 412px;
   }
 }
+
+/* ---------- The hub's other rooms ---------- */
+.hub-more {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.hub-more button {
+  margin: 0;
+}
+
+/* ---------- My times ---------- */
+#times {
+  display: none;
+}
+
+body.times-room #times {
+  display: block;
+}
+
+#times .select-panel {
+  max-height: 50vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.times-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.times-head h2 {
+  margin: 0;
+}
+
+.times-switch {
+  display: flex;
+  border: 1px solid rgba(147, 3, 3, 0.3);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.times-switch button {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  color: var(--accent);
+  font-family: var(--display);
+  font-weight: 700;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.times-switch button.chosen {
+  background: var(--accent);
+  color: #fff;
+}
+
+#times-list {
+  overflow-y: auto;
+  margin: 0 -16px;
+  padding: 0 16px;
+}
+
+.times-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 4px;
+  border: 0;
+  border-bottom: 1px solid #efe9dd;
+  border-radius: 0;
+  background: none;
+  color: var(--charcoal);
+  text-align: left;
+}
+
+.times-row.chosen {
+  background: #f6efe1;
+}
+
+.times-row .rank {
+  font-weight: 800;
+  color: var(--gold);
+  text-align: center;
+}
+
+.times-row .when b {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: none;
+}
+
+.times-row .when small {
+  font-family: var(--serif);
+  font-size: 12px;
+  color: #6a6a6a;
+}
+
+.times-row .time {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+/* The speed scale, down the right of the aerial view. */
+#times-colorbar {
+  position: fixed;
+  right: 14px;
+  top: calc(var(--safe-top) + 76px);
+  width: 46px;
+  height: 30vh;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  justify-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  border-radius: 8px;
+  background: rgba(20, 22, 24, 0.55);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+#times-colorbar .bar {
+  width: 12px;
+  border-radius: 6px;
+}
+
+#times-colorbar .unit {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+#times-colorbar .mid {
+  display: none;
+}
+
+#times-note {
+  position: fixed;
+  left: 16px;
+  right: 76px;
+  top: calc(var(--safe-top) + 14px);
+  margin: 0;
+  color: #fff;
+  font-size: 13px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+@media (min-width: 760px) and (min-aspect-ratio: 1/1) {
+  #times-colorbar {
+    right: 414px;
+  }
+  #times .select-panel {
+    max-height: none;
+  }
+}
+
+/* Under the dots: a nudge that the cards (and the trophies) swipe. */
+#trophy-swipe {
+  text-align: center;
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+  animation: swipe-nudge 2.4s ease-in-out infinite;
+}
+
+@keyframes swipe-nudge {
+  0%, 100% { transform: translateX(0); opacity: 0.55; }
+  50% { transform: translateX(-8px); opacity: 1; }
+}
+
+#trophy-dots button {
+  width: 9px;
+  height: 9px;
+}

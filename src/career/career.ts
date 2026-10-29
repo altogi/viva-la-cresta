@@ -18,6 +18,8 @@ export interface RideRecord {
   fall: string | null;
   speed: number;
   race?: string;
+  /** The line through Shuttlecock (career/lines): u and speed at each sample. */
+  line?: number[];
 }
 
 /** A conversion in progress: a run of lying starts, then running starts with more steps each time. */
@@ -89,8 +91,6 @@ export interface Career {
   rideCounts?: Record<Start, number>;
   /** The banks the rider has fallen at: a member of each one's club. */
   clubs?: string[];
-  /** A preview career: every trophy already in the trophy room, open from the start (new Adelaide careers, for now). */
-  showcase?: boolean;
 }
 
 /** The banks with a club for those who have come off in them. */
@@ -237,9 +237,9 @@ export interface RideOutcome {
 }
 
 /** Record a practice ride and apply the progression rules. */
-export function recordPractice(c: Career, setup: Setup, time: number | null, fall: string | null, speed: number): RideOutcome {
+export function recordPractice(c: Career, setup: Setup, time: number | null, fall: string | null, speed: number, line?: number[]): RideOutcome {
   const out: RideOutcome = { joined: false, choice: false, unlocked: null, newBest: false, club: null };
-  c.rides.push({ day: c.day, season: c.season, start: setup.start, toboggan: setup.toboggan, style: setup.style, time, fall, speed });
+  c.rides.push({ day: c.day, season: c.season, start: setup.start, toboggan: setup.toboggan, style: setup.style, time, fall, speed, ...(line?.length ? { line } : {}) });
   out.club = noteRide(c, setup.start, fall);
   if (c.rides.length > 300) c.rides.splice(0, c.rides.length - 300);
   c.ridesToday++;

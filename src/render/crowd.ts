@@ -1295,3 +1295,34 @@ export class Crowd {
     b.group.rotation.y = a.heading;
   }
 }
+
+/**
+ * A figure on skates, for the frozen lake below the Sunny Bar: one of the visitors, gliding, legs
+ * pushing out to the sides in turn, arms swinging; a hockey player bent over a stick.
+ */
+export function skater(kind: 'man' | 'mother' | 'child', hockey = false): { group: THREE.Group; pose(phase: number): void } {
+  const coat = hockey ? pick(['#b3221c', '#1f4fa8']) : pick(['#c0392b', '#2d3a4f', '#e0a020', '#3b6e3a', '#7a2a64', '#e8e2d4', '#1d1d20']);
+  const height = kind === 'child' ? 1.25 : kind === 'mother' ? 1.66 : 1.8;
+  const body = bake(dressed(kind, { height, coat, trousers: pick(['#2a2a30', '#3a3f48', '#1d1d20']), boots: '#1d1a17', skin: pick(SKINS), hair: pick(['#3a2a1e', '#1a1716', '#8a6a48', '#c9a26a']), hat: pick(['#8a1c1c', '#20304e', '#d9d2c2', '#e0a020']), coatLength: 0.1, scarf: pick(['#c9a13d', '#7c1b1b', '#e8e2d4']) }));
+  if (hockey) {
+    const stick = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.04, 0.04), mat('#5a3a1e'));
+    stick.position.set(0.55, 0.45, 0.15);
+    stick.rotation.z = -0.6;
+    body.group.add(stick);
+  }
+  return {
+    group: body.group,
+    pose(phase: number) {
+      const push = Math.sin(phase);
+      body.legs.forEach((leg, i) => {
+        const side = i % 2 ? 1 : -1;
+        // Each leg in turn pushes back and out, then comes in under the body.
+        leg.rotation.z = (i % 2 ? -push : push) * 0.35;
+        leg.rotation.x = side * Math.max(0, i % 2 ? -push : push) * 0.3;
+      });
+      body.arms.forEach((arm, i) => (arm.rotation.z = (i % 2 ? push : -push) * (hockey ? 0.2 : 0.5) + (hockey ? 0.7 : 0)));
+      if (body.spine) body.spine.rotation.z = hockey ? -0.45 : -0.2;
+      body.sync?.();
+    },
+  };
+}

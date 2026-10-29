@@ -7,6 +7,7 @@ import { createWorld } from './render/world';
 import { buildTrackMesh } from './render/trackMesh';
 import { finishGround } from './render/finishGround';
 import { TrophyRoom } from './game/trophyRoom';
+import { TimesView } from './game/timesView';
 import { Terrain } from './render/terrain';
 import { buildScenery } from './render/scenery';
 import { loadAssets } from './render/assets';
@@ -129,7 +130,9 @@ async function start() {
   };
   showChoice(chosen);
 
-  type Mode = 'intro' | 'saves' | 'hub' | 'menu' | 'ride' | 'viewer' | 'select' | 'trophies';
+  type Mode = 'intro' | 'saves' | 'hub' | 'menu' | 'ride' | 'viewer' | 'select' | 'trophies' | 'times';
+  const times = new TimesView(world, track);
+  if (debug) Object.assign(window, { times });
   const trophyRoom = new TrophyRoom(world.renderer, { balloon: assets.models.balloon, trees: assets.trees });
   if (debug) Object.assign(window, { trophyRoom });
   let mode: Mode = 'intro';
@@ -140,11 +143,13 @@ async function start() {
   const setMode = (next: Mode) => {
     if (mode === 'select' && next !== 'select') select.close();
     if (mode === 'trophies' && next !== 'trophies') trophyRoom.close();
+    if (mode === 'times' && next !== 'times') times.close();
     mode = next;
     document.body.classList.toggle('in-menu', next === 'menu');
     document.body.classList.toggle('viewing', next === 'viewer');
     document.body.classList.toggle('selecting', next === 'select');
     document.body.classList.toggle('trophy-room', next === 'trophies');
+    document.body.classList.toggle('times-room', next === 'times');
     for (const screen of ['intro', 'saves', 'hub']) document.body.classList.toggle(`screen-${screen}`, next === screen);
     // The rider flies down the run behind the menus.
     const attract = next === 'menu' || next === 'intro' || next === 'saves' || next === 'hub';
@@ -174,6 +179,11 @@ async function start() {
     trophyRoom.open(c);
   };
   trophyRoom.onClose = () => career.hub();
+  career.onTimes = (c) => {
+    setMode('times');
+    times.open(c);
+  };
+  times.onClose = () => career.hub();
   for (const img of document.querySelectorAll<HTMLImageElement>('.badge, .badge-small')) clearBadgeBackground(img);
   // Phones only let sound start from a touch, and pause it again after a call, the lock screen or
   // a switch of app: any touch, click or key anywhere wakes it.
@@ -286,6 +296,7 @@ async function start() {
     } else {
       if (mode === 'ride') ride.update(dt);
       else if (mode === 'select') select.update(dt);
+      else if (mode === 'times') times.update(dt);
       else viewer.update(dt);
       crowd.update(dt, mode === 'ride' ? ride.riderPosition : null);
       weather.update(dt);

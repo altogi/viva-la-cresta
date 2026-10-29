@@ -2,7 +2,7 @@
 // the club, the choice of flat-top or Top), the races with their Tower results sheets, and the end.
 
 import { JUNCTION_S } from '../track/cresta';
-import { RIDERS, TOBOGGANS } from '../sim/rider';
+import { RIDERS } from '../sim/rider';
 import { LOOKS } from '../render/riderLooks';
 import { flagUrl } from '../ui/flags';
 import {
@@ -21,7 +21,7 @@ import {
   type Career,
   type Setup,
 } from '../career/career';
-import { CALENDAR, RACES, cannotEnter, fallCode, fastestOfDay, npcField, playerEntrant, raceOn, standings, standingsAfter, upcoming, type Entrant, type Race } from '../career/races';
+import { CALENDAR, RACES, cannotEnter, fastestOfDay, npcField, playerEntrant, raceOn, standings, standingsAfter, upcoming, type Entrant, type Race } from '../career/races';
 import { deleteCareer, loadSaves, newId, nextGameName, storeCareer } from '../career/saves';
 import { CLUB_LORE } from '../career/trophies';
 import { Coach, fallAdvice } from './coach';
@@ -39,6 +39,8 @@ export class CareerMode {
   private career: Career | null = null;
   /** Open the trophy room for this career. */
   onTrophies: (c: Career) => void = () => {};
+  /** Open "My times" for this career. */
+  onTimes: (c: Career) => void = () => {};
 
   constructor(
     private readonly ride: RideMode,
@@ -59,6 +61,7 @@ export class CareerMode {
     $('hub-games').addEventListener('click', () => this.saves());
     $('hub-calendar').addEventListener('click', () => this.openCalendar());
     $('hub-trophies').addEventListener('click', () => this.career && this.onTrophies(this.career));
+    $('hub-times').addEventListener('click', () => this.career && this.onTimes(this.career));
     $('day-go').addEventListener('click', () => ($('day').hidden = true));
     $('cal-close').addEventListener('click', () => document.body.classList.remove('calendar-open'));
     $('cal-prev').addEventListener('click', () => this.drawCalendar(this.calMonth - 1));
@@ -212,8 +215,6 @@ export class CareerMode {
   private newGame() {
     this.select.onDone = (sel) => {
       const c = newCareer(newId(), nextGameName(), sel.rider);
-      // For now, to show off the trophy room: Adelaide starts with every trophy in it.
-      if (sel.rider === 'adelaide') c.showcase = true;
       this.career = c;
       this.save();
       this.onRider({ rider: c.rider, toboggan: 'traditional' });
@@ -295,20 +296,8 @@ export class CareerMode {
     $('hub-practice-note').textContent = racing ? '' : closed ? 'Come back tomorrow.' : `Ride ${c.ridesToday + 1} of ${RIDES_PER_DAY} today.`;
     this.choices(c);
 
-    // Recent rides, bests and what's coming up.
-    const rides = c.rides.slice(-5).reverse();
-    $('hub-rides').innerHTML = rides.length
-      ? rides.map((r) => `<div><span>${r.race ? 'Race' : r.start === 'top' ? 'Top' : 'Junction'} · ${TOBOGGANS[r.toboggan].name}${r.style === 'lying' ? ' · lying' : ''}</span><b>${r.time !== null ? r.time.toFixed(2) : r.fall === 'Retired' ? 'Retired' : `Fall (${fallCode(r.fall ?? '')})`}</b></div>`).join('')
-      : '<div class="muted">No rides yet.</div>';
-    const bests = Object.entries(c.best).filter(([, t]) => t !== undefined);
-    $('hub-bests').innerHTML = bests.length
-      ? bests.map(([k, t]) => { const [start, tob] = k.split('-'); return `<div><span>${start === 'top' ? 'Top' : 'Junction'} · ${TOBOGGANS[tob as 'traditional'].name}</span><b>${t!.toFixed(2)}</b></div>`; }).join('')
-      : '<div class="muted">—</div>';
-    $('hub-races').innerHTML = upcoming(c.day)
-      .map((r) => `<div><span>${dateOf(r.day).short} · ${r.name}</span><b>${r.start === 'top' ? 'Top' : 'Jct'} · ${r.kind === 'major' ? 'Scr' : 'H’cap'}</b></div>`)
-      .join('') || '<div class="muted">The season is over: next season starts on 17 December.</div>';
     // The trophy room is for members: the record, and what they've won.
-    $('hub-trophies').hidden = !c.member && !c.showcase;
+    $('hub-trophies').hidden = !c.member;
     const won = c.results.filter((r) => r.position === 1).length;
     $('hub-record').textContent = c.results.length ? `${c.results.length} race${c.results.length > 1 ? 's' : ''}, ${won} won${c.gnWon ? ' · Grand National winner' : ''}` : '';
     this.show('hub');
@@ -350,7 +339,7 @@ export class CareerMode {
     this.rideWith(setup, setup.first ? 'Beginner Day · your first ride' : `Practice · ${describe(setup)}`, coach, (result) => {
       if (!result) return this.hub();
       const fallZone = result.fall?.zone ?? null;
-      const outcome = recordPractice(c, setup, result.time, fallZone, result.speed);
+      const outcome = recordPractice(c, setup, result.time, fallZone, result.speed, result.line);
       // A fall on the first ride: the guide picks up again at the message it had reached.
       if (setup.first && coach) c.tutorialStep = result.fall ? coach.lastShown : 0;
       if (result.fall) c.seenFallHelp = true;
@@ -454,7 +443,7 @@ export class CareerMode {
       const time = result?.time ?? null;
       entry.times[entry.raceDay][entry.course] = time;
       entry.speeds[entry.raceDay][entry.course] = result?.speed ?? 0;
-      c.rides.push({ day: c.day, season: c.season, start: race.start, toboggan, style: 'running', time, fall: result?.fall?.zone ?? (result ? null : 'Retired'), speed: result?.speed ?? 0, race: race.id });
+      c.rides.push({ day: c.day, season: c.season, start: race.start, toboggan, style: 'running', time, fall: result?.fall?.zone ?? (result ? null : 'Retired'), speed: result?.speed ?? 0, race: race.id, ...(result?.line.length ? { line: result.line } : {}) });
       if (result) noteRide(c, race.start, result.fall?.zone ?? null);
       if (time !== null) noteBest(c, race.start, toboggan, time);
       if (result?.fall) c.seenFallHelp = true;
