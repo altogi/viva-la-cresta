@@ -35,8 +35,8 @@ const top = (id: string, name: string, day: number, field = 42): Race => ({ id, 
 
 /**
  * The races a rider can enter, one a day, from the club's calendar (CALENDAR has everything on it):
- * Junction handicaps until Top opens, the Curzon Cup at Junction, then the Top majors (the Morgan
- * Cup, the Brabazon Trophy, the Grand National) among handicaps from both starts.
+ * Junction handicaps and the Curzon Cup until Top opens, then Top: handicaps and the majors (the
+ * Morgan Cup, the Brabazon Trophy, the Grand National), with only the Junction Calisch still at Junction.
  */
 export const RACES: Race[] = [
   jct('bartley-bear', 'The Bartley Bear', seasonDay('Dec', 24), 30),
@@ -48,25 +48,25 @@ export const RACES: Race[] = [
   jct('baron-oertzen', 'The Baron Oertzen Cup', seasonDay('Jan', 3)),
   jct('lightning', 'The Lightning Cup', seasonDay('Jan', 6)),
   { id: 'curzon', name: 'The Curzon Cup', start: 'junction', kind: 'major', days: 2, day: seasonDay('Jan', 9), field: 21, fast: SCRATCH_JUNCTION - 0.2, slow: 48.5 },
-  jct('escalante', 'The Escalante Cup', seasonDay('Jan', 13)),
+  top('escalante', 'The Escalante Cup', seasonDay('Jan', 13)),
   jct('junction-calisch', 'The Junction Calisch', seasonDay('Jan', 16), 34),
-  { ...jct('swiss-championship', 'The Swiss Championship', seasonDay('Jan', 17), 24), only: { riders: ['remo'], why: 'Only Swiss riders.' } },
-  jct('stagni', 'The Stagni Cup', seasonDay('Jan', 20)),
-  jct('knapp', 'The Knapp Cup', seasonDay('Jan', 23)),
+  { ...top('swiss-championship', 'The Swiss Championship', seasonDay('Jan', 17), 24), only: { riders: ['remo'], why: 'Only Swiss riders.' } },
+  top('stagni', 'The Stagni Cup', seasonDay('Jan', 20)),
+  top('knapp', 'The Knapp Cup', seasonDay('Jan', 23)),
   top('aris-vatimbella', 'The Aris Vatimbella Challenge Cup', seasonDay('Jan', 24)),
-  jct('harland', 'The Harland Trophy', seasonDay('Jan', 27)),
+  top('harland', 'The Harland Trophy', seasonDay('Jan', 27)),
   top('bott', 'The Bott Cup', seasonDay('Jan', 30)),
   { id: 'morgan', name: 'The Morgan Cup', start: 'top', kind: 'major', days: 1, day: seasonDay('Jan', 31), field: 20, fast: SCRATCH_TOP, slow: 63.5 },
   { id: 'brabazon', name: 'The Brabazon Trophy', start: 'top', kind: 'major', days: 2, day: seasonDay('Feb', 6), field: 20, fast: SCRATCH_TOP, slow: 64 },
-  jct('coppa-italia', "The Coppa d'Italia", seasonDay('Feb', 11)),
+  top('coppa-italia', "The Coppa d'Italia", seasonDay('Feb', 11)),
   { id: 'grand-national', name: 'The Grand National', start: 'top', kind: 'major', days: 1, day: seasonDay('Feb', 13), field: 20, fast: SCRATCH_TOP - 0.2, slow: 63 },
   top('badrutt', 'The Johannes Badrutt Memorial Trophy', seasonDay('Feb', 14), 48),
-  jct('glattfelder', 'The Glattfelder Cup', seasonDay('Feb', 17)),
-  { ...jct('claude-cartier', 'The Claude Cartier Challenge Cup', seasonDay('Feb', 19), 34), days: 2 },
+  top('glattfelder', 'The Glattfelder Cup', seasonDay('Feb', 17)),
+  { ...top('claude-cartier', 'The Claude Cartier Challenge Cup', seasonDay('Feb', 19), 34), days: 2 },
   top('gunter-sachs', 'The Gunter Sachs Challenge Cup', seasonDay('Feb', 21)),
-  jct('bonsai', 'The Bonsai Challenge', seasonDay('Feb', 26), 32),
-  jct('willoughby', 'The Willoughby Cup', seasonDay('Feb', 27)),
-  jct('payne', 'The Payne Cup', seasonDay('Feb', 28)),
+  top('bonsai', 'The Bonsai Challenge', seasonDay('Feb', 26), 32),
+  top('willoughby', 'The Willoughby Cup', seasonDay('Feb', 27)),
+  top('payne', 'The Payne Cup', seasonDay('Feb', 28)),
 ];
 
 /** Everything on the club's calendar, by season day: the races above and the club's other events. */
