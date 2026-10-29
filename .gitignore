@@ -10,3 +10,7 @@ my-times.csv
 # Blender preview renders
 blender/previews/
 blender/__pycache__/
+
+# The optimiser's build
+optimiser/.build/
+optimiser/report/report.html

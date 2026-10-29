@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "test": "vitest run",
-    "icons": "pwa-assets-generator"
+    "icons": "pwa-assets-generator",
+    "optimise": "rolldown optimiser/run.ts -o optimiser/.build/run.mjs -f esm -p node --log-level warn && node optimiser/.build/run.mjs",
+    "optimise:report": "rolldown optimiser/report.ts -o optimiser/.build/report.mjs -f esm -p node --log-level warn && node optimiser/.build/report.mjs"
   },
   "dependencies": {
     "lil-gui": "0.21.0",
