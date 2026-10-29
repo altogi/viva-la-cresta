@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { newCareer, noteRide, recordPractice } from '../src/career/career';
-import { riderRecord, showcaseWins, TROPHIES, trophyFor, wins } from '../src/career/trophies';
+import { riderRecord, TROPHIES, trophyFor, wins } from '../src/career/trophies';
 import { RACES } from '../src/career/races';
 
 const practice = { start: 'junction' as const, toboggan: 'traditional' as const, style: 'running' as const, steps: 7 };
@@ -55,11 +55,4 @@ describe('the trophy room', () => {
     expect(new Set(models).size).toBe(RACES.length);
   });
 
-  it('a showcase career has the trophy of every race in the room, before any race of its own', () => {
-    const c = newCareer('t', 'T', 'adelaide');
-    c.showcase = true;
-    expect(wins(c)).toHaveLength(RACES.length);
-    expect(new Set(showcaseWins().map((w) => w.model)).size).toBe(RACES.length);
-    expect(c.results).toHaveLength(0);
-  });
 });

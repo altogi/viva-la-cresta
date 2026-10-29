@@ -125,7 +125,7 @@ export const POLICIES: Record<string, Policy> = {
     steps: 7,
     startS: 0,
     knives: [[100, 320], [330, 470], [535, 636]],
-    rake: [[105, 320, 26], [330, 470, 20], [538, 636, 18]],
+    rake: [[105, 320, 26], [330, 470, 20], [538, 636, 16.6]],
     line: 1,
   },
   /** From Top, braking above Junction but not down Junction Straight: too fast for Rise. */

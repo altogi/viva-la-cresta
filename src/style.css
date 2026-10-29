@@ -920,7 +920,7 @@ body.selecting #select {
   display: flex;
   justify-content: center;
   gap: 8px;
-  margin: 2px 0 10px;
+  margin: 18px 0 12px;
 }
 
 #select-dots button {
@@ -2170,28 +2170,34 @@ body.trophy-room #trophies {
   display: block;
 }
 
-/* One achievement at a time: swipe sideways to the next. */
+/* One at a time: swipe for the next, and it slides in from that side. */
 #trophy-cards {
-  display: flex;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  scrollbar-width: none;
-  overscroll-behavior-x: contain;
+  overflow: hidden;
   margin: 0 -16px;
 }
 
-#trophy-cards::-webkit-scrollbar {
-  display: none;
-}
-
 .trophy-card {
-  flex: 0 0 100%;
-  scroll-snap-align: center;
-  scroll-snap-stop: always;
   padding: 0 16px;
   color: var(--charcoal);
-  max-height: 34vh;
-  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+.trophy-card.from-right {
+  animation: card-in-right 0.35s ease-out;
+}
+
+.trophy-card.from-left {
+  animation: card-in-left 0.35s ease-out;
+}
+
+@keyframes card-in-right {
+  from { transform: translateX(40%); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@keyframes card-in-left {
+  from { transform: translateX(-40%); opacity: 0; }
+  to { transform: none; opacity: 1; }
 }
 
 .trophy-kicker {
@@ -2282,28 +2288,7 @@ body.trophy-room #trophies {
   color: #5a5a5a;
 }
 
-#trophy-dots {
-  display: flex;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 8px 0 2px;
-}
 
-#trophy-dots button {
-  width: 8px;
-  height: 8px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: #d8d2c4;
-}
-
-#trophy-dots button.chosen {
-  background: var(--accent);
-  width: 22px;
-  border-radius: 4px;
-}
 
 /* Back to the clubhouse: a round X in the top right corner. */
 .room-close {
@@ -2333,15 +2318,31 @@ body.trophy-room #trophies {
 }
 
 /* ---------- The hub's other rooms ---------- */
+/* The clubhouse's actions in one column, the same gap between each (whatever is hidden). */
+.hub-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.hub-actions button,
+.hub-actions p,
+.hub-actions #hub-choices button {
+  margin: 0;
+}
+
+.hub-actions p:empty,
+.hub-actions div:empty,
+.hub-actions [hidden] {
+  display: none;
+}
+
 /* Race calendar and My trophies, side by side under My times. */
 .hub-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.hub-pair button {
-  margin: 0;
+  gap: 10px;
 }
 
 /* Not a member yet: the trophy room is there, but shut. */
@@ -2507,6 +2508,7 @@ body.times-room #times {
 
 /* Under the dots: a nudge that the cards (and the trophies) swipe. */
 #trophy-swipe {
+  margin-top: 10px;
   text-align: center;
   font-family: var(--display);
   font-size: 11px;
@@ -2522,7 +2524,4 @@ body.times-room #times {
   50% { transform: translateX(-8px); opacity: 1; }
 }
 
-#trophy-dots button {
-  width: 9px;
-  height: 9px;
-}
+

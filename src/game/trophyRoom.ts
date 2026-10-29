@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Career } from '../career/career';
-import { riderRecord, wins, type RiderRecord, type Win } from '../career/trophies';
+import { riderRecord, unwon, wins, type RiderRecord, type Unwon, type Win } from '../career/trophies';
 import { RIDERS } from '../sim/rider';
 import type { Part } from '../render/assets';
 import { skater } from '../render/crowd';
@@ -29,7 +29,7 @@ const SHORE = 600;
 /** The eye's height above the terrace, near enough (the camera moves a little with each trophy). */
 const EYE = 1.2;
 
-type Item = { kind: 'record'; record: RiderRecord } | { kind: 'win'; win: Win };
+type Item = { kind: 'record'; record: RiderRecord } | { kind: 'win'; win: Win } | { kind: 'unwon'; race: Unwon };
 
 export class TrophyRoom {
   readonly scene = new THREE.Scene();
@@ -47,8 +47,7 @@ export class TrophyRoom {
   private readonly sparkles: THREE.Sprite[] = [];
   private readonly fireworks = new Fireworks();
   private readonly sky = new SkyTraffic();
-  private readonly rink = new Rink();
-  private scrollTarget: number | null = null;
+  private readonly rink: Rink;
   private name = '';
   onClose: () => void = () => {};
 
@@ -56,20 +55,9 @@ export class TrophyRoom {
     private readonly renderer: THREE.WebGLRenderer,
     view: { balloon?: THREE.Object3D; trees?: Record<string, Part[]> } = {},
   ) {
+    this.rink = new Rink(view.trees);
     this.build(view.balloon, view.trees);
     $('trophies-back').addEventListener('click', () => this.onClose());
-    const list = $('trophy-cards');
-    const settle = () => {
-      if (this.scrollTarget !== null) {
-        if (Math.abs(list.scrollLeft - this.scrollTarget) > 2) return;
-        this.scrollTarget = null;
-      }
-      const i = Math.round(list.scrollLeft / Math.max(1, list.clientWidth));
-      if (i !== this.index && i >= 0 && i < this.items.length) this.show(i, false);
-    };
-    list.addEventListener('scroll', settle, { passive: true });
-    list.addEventListener('scrollend', settle);
-    list.addEventListener('pointerdown', () => (this.scrollTarget = null), { passive: true });
     window.addEventListener('keydown', (e) => {
       if (!document.body.classList.contains('trophy-room')) return;
       if (e.key === 'ArrowLeft') this.step(-1);
@@ -154,17 +142,30 @@ export class TrophyRoom {
 
   // ---------- Opening, the cards ----------
 
+  /**
+   * Show the room for a member: the record on its board, then the trophies they've won (in the
+   * order they won them), then the rest, greyed, in the order the races come in the season.
+   */
   open(c: Career) {
     this.name = RIDERS[c.rider].name;
-    this.items = [{ kind: 'record', record: riderRecord(c) }, ...wins(c).map((win) => ({ kind: 'win' as const, win }))];
+    this.season = c.season;
+    const won = wins(c);
+    this.items = [
+      { kind: 'record', record: riderRecord(c) },
+      ...won.map((win) => ({ kind: 'win' as const, win })),
+      ...unwon(c).map((race) => ({ kind: 'unwon' as const, race })),
+    ];
+    this.won = won.length;
     this.index = 0;
     this.visible = 0;
     this.time = 0;
     this.fit.set(0, 0);
-    this.buildCards(c);
-    void this.load().then(() => this.show(this.index, false, true));
-    requestAnimationFrame(() => this.scrollTo('instant'));
+    this.card(0);
+    void this.load().then(() => this.show(this.index, true));
   }
+
+  private season = 1;
+  private won = 0;
 
   close() {
     this.current?.removeFromParent();
@@ -173,51 +174,40 @@ export class TrophyRoom {
     this.fireworks.clear();
   }
 
-  private buildCards(c: Career) {
-    const list = $('trophy-cards');
-    const dots = $('trophy-dots');
-    list.replaceChildren();
-    dots.replaceChildren();
-    $('trophy-swipe').hidden = this.items.length < 2;
-    this.items.forEach((item, i) => {
-      const card = document.createElement('div');
-      card.className = 'trophy-card';
-      card.innerHTML = item.kind === 'record' ? recordHtml(this.name, c.season, item.record, this.items.length - 1) : winHtml(item.win);
-      list.append(card);
-      const dot = document.createElement('button');
-      dot.setAttribute('aria-label', item.kind === 'record' ? 'Record' : item.win.name);
-      dot.addEventListener('click', () => this.show(i, true));
-      dots.append(dot);
-    });
+  /** The text for what's on the table, sliding in from the side it came from. */
+  private card(dir: number) {
+    const item = this.items[this.index];
+    const card = document.createElement('div');
+    card.className = `trophy-card${dir > 0 ? ' from-right' : dir < 0 ? ' from-left' : ''}`;
+    card.innerHTML = item.kind === 'record' ? recordHtml(this.name, this.season, item.record, this.won) : item.kind === 'win' ? winHtml(item.win) : unwonHtml(item.race);
+    $('trophy-cards').replaceChildren(card);
   }
 
+  /** The next (or previous) one, round and round: past the last trophy, back to the board. */
   private step(by: number) {
-    const i = THREE.MathUtils.clamp(this.index + by, 0, this.items.length - 1);
-    if (i !== this.index) this.show(i, true);
+    const n = this.items.length;
+    if (n < 2) return;
+    this.index = (this.index + by + n) % n;
+    this.card(by);
+    this.swapTo(by);
   }
 
-  private scrollTo(behavior: ScrollBehavior) {
-    const list = $('trophy-cards');
-    const left = this.index * list.clientWidth;
-    this.scrollTarget = Math.abs(list.scrollLeft - left) > 2 ? left : null;
-    list.scrollTo({ left, behavior });
-  }
-
-  private show(i: number, scroll: boolean, first = false) {
-    const from = this.index;
+  private show(i: number, first = false) {
     this.index = i;
-    document.querySelectorAll('#trophy-dots button').forEach((d, k) => d.classList.toggle('chosen', k === i));
-    if (scroll) this.scrollTo('smooth');
+    this.swapTo(1, first);
+  }
+
+  private swapTo(dir: number, first = false) {
     if (!this.models) return;
-    const next = this.objectFor(this.items[i]);
+    const next = this.objectFor(this.items[this.index]);
     if (next === this.current && !first) return;
     this.outgoing?.removeFromParent();
     this.outgoing = first ? null : this.current;
     this.current = next;
     this.scene.add(next);
-    this.swapDir = i >= from ? 1 : -1;
+    this.swapDir = dir >= 0 ? 1 : -1;
     this.swap = first ? 1 : 0;
-    const item = this.items[i];
+    const item = this.items[this.index];
     this.fireworks.setOn(item.kind === 'win' && item.win.colours);
   }
 
@@ -225,7 +215,7 @@ export class TrophyRoom {
 
   /** The thing on the table: the engraved board for the record, else the trophy (built once each). */
   private objectFor(item: Item): THREE.Object3D {
-    const key = item.kind === 'record' ? 'record' : item.win.model;
+    const key = item.kind === 'record' ? 'record' : item.kind === 'win' ? item.win.model : `unwon-${item.race.model}`;
     let obj = this.objects.get(key);
     if (obj && item.kind === 'record') {
       obj.removeFromParent();
@@ -236,7 +226,10 @@ export class TrophyRoom {
       if (item.kind === 'record') obj = recordBoard(this.name, item.record);
       else {
         const holder = new THREE.Group();
-        const model = (this.models![item.win.model] ?? this.models!.cup).clone();
+        const id = item.kind === 'win' ? item.win.model : item.race.model;
+        const model = (this.models![id] ?? this.models!.cup).clone();
+        // Not won yet: there on the table, but grey and dull.
+        if (item.kind === 'unwon') model.traverse((o) => o instanceof THREE.Mesh && (o.material = UNWON));
         holder.add(model);
         obj = holder;
       }
@@ -361,11 +354,11 @@ export class TrophyRoom {
   }
 
   /**
-   * Swipe across the view for the next. Listened for on the whole page, not the canvas: on a phone
-   * other layers can sit over the canvas and take its touches.
+   * Swipe across the view (or the card) for the next. Listened for on the whole page, not the
+   * canvas: on a phone other layers can sit over the canvas and take its touches.
    */
   private listenOnScene() {
-    const onScene = (e: PointerEvent) => document.body.classList.contains('trophy-room') && !(e.target as HTMLElement).closest('.select-panel, button');
+    const onScene = (e: PointerEvent) => document.body.classList.contains('trophy-room') && !(e.target as HTMLElement).closest('button');
     let start: { x: number; y: number } | null = null;
     window.addEventListener('pointerdown', (e) => {
       start = onScene(e) ? { x: e.clientX, y: e.clientY } : null;
@@ -412,6 +405,17 @@ function recordHtml(name: string, season: number, r: RiderRecord, trophies: numb
     </div>
     <p class="trophy-hint">${r.clubs.length ? `Member of ${r.clubs.length} bank club${r.clubs.length > 1 ? 's' : ''} (on the board). ` : ''}${trophies ? `${trophies} troph${trophies > 1 ? 'ies' : 'y'} won.` : 'No trophies yet. Win a race and it will stand here.'}</p>`;
 }
+
+/** A trophy not won yet: what it is for, and when that race is run. */
+function unwonHtml(r: Unwon): string {
+  return `
+    <div class="trophy-kicker">${r.name}</div>
+    <div class="trophy-title">You have not won this trophy (yet)</div>
+    <p class="trophy-text">Raced on ${r.date}.</p>`;
+}
+
+/** Trophies not won yet, in a grey matte (no shine, no glints). */
+const UNWON = new THREE.MeshStandardMaterial({ color: '#55585c', roughness: 0.9, metalness: 0, envMapIntensity: 0.25 });
 
 function winHtml(w: Win): string {
   return `
@@ -802,53 +806,135 @@ function recordBoard(name: string, r: RiderRecord): THREE.Object3D {
 // ---------- The rink on the frozen lake: skaters going round, a game of hockey ----------
 
 /** Where the rink lies on the lake (far enough out to show over the railing, short of the shore woods). */
-const RINK = { x: 0, z: -300, w: 170, d: 90 };
+const RINK = { x: 0, z: -300, rx: 80, rz: 42 };
 
+/** The rink's edge at an angle round it: an ellipse, wobbled into a natural shape. */
+function rinkRadius(a: number): number {
+  return 1 + 0.12 * Math.sin(2 * a + 1) + 0.08 * Math.sin(3 * a + 2) + 0.05 * Math.sin(5 * a + 0.5);
+}
+
+/** A point on (or out from) the rink's edge: `out` metres beyond it. */
+function rinkEdge(a: number, out = 0): THREE.Vector2 {
+  const k = rinkRadius(a);
+  return new THREE.Vector2(RINK.x + Math.cos(a) * (RINK.rx * k + out), RINK.z + Math.sin(a) * (RINK.rz * k + out * 0.6));
+}
+
+/**
+ * The rink on the frozen lake: swept ice in a natural shape, banked with snow, skaters going round
+ * and a game of hockey on it; a trodden trail round it with people out walking; a few spruces and
+ * snow-roofed chalets about it.
+ */
 class Rink {
   readonly group = new THREE.Group();
   private skaters: { figure: ReturnType<typeof skater>; r: number; speed: number; a: number; phase: number }[] = [];
   private players: { figure: ReturnType<typeof skater>; pos: THREE.Vector2; heading: number; phase: number; team: number }[] = [];
+  private walkers: { figure: ReturnType<typeof skater>; a: number; speed: number; phase: number; out: number }[] = [];
   private puck = new THREE.Vector2(RINK.x + 40, RINK.z);
   private puckGoal = new THREE.Vector2(RINK.x + 40, RINK.z);
   private built = false;
 
-  constructor() {
-    // Swept ice, darker and glossier than the snow on the lake, banked round with snow.
-    const ice = new THREE.Mesh(new THREE.PlaneGeometry(RINK.w, RINK.d), new THREE.MeshStandardMaterial({ color: '#b9cbd9', roughness: 0.25, metalness: 0.1 }));
-    ice.rotation.x = -Math.PI / 2;
-    ice.position.set(RINK.x, LAKE + 0.03, RINK.z);
-    this.group.add(ice);
-    const snow = mat('#f4f7fb', 0.95);
-    for (const [w, d, x, z] of [[RINK.w + 6, 3, 0, RINK.d / 2 + 1.5], [RINK.w + 6, 3, 0, -RINK.d / 2 - 1.5], [3, RINK.d, RINK.w / 2 + 1.5, 0], [3, RINK.d, -RINK.w / 2 - 1.5, 0]]) {
-      const bank = new THREE.Mesh(new THREE.BoxGeometry(w, 1.2, d), snow);
-      bank.position.set(RINK.x + x, LAKE + 0.4, RINK.z + z);
-      this.group.add(bank);
+  constructor(trees?: Record<string, Part[]>) {
+    const N = 96;
+    // The ice.
+    const shape = new THREE.Shape();
+    for (let i = 0; i <= N; i++) {
+      const p = rinkEdge((i / N) * Math.PI * 2);
+      if (i === 0) shape.moveTo(p.x, -p.y);
+      else shape.lineTo(p.x, -p.y);
     }
-    // Two red goals at the hockey end (the right half).
+    const ice = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshStandardMaterial({ color: '#b9cbd9', roughness: 0.25, metalness: 0.1 }));
+    ice.rotation.x = -Math.PI / 2;
+    ice.position.y = LAKE + 0.03;
+    this.group.add(ice);
+    // Snow banked up round the edge, in heaps.
+    const heap = new THREE.SphereGeometry(1, 10, 6);
+    const banks = new THREE.InstancedMesh(heap, mat('#f4f7fb', 0.95), N * 2);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    for (let i = 0; i < N * 2; i++) {
+      const p = rinkEdge((i / (N * 2)) * Math.PI * 2, 1.2);
+      banks.setMatrixAt(i, m.compose(new THREE.Vector3(p.x, LAKE, p.y), q, new THREE.Vector3(2.2, 0.7 + (i % 3) * 0.15, 2.2)));
+    }
+    this.group.add(banks);
+    // The trail round it, trodden snow.
+    const positions: number[] = [];
+    const index: number[] = [];
+    for (let i = 0; i <= N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      for (const out of [9, 11.5]) {
+        const p = rinkEdge(a, out);
+        positions.push(p.x, LAKE + 0.06, p.y);
+      }
+      if (i > 0) {
+        const k = i * 2;
+        index.push(k - 2, k - 1, k, k - 1, k + 1, k);
+      }
+    }
+    const trail = new THREE.BufferGeometry();
+    trail.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    trail.setIndex(index);
+    trail.computeVertexNormals();
+    this.group.add(new THREE.Mesh(trail, new THREE.MeshStandardMaterial({ color: '#d9d2c4', roughness: 1, side: THREE.DoubleSide })));
+    // Two red goals at the hockey end (the right).
     const red = mat('#c0181a', 0.5);
-    for (const gx of [RINK.x + 12, RINK.x + 78]) {
+    for (const gx of [RINK.x + 22, RINK.x + 66]) {
       const goal = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.8), red);
       goal.position.set(gx, LAKE + 0.6, RINK.z);
       this.group.add(goal);
     }
+    this.group.add(chalets(), this.trees(trees));
+  }
+
+  /** A few spruces about the rink, outside the trail (the run's own models). */
+  private trees(trees?: Record<string, Part[]>): THREE.Object3D {
+    const g = new THREE.Group();
+    if (!trees) return g;
+    const rand = mulberry(29);
+    const byModel = new Map<string, THREE.Matrix4[]>();
+    const q = new THREE.Quaternion();
+    for (let i = 0; i < 26; i++) {
+      const a = rand() * Math.PI * 2;
+      const p = rinkEdge(a, 16 + rand() * 30);
+      const name = rand() < 0.3 ? `larch_${Math.floor(rand() * 2)}` : `spruce_${Math.floor(rand() * 3)}`;
+      const s = 0.6 + rand() * 0.5;
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * Math.PI * 2);
+      if (!byModel.has(name)) byModel.set(name, []);
+      byModel.get(name)!.push(new THREE.Matrix4().compose(new THREE.Vector3(p.x, LAKE - 0.2, p.y), q, new THREE.Vector3(s, s, s)));
+    }
+    for (const [name, matrices] of byModel) {
+      for (const part of trees[name] ?? []) {
+        const mesh = new THREE.InstancedMesh(part.geometry, part.material, matrices.length);
+        matrices.forEach((mm, i) => mesh.setMatrixAt(i, mm));
+        mesh.computeBoundingSphere();
+        g.add(mesh);
+      }
+    }
+    return g;
   }
 
   /** The figures, once the visitors' models are loaded (on the first frame the room is shown). */
   private build() {
     this.built = true;
     const kinds = ['man', 'mother', 'child'] as const;
-    // Skaters going round the left half, at their own pace, some a pair.
+    // Skaters going round the left of the rink, at their own pace.
     for (let i = 0; i < 11; i++) {
       const figure = skater(kinds[i % 3]);
       figure.group.scale.setScalar(1.5); // a little larger than life: they're 300 m off
       this.group.add(figure.group);
-      this.skaters.push({ figure, r: 10 + (i % 4) * 7, speed: 2.5 + (i % 3) * 0.8, a: (i / 11) * Math.PI * 2, phase: i });
+      this.skaters.push({ figure, r: 8 + (i % 4) * 6, speed: 2.5 + (i % 3) * 0.8, a: (i / 11) * Math.PI * 2, phase: i });
     }
     for (let i = 0; i < 6; i++) {
-      const figure = skater(i % 3 === 2 ? 'child' : 'man', true);
+      const figure = skater(i % 3 === 2 ? 'child' : 'man', 'hockey');
       figure.group.scale.setScalar(1.5);
       this.group.add(figure.group);
-      this.players.push({ figure, pos: new THREE.Vector2(RINK.x + 20 + i * 9, RINK.z + (i % 2 ? 10 : -10)), heading: 0, phase: i * 0.7, team: i % 2 });
+      this.players.push({ figure, pos: new THREE.Vector2(RINK.x + 30 + i * 5, RINK.z + (i % 2 ? 8 : -8)), heading: 0, phase: i * 0.7, team: i % 2 });
+    }
+    // Out for a walk round the trail, both ways.
+    for (let i = 0; i < 9; i++) {
+      const figure = skater(kinds[i % 3], 'walk');
+      figure.group.scale.setScalar(1.5);
+      this.group.add(figure.group);
+      this.walkers.push({ figure, a: (i / 9) * Math.PI * 2, speed: (i % 2 ? 1 : -1) * (1.1 + (i % 3) * 0.2), phase: i, out: 9.6 + (i % 2) * 1.4 });
     }
   }
 
@@ -857,14 +943,14 @@ class Rink {
     for (const s of this.skaters) {
       s.a += (s.speed / s.r) * dt;
       s.phase += dt * 3;
-      const cx = RINK.x - 42;
+      const cx = RINK.x - 36;
       s.figure.group.position.set(cx + Math.cos(s.a) * s.r * 1.4, LAKE + 0.05, RINK.z + Math.sin(s.a) * s.r * 0.8);
       // Facing the way they're going round (the figures face +x, as the crowd's do).
       s.figure.group.rotation.y = Math.atan2(-Math.cos(s.a) * 0.8, -Math.sin(s.a) * 1.4);
       s.figure.pose(s.phase);
     }
     // The puck moves on now and then; the players chase it, jostling.
-    if (this.puck.distanceTo(this.puckGoal) < 1) this.puckGoal.set(RINK.x + 14 + Math.random() * 62, RINK.z + (Math.random() - 0.5) * (RINK.d - 20));
+    if (this.puck.distanceTo(this.puckGoal) < 1) this.puckGoal.set(RINK.x + 24 + Math.random() * 40, RINK.z + (Math.random() - 0.5) * 40);
     this.puck.lerp(this.puckGoal, Math.min(1, dt * 0.8));
     for (const p of this.players) {
       const want = this.puck.clone().add(new THREE.Vector2(p.team ? 3 : -3, (p.phase % 3) - 1.5));
@@ -879,7 +965,56 @@ class Rink {
       p.figure.group.rotation.y = p.heading;
       p.figure.pose(p.phase);
     }
+    for (const w of this.walkers) {
+      const r = (RINK.rx + RINK.rz) / 2 + w.out;
+      w.a += (w.speed / r) * dt;
+      w.phase += dt * 5;
+      const here = rinkEdge(w.a, w.out);
+      const ahead = rinkEdge(w.a + Math.sign(w.speed) * 0.01, w.out);
+      w.figure.group.position.set(here.x, LAKE + 0.06, here.y);
+      w.figure.group.rotation.y = Math.atan2(-(ahead.y - here.y), ahead.x - here.x);
+      w.figure.pose(w.phase);
+    }
   }
+}
+
+/** A few snow-roofed chalets about the rink: rendered walls, dark timber gables, deep eaves. */
+function chalets(): THREE.Object3D {
+  const g = new THREE.Group();
+  const walls = mat('#e9e1d2', 0.9);
+  const timber = mat('#6b4a2e', 0.8);
+  const snow = mat('#f6f9fc', 0.95);
+  const glass = mat('#2a3038', 0.4);
+  const rand = mulberry(41);
+  for (const a of [0.5, 1.9, 2.9, 4.2, 5.4]) {
+    const p = rinkEdge(a + (rand() - 0.5) * 0.3, 22 + rand() * 18);
+    const house = new THREE.Group();
+    const w = 9 + rand() * 4;
+    const d = 8 + rand() * 3;
+    const h = 5 + rand() * 2;
+    const base = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.55, d), walls);
+    base.position.y = h * 0.275;
+    const top = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.45, d), timber);
+    top.position.y = h * 0.775;
+    house.add(base, top);
+    // The roof: two snowy slopes over deep eaves.
+    for (const side of [-1, 1]) {
+      const slope = new THREE.Mesh(new THREE.BoxGeometry(w + 2, 0.5, d * 0.62), snow);
+      slope.position.set(0, h + d * 0.16, side * d * 0.25);
+      slope.rotation.x = side * -0.5;
+      house.add(slope);
+    }
+    for (let i = 0; i < 3; i++) {
+      const win = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.3, 0.1), glass);
+      win.position.set(-w / 3 + i * (w / 3), h * 0.35, d / 2 + 0.05);
+      house.add(win);
+    }
+    house.position.set(p.x, LAKE, p.y);
+    // Facing the rink.
+    house.rotation.y = Math.atan2(RINK.x - p.x, RINK.z - p.y);
+    g.add(house);
+  }
+  return g;
 }
 
 // ---------- Sky traffic: clouds, a biplane, a balloon ----------

@@ -111,35 +111,8 @@ export interface Win {
   colours: boolean;
 }
 
-/** The races the rider has won, in the order they were won (with every race's trophy first in a showcase career). */
+/** The races the rider has won, in the order they were won. */
 export function wins(c: Career): Win[] {
-  return [...(c.showcase ? showcaseWins() : []), ...wonRaces(c)];
-}
-
-/** Every race on the calendar won in the first season, each with its own trophy. */
-export function showcaseWins(): Win[] {
-  return RACES.map((race) => {
-    const trophy = trophyFor(race.id);
-    const d = dateOf(race.day + race.days - 1, 1);
-    const courses = race.days * 3;
-    const total = Math.round(((race.start === 'top' ? 59.4 : 45.3) * courses + Math.random() * 2) * 100) / 100;
-    return {
-      raceId: race.id,
-      name: race.name,
-      note: race.note,
-      season: 1,
-      date: `${d.label} ${d.year}`,
-      total,
-      net: race.kind === 'handicap' ? Math.round((total - courses * 4.2) * 100) / 100 : null,
-      of: race.field + 1,
-      model: trophy.model,
-      text: trophy.text,
-      colours: COLOUR_RACES.includes(race.id),
-    };
-  });
-}
-
-function wonRaces(c: Career): Win[] {
   return c.results
     .filter((r) => r.position === 1 && r.total !== null)
     .map((r) => {
@@ -165,3 +138,29 @@ function wonRaces(c: Career): Win[] {
     .sort((a, b) => a.season - b.season || a.day - b.day)
     .map(({ day: _day, ...w }) => w);
 }
+
+export interface Unwon {
+  raceId: string;
+  name: string;
+  note?: string;
+  model: TrophyModel;
+  /** When the race is run this season, as the calendar has it. */
+  date: string;
+}
+
+/** The races the rider hasn't won yet, in the order they come in the season. */
+export function unwon(c: Career): Unwon[] {
+  const won = new Set(c.results.filter((r) => r.position === 1).map((r) => r.raceId));
+  return RACES.filter((race) => !won.has(race.id)).map((race) => {
+    const first = dateOf(race.day, c.season);
+    const last = dateOf(race.day + race.days - 1, c.season);
+    return {
+      raceId: race.id,
+      name: race.name,
+      note: race.note,
+      model: trophyFor(race.id).model,
+      date: race.days > 1 ? `${first.label} and ${last.label} ${last.year}` : `${first.label} ${first.year}`,
+    };
+  });
+}
+

@@ -215,8 +215,6 @@ export class CareerMode {
   private newGame() {
     this.select.onDone = (sel) => {
       const c = newCareer(newId(), nextGameName(), sel.rider);
-      // For now, to show off the trophy room: a new game with Adelaide has every trophy in it.
-      if (sel.rider === 'adelaide') c.showcase = true;
       this.career = c;
       this.save();
       this.onRider({ rider: c.rider, toboggan: 'traditional' });
@@ -299,7 +297,7 @@ export class CareerMode {
     this.choices(c);
 
     // The trophy room is for members (the record, and what they've won): shut, but there, until then.
-    ($('hub-trophies') as HTMLButtonElement).disabled = !c.member && !c.showcase;
+    ($('hub-trophies') as HTMLButtonElement).disabled = !c.member;
     const won = c.results.filter((r) => r.position === 1).length;
     $('hub-record').textContent = c.results.length ? `${c.results.length} race${c.results.length > 1 ? 's' : ''}, ${won} won${c.gnWon ? ' · Grand National winner' : ''}` : '';
     this.show('hub');

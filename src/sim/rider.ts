@@ -87,7 +87,7 @@ export const FLATTOP: TobogganStats = {
   muForward: 0.0035,
   muKnives: 0.042,
   dragForward: 0.74,
-  steerGain: 1.6,
+  steerGain: 1.3,
 };
 
 export const TOBOGGANS: Record<TobogganId, TobogganStats> = { traditional: TRADITIONAL, flattop: FLATTOP };
