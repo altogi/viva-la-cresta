@@ -21,7 +21,7 @@ import type { WeatherView } from '../render/weather';
 import { STEINBOCK_S, type Steinbock } from '../render/steinbock';
 import { junctionTerrace } from '../render/places';
 import { PADDING, type Padding } from '../render/padding';
-import { adjust, Lag, MOODS, rollMoods, WEATHER, weatherFor, type Mood, type Weather } from './conditions';
+import { adjust, Lag, MOODS, reverse, rollMoods, WEATHER, weatherFor, type Mood, type Weather } from './conditions';
 import { groundHeight } from '../render/ground';
 import { toThree } from '../render/util';
 import type { Sound } from '../audio/sound';
@@ -148,6 +148,8 @@ export class RideMode {
   private steinbockOut = false;
   /** The hangover's slow hands (no lag otherwise). */
   private lag = new Lag(0);
+  /** The Arbeiters' curse: the controls the wrong way round. */
+  private reversed = false;
   /** This ride's own luck, good or bad. */
   moods: Mood[] = [];
   /** Where the rider celebrates by the finish hut, once in (null until then). */
@@ -291,12 +293,14 @@ export class RideMode {
     }
     const adjusted = adjust(RIDERS[rider], TOBOGGANS[toboggan], weather, this.moods);
     this.lag = new Lag(adjusted.lag);
+    this.reversed = adjusted.reversed;
     this.sim = new RideSim(this.track, adjusted.rider, adjusted.toboggan, {
       startS: setup.startS,
       start: setup.start,
       steps: setup.steps,
       splitsAt: SPLITS,
       rakeGrip: adjusted.rakeGrip,
+      bankBoost: adjusted.bankBoost,
     });
     this.controls.reset(false);
     this.controls.setRunning(false);
@@ -424,7 +428,7 @@ export class RideMode {
       this.simClock += dt;
       const input = this.autopilot
         ? autopilotInput(this.track, this.sim, this.autopilot, this.simClock, this.lastStride)
-        : this.lag.apply(this.controls.read(dt), dt);
+        : this.lag.apply(this.reversed ? reverse(this.controls.read(dt)) : this.controls.read(dt), dt);
       this.sim.update(dt, input);
       // Into the Steinbock: he's about a metre long across the run, and the rider comes off.
       if (this.steinbockOut && this.steinbock?.root.visible && Math.abs(this.sim.state.s - STEINBOCK_S) < 0.9 && Math.abs(this.sim.state.u - this.steinbock.u) < 0.6) {

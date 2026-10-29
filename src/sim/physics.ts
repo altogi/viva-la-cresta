@@ -93,6 +93,8 @@ export interface RideOptions {
   splitsAt?: { name: string; s: number }[];
   /** How well the rakes bite (1 normally; 0 with the mind elsewhere). */
   rakeGrip?: number;
+  /** A bankina gives the speed a hit would take (a Tower Boy's cough). */
+  bankBoost?: boolean;
 }
 
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
@@ -382,7 +384,8 @@ export class RideSim {
         // Every real hit costs speed; a square one costs more.
         const hit = impact > PHYSICS.bankHitSpeed;
         if (hit) st.bankHits++;
-        const loss = 1 - (hit ? PHYSICS.bankHitLoss : 0) - PHYSICS.glanceLoss * Math.abs(Math.sin(st.heading));
+        const lost = (hit ? PHYSICS.bankHitLoss : 0) + PHYSICS.glanceLoss * Math.abs(Math.sin(st.heading));
+        const loss = this.options.bankBoost ? 1 + lost : 1 - lost;
         st.heading = -st.heading * 0.3;
         st.slide = 0;
         st.v = speed * loss * Math.cos(st.heading);
