@@ -74,9 +74,11 @@ async function start() {
   const t0 = performance.now();
   const lap = (label: string) => debug && console.info(`${label}: ${(performance.now() - t0).toFixed(0)} ms`);
   const assets = await loadAssets(MODELS);
-  for (const id of ['maximilian', 'adelaide', 'remo']) {
+  for (const id of Object.keys(RIDERS)) {
     const body = assets.models.riders?.getObjectByName(`rider_${id}`);
     if (body) RiderModel.templates[id] = body;
+    const worn = assets.models.riders?.getObjectByName(`head_${id}`);
+    if (worn) RiderModel.headwear[id] = worn;
   }
   setPeopleTemplates(assets.models.people);
   lap('models');

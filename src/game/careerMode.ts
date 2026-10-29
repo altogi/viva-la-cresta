@@ -2,6 +2,7 @@
 // the club, the choice of flat-top or Top), the races with their Tower results sheets, and the end.
 
 import { JUNCTION_S } from '../track/cresta';
+import { noteUnlocks, UNLOCKS } from '../career/unlocks';
 import { RIDERS } from '../sim/rider';
 import { LOOKS } from '../render/riderLooks';
 import { flagUrl } from '../ui/flags';
@@ -33,7 +34,7 @@ import type { SelectMode } from './selectMode';
 import type { Selection } from './selection';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const NATIONS: Record<string, string> = { maximilian: 'D', adelaide: 'GB', remo: 'CH' };
+const NATIONS: Record<string, string> = { maximilian: 'D', adelaide: 'GB', remo: 'CH', kletus: 'AUS', mario: 'I', darklord: 'GB' };
 
 export type Screen = 'intro' | 'saves' | 'hub' | 'select' | 'ride';
 
@@ -534,6 +535,7 @@ export class CareerMode {
     c.race = null;
     const wonGN = race.id === 'grand-national' && me.rank === 1 && !entry.dq;
     if (wonGN) c.gnWon = true;
+    const unlocked = noteUnlocks(c);
     nextDay(c);
     this.save();
     const gnModal = () =>
@@ -542,10 +544,21 @@ export class CareerMode {
         `${RIDERS[c.rider].name} has won the Grand National, the oldest race on the Cresta, on scratch from Top. Your name goes up on the board in the clubhouse, and everyone at the Sunny Bar wants to buy you a drink.<br><br>The run is yours: ride on as long as you like.`,
         [{ label: 'Viva la Cresta!', primary: true, run: () => this.hub() }],
       );
+    const toHub = wonGN ? gnModal : () => this.hub();
+    // A rider unlocked by this race, one message each, then on.
+    const after = unlocked.reduceRight<() => void>(
+      (next, id) => () =>
+        this.modal(
+          'A new rider',
+          `<b>${RIDERS[id].name}</b> is unlocked, for ${UNLOCKS[id]!.how}. Choose him for a new game or a free ride.`,
+          [{ label: 'Splendid', primary: true, run: next }],
+        ),
+      toHub,
+    );
     // A win: up to the Sunny Bar's terrace with the trophy first.
-    if (me.rank === 1 && !entry.dq) return this.onWin(c, race.id, () => (wonGN ? gnModal() : this.hub()));
+    if (me.rank === 1 && !entry.dq) return this.onWin(c, race.id, after);
     const text = entry.dq ? 'Disqualified after a fall. There is always the next race.' : `${ordinal(me.rank!)} of ${rows.filter((r) => r.rank !== null).length}${race.kind === 'handicap' ? ` on net time (${me.net!.toFixed(2)})` : ` in ${me.total!.toFixed(2)}`}.`;
-    this.modal(race.name, text, [{ label: 'Back to the clubhouse', primary: true, run: () => this.hub() }]);
+    this.modal(race.name, text, [{ label: 'Back to the clubhouse', primary: true, run: after }]);
   }
 
   private abandonRace() {

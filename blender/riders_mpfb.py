@@ -23,6 +23,7 @@ import lib
 
 RIDERS_LIBRARY = True
 exec(open(os.path.join(lib.ROOT, "blender", "riders.py")).read())
+exec(open(os.path.join(lib.ROOT, "blender", "riders_kits.py")).read())
 
 from bl_ext.user_default.mpfb.services.humanservice import HumanService  # noqa: E402
 from bl_ext.user_default.mpfb.services.targetservice import TargetService  # noqa: E402
@@ -35,6 +36,10 @@ CAUCASIAN = {"asian": 0.0, "caucasian": 1.0, "african": 0.0}
 DETAILS = {
     "adelaide": {"nipple-point-decr": 1.0, "nipple-size-decr": 1.0, "breast-point-decr": 0.6},
     "remo": {"stomach-pregnant-incr": 1.0, "stomach-tone-decr": 0.8, "stomach-navel-down": 0.5, "torso-vshape-decr": 0.6, "torso-scale-depth-incr": 0.45, "torso-scale-horiz-incr": 0.25},
+    # Ripped, but for the beer belly.
+    "kletus": {"stomach-pregnant-incr": 0.75, "stomach-navel-down": 0.4},
+    # Round in the middle.
+    "mario": {"stomach-pregnant-incr": 0.8, "stomach-tone-decr": 0.5, "torso-scale-horiz-incr": 0.2, "torso-scale-depth-incr": 0.25},
 }
 
 MACROS = {
@@ -44,6 +49,12 @@ MACROS = {
     "adelaide": {"gender": 0.0, "age": 0.5, "muscle": 0.55, "weight": 0.42, "proportions": 0.7, "height": 0.5, "cupsize": 0.28, "firmness": 0.7, "race": CAUCASIAN},
     # Swiss, 50: burly.
     "remo": {"gender": 1.0, "age": 0.69, "muscle": 0.75, "weight": 1.0, "proportions": 0.35, "height": 0.5, "cupsize": 0.5, "firmness": 0.5, "race": CAUCASIAN},
+    # Australian, from the bush: big, hard muscle.
+    "kletus": {"gender": 1.0, "age": 0.62, "muscle": 1.0, "weight": 0.72, "proportions": 0.55, "height": 0.5, "cupsize": 0.5, "firmness": 0.5, "race": CAUCASIAN},
+    # Italian, short and stocky.
+    "mario": {"gender": 1.0, "age": 0.6, "muscle": 0.5, "weight": 0.9, "proportions": 0.25, "height": 0.5, "cupsize": 0.5, "firmness": 0.5, "race": CAUCASIAN},
+    # Broad and strong under the armour.
+    "darklord": {"gender": 1.0, "age": 0.6, "muscle": 0.85, "weight": 0.65, "proportions": 0.6, "height": 0.5, "cupsize": 0.5, "firmness": 0.5, "race": CAUCASIAN},
 }
 
 
@@ -347,6 +358,11 @@ def build_mpfb(look):
     }
     rough = {"torso": 0.95 if rid == "remo" else 0.45, "pelvis": 0.7 if rid == "remo" else 0.45, "thigh": 0.7 if rid == "remo" else 0.45,
              "boots": 0.5, "hands": 0.6, "skin": 0.6, "shin": 0.95 if rid == "remo" else 0.45}
+    if o.get("kit") == "armour":
+        # Black cloth and leather, matte; only the armour shines.
+        rough.update({z: 0.82 for z in ("torso", "upperArm", "forearm", "pelvis", "thigh", "shin", "pads")}, hands=0.55)
+    if o.get("kit") in ("bush", "dungarees"):
+        rough.update(pelvis=0.85, thigh=0.85, shin=0.85 if o.get("kit") == "dungarees" else 0.6, torso=0.75, braces=0.85)
     mats = {}
     for zone, hexc in colours.items():
         mats[zone] = lib.material(f"{rid}_{zone}", hex_rgb(hexc), rough.get(zone, 0.5))
@@ -361,7 +377,7 @@ def build_mpfb(look):
             for g in body.data.vertices[vi].groups:
                 pull[gname[g.group]] = pull.get(gname[g.group], 0) + g.weight
         bone = max(pull, key=pull.get) if pull else None
-        poly.material_index = order.index(zone_of(body.matrix_world @ poly.center, poly.normal, j, look, bone))
+        poly.material_index = order.index(kit_zone(body.matrix_world @ poly.center, poly.normal, j, look, bone))
     smooth_zones(body)
 
     parts = []
@@ -384,6 +400,9 @@ def build_mpfb(look):
     for side, sx in (("L", 1), ("R", -1)):
         extremities.append((rakes_for(rid, side, sx, shoes, s, steel), f"foot.{side}"))
     kit = remo_kit(rid, j, s, look, body, mats) if rid == "remo" else []
+    rigid_kit = []
+    if o.get("kit"):
+        kit, rigid_kit = KITS[o["kit"]](rid, j, s, look, body, mats)
 
     arm_data = bpy.data.armatures.new(f"rig_{rid}")
     rig = bpy.data.objects.new(f"rider_{rid}", arm_data)
@@ -406,23 +425,60 @@ def build_mpfb(look):
         obj.vertex_groups.new(name=bone).add(list(range(len(obj.data.vertices))), 1.0, "REPLACE")
     for obj in kit:
         copy_weights(obj, body)
-    mesh = lib.join([body, *parts, shoes, *(x for x, _ in extremities), *kit], f"body_{rid}")
+    mesh = lib.join([body, *parts, shoes, *(x for x, _ in extremities), *kit, *rigid_kit], f"body_{rid}")
     mesh.parent = rig
     mod = mesh.modifiers.new("Armature", "ARMATURE")
     mod.object = rig
+    BUILT_JOINTS[rid] = j
     return rig, mesh
 
 
+BUILT_JOINTS = {}
+
+
+def head_preview(rid, j):
+    """The head piece where the head would be, for the previews only (the head is the game's)."""
+    look = LOOKS[rid]
+    piece = HEADWEAR[look["headwear"]](rid)
+    s = look["scale"]
+    piece.scale = (s, s, s)
+    piece.location = Vector(j["neck_top"]) + Vector((0, -0.01 * s, 0.1 * s))
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=1, location=piece.location)
+    skull = bpy.context.active_object
+    skull.scale = (0.085 * s, 0.1 * s, 0.117 * s)
+    skull.data.materials.append(lib.material(f"{rid}_previewskin", hex_rgb(look["skin"]), 0.6))
+    return piece, skull
+
+
+# Every rider, or (ONLY, set by a script that runs this one) just some, for a look at them.
+ONLY = globals().get("ONLY")
 lib.reset()
-rigs, meshes = [], []
-for rid in ("maximilian", "adelaide", "remo"):
+rigs, meshes, joints = [], [], {}
+ids = ONLY or list(LOOKS)
+for rid in ids:
     rig, mesh = build_mpfb(LOOKS[rid])
     rigs.append(rig)
     meshes.append(mesh)
-for i, rig in enumerate(rigs):
-    rig.location = (i * 1.1 - 1.1, 0, 0)
-lib.preview("riders.png", (2.2, -4.2, 1.3), (0, 0, 0.95), size=(1200, 900), lens=45, sky=(0.35, 0.55, 0.9))
-lib.preview("riders_back.png", (-1.6, 4.4, 1.4), (0, 0, 0.95), size=(1200, 900), lens=45, sky=(0.35, 0.55, 0.9))
-for rig in rigs:
-    rig.location = (0, 0, 0)
-result = {"export": lib.export_glb("riders.glb", rigs + meshes), "verts": {m.name: len(m.data.vertices) for m in meshes}, "groups": {m.name: sorted(g.name for g in m.vertex_groups) for m in meshes}}
+    joints[rid] = BUILT_JOINTS[rid]
+if ONLY:
+    extras = []
+    for i, (rid, rig) in enumerate(zip(ids, rigs)):
+        rig.location = (i * 1.2 - 0.6 * (len(ids) - 1), 0, 0)
+        if LOOKS[rid].get("headwear"):
+            for o in head_preview(rid, joints[rid]):
+                o.location += rig.location
+                extras.append(o)
+    lib.preview("riders_new.png", (1.6, -4.6, 1.4), (0, 0, 1.0), size=(1400, 1000), lens=42, sky=(0.35, 0.55, 0.9))
+    lib.preview("riders_new_back.png", (-1.6, 4.6, 1.5), (0, 0, 1.0), size=(1400, 1000), lens=42, sky=(0.35, 0.55, 0.9))
+    result = {"verts": {m.name: len(m.data.vertices) for m in meshes}}
+else:
+    for i, rig in enumerate(rigs[:3]):
+        rig.location = (i * 1.1 - 1.1, 0, 0)
+    for rig in rigs[3:]:
+        rig.location = (0, 30, 0)
+    lib.preview("riders.png", (2.2, -4.2, 1.3), (0, 0, 0.95), size=(1200, 900), lens=45, sky=(0.35, 0.55, 0.9))
+    lib.preview("riders_back.png", (-1.6, 4.4, 1.4), (0, 0, 0.95), size=(1200, 900), lens=45, sky=(0.35, 0.55, 0.9))
+    for rig in rigs:
+        rig.location = (0, 0, 0)
+    heads = [HEADWEAR[LOOKS[rid]["headwear"]](rid) for rid in ids if LOOKS[rid].get("headwear")]
+    result = {"export": lib.export_glb("riders.glb", rigs + meshes + heads, draco=True), "verts": {m.name: len(m.data.vertices) for m in meshes}, "heads": [h.name for h in heads]}

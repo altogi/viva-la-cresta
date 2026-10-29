@@ -1,6 +1,6 @@
 // Rider and toboggan characteristics that feed the physics.
 
-export type RiderId = 'maximilian' | 'adelaide' | 'remo';
+export type RiderId = 'maximilian' | 'adelaide' | 'remo' | 'kletus' | 'mario' | 'darklord';
 export type TobogganId = 'traditional' | 'flattop';
 
 export interface RiderStats {
@@ -68,7 +68,43 @@ export const REMO: RiderStats = {
   runSpeed: 7.6,
 };
 
-export const RIDERS: Record<RiderId, RiderStats> = { maximilian: MAXIMILIAN, adelaide: ADELAIDE, remo: REMO };
+/** Remo's build from the Australian bush, but quick on the toboggan: tough as nails and twice as nimble. */
+export const KLETUS: RiderStats = {
+  id: 'kletus',
+  name: 'Kletus',
+  mass: 104,
+  dragArea: 0.145,
+  transitionTime: 0.5,
+  reach: 0.9,
+  runSpeed: 7.6,
+};
+
+/** Adelaide all round, but nobody gets off the start faster (it's the mushrooms). */
+export const MARIO: RiderStats = {
+  id: 'mario',
+  name: 'Mario',
+  mass: 78,
+  dragArea: 0.12,
+  transitionTime: 0.55,
+  reach: 1,
+  runSpeed: 9.6,
+};
+
+/** Everything, at its best. */
+export const DARKLORD: RiderStats = {
+  id: 'darklord',
+  name: 'The Dark Lord',
+  mass: 108,
+  dragArea: 0.11,
+  transitionTime: 0.35,
+  reach: 1.3,
+  runSpeed: 9.6,
+};
+
+export const RIDERS: Record<RiderId, RiderStats> = { maximilian: MAXIMILIAN, adelaide: ADELAIDE, remo: REMO, kletus: KLETUS, mario: MARIO, darklord: DARKLORD };
+
+/** The riders every new player can choose; the others are unlocked (career/unlocks). */
+export const STARTERS: RiderId[] = ['maximilian', 'adelaide', 'remo'];
 
 /** Steel frame, sliding cushion: forgiving. Every rider starts on one. */
 export const TRADITIONAL: TobogganStats = {

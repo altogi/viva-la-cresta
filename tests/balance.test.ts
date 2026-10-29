@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { Track } from '../src/sim/track';
-import { RIDERS, TOBOGGANS, type RiderId, type TobogganId } from '../src/sim/rider';
+import { RIDERS, STARTERS, TOBOGGANS, type RiderId, type TobogganId } from '../src/sim/rider';
 import { POLICIES, runBot } from '../src/sim/autopilot';
 
 const track = new Track();
 const riders = Object.keys(RIDERS) as RiderId[];
+/** The riders the bands are set for; the Dark Lord is meant to be out of reach. */
+const fair = riders.filter((r) => r !== 'darklord');
 const toboggans = Object.keys(TOBOGGANS) as TobogganId[];
 
 function grid(policy: string) {
@@ -38,7 +40,7 @@ describe('rider and toboggan balance (Junction)', () => {
   it('a good traditional rider is around 49 s, a good flat-top rider around 45', () => {
     const g = grid('good');
     const f = grid('goodFlattop');
-    for (const r of riders) {
+    for (const r of fair) {
       expect(g[`${r}/traditional`].time!).toBeGreaterThan(47.5);
       expect(g[`${r}/traditional`].time!).toBeLessThan(50.5);
       expect(f[`${r}/flattop`].fall).toBeNull();
@@ -57,9 +59,22 @@ describe('rider and toboggan balance (Junction)', () => {
   it('riders differ, but no one is out of reach (within 1.5 s on the same bot)', () => {
     for (const t of toboggans) {
       const g = grid('good');
-      const times = riders.map((r) => g[`${r}/${t}`].time!);
+      const times = STARTERS.map((r) => g[`${r}/${t}`].time!);
       expect(Math.max(...times) - Math.min(...times)).toBeLessThan(1.5);
       expect(Math.max(...times) - Math.min(...times)).toBeGreaterThan(0.1);
+    }
+  });
+
+  it('the riders to unlock: Kletus and Mario among the others, the Dark Lord faster than anyone', () => {
+    for (const t of toboggans) {
+      const g = grid('good');
+      const starters = STARTERS.map((r) => g[`${r}/${t}`].time!);
+      for (const r of ['kletus', 'mario'] as RiderId[]) {
+        expect(g[`${r}/${t}`].time!).toBeGreaterThan(Math.min(...starters) - 1);
+        expect(g[`${r}/${t}`].time!).toBeLessThan(Math.max(...starters) + 1);
+      }
+      const others = fair.map((r) => g[`${r}/${t}`].time!);
+      expect(g[`darklord/${t}`].time!).toBeLessThan(Math.min(...others));
     }
   });
 

@@ -1066,6 +1066,31 @@ body.selecting #select {
   border: 0;
 }
 
+#select-done:disabled {
+  background: #d8d2c4;
+  color: #8a857a;
+}
+
+/* A rider still to unlock: who's that rider? */
+.rider-card.locked .rider-name {
+  font-size: 30px;
+  letter-spacing: 0.1em;
+}
+
+.rider-unlock {
+  font-family: var(--display);
+  font-weight: 800;
+  font-size: 17px;
+  line-height: 1.25;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 8px 0 12px;
+}
+
+#select-dots button.locked:not(.chosen) {
+  background: #2a2c30;
+}
+
 .rider-name .flag {
   height: 16px;
   margin-right: 8px;

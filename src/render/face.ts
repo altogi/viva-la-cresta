@@ -36,6 +36,12 @@ const SHAPES: Record<RiderLook['id'], FaceShape> = {
   adelaide: { a: 0.097, b: 0.111, c: 0.077, nose: 0.78, noseWidth: 0.85, jaw: 0.9, chin: 0.8, grin: 0.9, teeth: 0.9, iris: '#3f78c2', lips: '#c97680', lashes: 1.7, brow: 0.0022, ruddy: 0.2 },
   // Broad and weathered: a big nose, heavy jaw, ruddy from fifty seasons in the sun.
   remo: { a: 0.104, b: 0.118, c: 0.084, nose: 1.25, noseWidth: 1.3, jaw: 1.06, chin: 1, grin: 0.8, teeth: 0.7, iris: '#5a4634', lips: '#a86c60', lashes: 0.8, brow: 0.0042, ruddy: 0.6 },
+  // Hard and weathered from the bush: a square jaw, a heavy brow, a long nose, no smile to speak of.
+  kletus: { a: 0.104, b: 0.122, c: 0.082, nose: 1.22, noseWidth: 1.1, jaw: 1.1, chin: 1.25, grin: 0.15, teeth: 0.25, iris: '#5d6b5e', lips: '#9a6556', lashes: 0.7, brow: 0.0046, ruddy: 0.45 },
+  // Round and cheerful: a big round nose, blue eyes, a wide smile under the moustache.
+  mario: { a: 0.1, b: 0.112, c: 0.085, nose: 1.85, noseWidth: 2.1, jaw: 1.02, chin: 0.85, grin: 1.1, teeth: 1, iris: '#2f6fc4', lips: '#c06a6a', lashes: 1, brow: 0.0042, ruddy: 0.45 },
+  // Never seen: the helmet covers it.
+  darklord: { a: 0.1, b: 0.117, c: 0.078, nose: 1.1, noseWidth: 1, jaw: 1, chin: 1.1, grin: 0, teeth: 0, iris: '#3b2a1f', lips: '#a06a62', lashes: 0.8, brow: 0.0035, ruddy: 0.1 },
 };
 
 const smoothstep = THREE.MathUtils.smoothstep;
@@ -299,6 +305,13 @@ function teethTexture(): THREE.CanvasTexture {
   });
 }
 
+/** How much the stubble darkens the skin in each channel (0 none, 1 black), applied through the vertex colours. */
+function stubbleShade(stubble: string, skin: THREE.Color): THREE.Color {
+  const c = new THREE.Color(stubble);
+  const k = (a: number, b: number) => Math.max(0, 1 - a / Math.max(b, 1e-3)) * 0.55;
+  return new THREE.Color(k(c.r, skin.r), k(c.g, skin.g), k(c.b, skin.b));
+}
+
 export interface FaceRig {
   group: THREE.Group;
   /** Hair gathered at the back (Adelaide's bun), hidden under the helmet. */
@@ -318,6 +331,14 @@ export function buildFace(look: RiderLook): FaceRig {
   const pos = geo.attributes.position as THREE.BufferAttribute;
   const colors = new Float32Array(pos.count * 3);
   const blush = look.cheeks ? 0.55 : 0.22 + f.ruddy * 0.4;
+  // How much darker the stubble is than the skin, in each channel.
+  const stubble = look.stubble ? stubbleShade(look.stubble, skinColor) : null;
+  const stubbleAt = (y: number, z: number, front: number) => {
+    const jaw = smoothstep(-y, 0.02, 0.05) * smoothstep(front, -0.35, 0.1);
+    const lip = Math.exp(-(((y + 0.04) / 0.006) ** 2)) * Math.exp(-((z / 0.03) ** 2));
+    const mouth = Math.exp(-(((y + 0.05) / 0.006) ** 2) - (z / 0.026) ** 2);
+    return Math.max(0, Math.min(1, jaw + lip) - mouth * 0.8) * (0.85 + 0.15 * noise3(y * 400, z * 400, front * 40));
+  };
   for (let i = 0; i < pos.count; i++) {
     const front = smoothstep(dirs[i * 3], 0.3, 0.7);
     const y = pos.getY(i), z = pos.getZ(i), az = Math.abs(z);
@@ -330,7 +351,9 @@ export function buildFace(look: RiderLook): FaceRig {
     const socket = 0.1 * gauss(y, az, 0.014, 0.034, 0.012, 0.018) * front;
     const nostril = 0.5 * gauss(y, az, -0.0285, 0.0066 * f.noseWidth, 0.0017, 0.0027) * front;
     const shade = 1 - socket - nostril;
-    colors.set([r * shade, g * shade, b * shade], i * 3);
+    // A few days' growth over the jaw, the chin and the upper lip.
+    const growth = stubble ? stubbleAt(y, z, dirs[i * 3]) : 0;
+    colors.set([(r - growth * (stubble?.r ?? 0)) * shade, (g - growth * (stubble?.g ?? 0)) * shade, (b - growth * (stubble?.b ?? 0)) * shade], i * 3);
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   const skin = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.58, vertexColors: true });
@@ -530,6 +553,31 @@ export function buildFace(look: RiderLook): FaceRig {
     );
     group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.0052, 8), beardMat));
   }
+
+  if (look.moustache) {
+    // A big bushy moustache over the lip, the ends swept down and out.
+    const mMat = new THREE.MeshStandardMaterial({ color: look.moustache, map: strandTexture(41), roughness: 0.85 });
+    for (const side of [-1, 1]) {
+      const pts = [[-0.03, 0.002], [-0.034, 0.016], [-0.039, 0.03], [-0.047, 0.042], [-0.058, 0.05]].map(
+        ([y, z]) => new THREE.Vector3(shape.surfaceX(y, side * z) + 0.006, y, side * z),
+      );
+      const tube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 20, 0.0105, 10);
+      // Fuller in the middle, thinning to the tips.
+      const pos = tube.attributes.position as THREE.BufferAttribute;
+      const centre = new THREE.Vector3();
+      for (let i = 0; i < pos.count; i++) {
+        const k = Math.floor(i / 11) / 20;
+        const p = new THREE.CatmullRomCurve3(pts).getPoint(k, centre);
+        const taper = 1 - 0.55 * k * k;
+        pos.setXYZ(i, p.x + (pos.getX(i) - p.x) * taper, p.y + (pos.getY(i) - p.y) * taper * 0.8, p.z + (pos.getZ(i) - p.z) * taper);
+      }
+      tube.computeVertexNormals();
+      group.add(new THREE.Mesh(tube, mMat));
+    }
+  }
+
+  // Under the Dark Lord's helmet there's nothing to see.
+  if (look.headwear === 'mask') group.visible = false;
 
   group.traverse((o) => (o.castShadow = true));
 

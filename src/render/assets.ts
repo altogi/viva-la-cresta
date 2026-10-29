@@ -3,6 +3,7 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
 /** One mesh of a model, split by material, ready to be instanced. */
 export interface Part {
@@ -142,6 +143,11 @@ function billboard(part: Part) {
 
 export async function loadAssets(names: string[] = []): Promise<Assets> {
   const loader = new GLTFLoader();
+  // The riders are Draco-compressed (blender/riders_mpfb.py); the decoder is in public/draco.
+  const draco = new DRACOLoader();
+  draco.setDecoderPath(`${base}draco/`);
+  draco.setDecoderConfig({ type: 'wasm' });
+  loader.setDRACOLoader(draco);
   const [trees, mountains, ...more] = await Promise.all([load(loader, 'trees.glb'), load(loader, 'mountains.glb'), ...names.map((n) => load(loader, `${n}.glb`))]);
   const treeParts = partsOf(trees);
   prepareFoliage(treeParts);

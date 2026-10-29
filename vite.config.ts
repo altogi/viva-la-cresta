@@ -25,7 +25,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,jpg,webp}'],
+        // (The wasm is the Draco decoder for the riders' compressed model.)
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,jpg,webp,wasm}'],
         // The club's typefaces (Outfit, Habibi) from Google Fonts, kept for offline play.
         runtimeCaching: [
           {

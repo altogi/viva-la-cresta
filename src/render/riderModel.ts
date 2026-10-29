@@ -19,7 +19,7 @@ import { bakeParts } from './bake';
 import { RiderBody, type Joints } from './riderBody';
 import { LOOKS, type RiderLook } from './riderLooks';
 
-export type IdleAction = 'comb' | 'flirt' | 'burp';
+export type IdleAction = 'comb' | 'flirt' | 'burp' | 'tip' | 'wahoo' | 'choke';
 export type StandPosture = 'stand' | 'sit' | 'lean' | 'hold';
 export type Prop = 'cigarette' | 'cola';
 
@@ -52,6 +52,8 @@ const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 /** Where the stood-up toboggan's centre is, beside a standing rider (who stands at z = -0.75). */
 const STAND_TOBOGGAN = V(0.08, 0.62, -1.2);
 const smooth = (t: number) => t * t * (3 - 2 * t);
+/** How each rider celebrates at Celerina: calming the crowd, hopping, or the victorious gladiator. */
+const CHEERS: Record<string, 'calm' | 'hop' | 'gladiator'> = { maximilian: 'calm', adelaide: 'hop', remo: 'gladiator', kletus: 'gladiator', mario: 'hop', darklord: 'calm' };
 const window01 = (t: number, a: number, b: number) => THREE.MathUtils.smoothstep(t, a, a + 0.12) * (1 - THREE.MathUtils.smoothstep(t, b - 0.12, b));
 
 /**
@@ -115,6 +117,8 @@ interface Targets {
 export class RiderModel {
   /** Bodies made in Blender, by rider (set once the models have loaded); without them, the code-built body. */
   static templates: Partial<Record<string, THREE.Object3D>> = {};
+  /** What riders wear on their heads, made in Blender (head_<id>, in the head's frame with the face along -Z). */
+  static headwear: Partial<Record<string, THREE.Object3D>> = {};
   readonly root = new THREE.Group();
   /** The Blender body following this skeleton, when there is one. */
   private skinned: RiderBody | null = null;
@@ -413,6 +417,14 @@ export class RiderModel {
     this.torso.add(this.head);
     const face = buildFace(look);
     this.head.add(face.group);
+    const worn = look.headwear && RiderModel.headwear[look.id];
+    if (worn) {
+      // Worn riding too: Kletus's hat, Mario's cap, the Dark Lord's helmet.
+      const piece = worn.clone();
+      piece.position.set(0, 0, 0);
+      piece.rotation.set(0, Math.PI / 2, 0);
+      this.head.add(piece);
+    }
     // The helmet, worn when riding.
     if (look.helmet) {
       const shell = m(look.helmet.shell, 0.28, 0.15);
@@ -457,6 +469,14 @@ export class RiderModel {
   /** As setCastShadow, from the steepness of the ice under the rider, with a margin so it doesn't flicker. */
   castShadowOnSlope(angle: number) {
     this.setCastShadow(this.casting ? angle < 0.62 : angle < 0.48);
+  }
+
+  /** Black from head to toe, a shape against the snow: a rider still to unlock. */
+  silhouette() {
+    const shadow = new THREE.MeshBasicMaterial({ color: '#0a0c10' });
+    this.body.traverse((o) => {
+      if (o instanceof THREE.Mesh) o.material = shadow;
+    });
   }
 
   /** Put the helmet on or take it off (off to celebrate). */
@@ -673,6 +693,7 @@ export class RiderModel {
    * On their feet beside the toboggan at Celerina, celebrating each in their own way: Maximilian
    * cocky, arms out and palms down, calming the masses as he looks them over; Adelaide hopping with
    * excitement, hands up; Remo one fist raised high like a victorious gladiator, the other on his hip.
+   * Kletus celebrates like Remo, Mario hops like Adelaide, the Dark Lord calms the crowd like Maximilian.
    */
   private cheeringTargets(time: number): { targets: Targets; wink: number; open: number } {
     const s = this.look.scale;
@@ -687,7 +708,8 @@ export class RiderModel {
       elbowPoles: [V(pelvis.x, pelvis.y + 0.4, pelvis.z - 1), V(pelvis.x, pelvis.y + 0.4, pelvis.z + 1)],
       kneePoles: [V(pelvis.x + 1, 0.4, pelvis.z), V(pelvis.x + 1, 0.4, pelvis.z)],
     });
-    if (this.look.id === 'maximilian') {
+    const style = CHEERS[this.look.id];
+    if (style === 'calm') {
       // Arms out low to the sides, palms down, patting the air: "settle down, settle down".
       const pelvis = V(-0.25, 0.92 * s, -0.62);
       const shoulderY = pelvis.y + this.shoulder;
@@ -704,7 +726,7 @@ export class RiderModel {
         open: 0,
       };
     }
-    if (this.look.id === 'adelaide') {
+    if (style === 'hop') {
       // Little hops, landing on bent knees, hands up over her head.
       const phase = (time * 1.9) % 1;
       const hop = phase < 0.62 ? Math.sin((phase / 0.62) * Math.PI) * 0.17 : 0;
@@ -745,7 +767,8 @@ export class RiderModel {
 
   /**
    * Standing beside the toboggan for the camera, facing +X: chin up, chest out, hands on hips,
-   * breathing. Gestures: Maximilian combs his hair back, Adelaide winks and blows a kiss, Remo burps.
+   * breathing. Gestures: Maximilian combs his hair back, Adelaide winks and blows a kiss, Remo burps,
+   * Kletus tips his hat, Mario jumps with a fist in the air, the Dark Lord reaches out and chokes.
    */
   private standingTargets(time: number, action: IdleAction | null, t: number): { targets: Targets; wink: number; open: number } {
     const s = this.look.scale;
@@ -789,6 +812,32 @@ export class RiderModel {
       const hand = lips.lerp(out, THREE.MathUtils.smoothstep(t, 0.45, 0.75));
       targets.hands[1] = targets.hands[1].lerp(hand, w);
       targets.elbowPoles[1] = V(pelvis.x - 0.2, pelvis.y + 0.2, pelvis.z + 1.2);
+    } else if (action === 'tip') {
+      // A finger to the brim of the hat and a slow nod: g'day.
+      const w = window01(t, 0, 1);
+      const nod = window01(t, 0.3, 0.75);
+      targets.hands[1] = targets.hands[1].lerp(V(pelvis.x + 0.2 * s, headY + 0.06 * s - nod * 0.03, pelvis.z + 0.1 * s), w);
+      targets.elbowPoles[1] = V(pelvis.x - 0.1, headY, pelvis.z + 1.3);
+      targets.headTilt -= nod * 0.3;
+    } else if (action === 'wahoo') {
+      // A jump with a fist in the air.
+      const w = window01(t, 0, 1);
+      const hop = Math.max(0, Math.sin(THREE.MathUtils.clamp((t - 0.2) / 0.45, 0, 1) * Math.PI)) * 0.22;
+      const crouch = Math.sin(THREE.MathUtils.clamp(t / 0.2, 0, 1) * Math.PI) * 0.06 + Math.sin(THREE.MathUtils.clamp((t - 0.65) / 0.2, 0, 1) * Math.PI) * 0.05;
+      open = window01(t, 0.15, 0.75);
+      targets.pelvis.y += hop - crouch;
+      for (const foot of targets.feet) foot.y += hop * 0.9;
+      targets.hands[1] = targets.hands[1].lerp(V(pelvis.x + 0.1 * s, headY + 0.3 * s + hop, pelvis.z + 0.18 * s), w);
+      targets.elbowPoles[1] = V(pelvis.x - 0.3, headY, pelvis.z + 1.2);
+      targets.headTilt += open * 0.25;
+    } else if (action === 'choke') {
+      // The arm out, the hand raised and closing on someone's throat at a distance.
+      const w = window01(t, 0, 1);
+      const squeeze = Math.sin(t * Math.PI * 6) * 0.01 * w;
+      targets.hands[1] = targets.hands[1].lerp(V(pelvis.x + 0.62 * s, shoulderY + 0.06 * s + squeeze, pelvis.z + 0.2 * s), w);
+      targets.elbowPoles[1] = V(pelvis.x, pelvis.y - 0.3, pelvis.z + 1.2);
+      targets.headTilt -= w * 0.12;
+      targets.headYaw = w * 0.1;
     } else if (action === 'burp') {
       // Hand on the belly, head back, a big open-mouthed burp.
       const w = window01(t, 0, 1);

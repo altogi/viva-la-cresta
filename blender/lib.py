@@ -147,8 +147,9 @@ def join(objects, name):
     return obj
 
 
-def export_glb(filename: str, objects):
-    """Export just these objects to public/models/<filename> (Y up, materials, packed images)."""
+def export_glb(filename: str, objects, draco=False):
+    """Export just these objects to public/models/<filename> (Y up, materials, packed images),
+    compressed with Draco if asked (the game's loader decodes it)."""
     os.makedirs(MODELS, exist_ok=True)
     bpy.ops.object.select_all(action="DESELECT")
     for o in objects:
@@ -164,6 +165,12 @@ def export_glb(filename: str, objects):
         export_texcoords=True,
         export_normals=True,
         export_materials="EXPORT",
+        export_draco_mesh_compression_enable=draco,
+        export_draco_mesh_compression_level=6,
+        export_draco_position_quantization=14,
+        export_draco_normal_quantization=10,
+        export_draco_texcoord_quantization=12,
+        export_draco_generic_quantization=12,
     )
     return {"file": path, "bytes": os.path.getsize(path)}
 

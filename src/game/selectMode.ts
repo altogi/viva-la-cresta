@@ -10,6 +10,7 @@ import { LOOKS } from '../render/riderLooks';
 import { toThree } from '../render/util';
 import { flagUrl } from '../ui/flags';
 import { saveSelection, type Selection } from './selection';
+import { UNLOCKS, unlockedRiders } from '../career/unlocks';
 
 const PROFILES: Record<RiderId, { flag: string; line: string; story: string; action: IdleAction }> = {
   maximilian: {
@@ -29,6 +30,24 @@ const PROFILES: Record<RiderId, { flag: string; line: string; story: string; act
     line: 'Heavy. Hairy. Hard to stop.',
     story: 'Born in Celerina, at the bottom of the run, and has ridden it every winter since the old wooden toboggans. Thirty years of Shuttlecock stories, most of them true. Tower knows his laugh before they see him.',
     action: 'burp',
+  },
+  kletus: {
+    flag: 'Australia · 45',
+    line: 'Tough as nails. Cold? Never heard of it.',
+    story: "Born in the bush, raised on crocodile: he has killed more of them than he can count, and the machete on his back has never left it. Rides in jean shorts and a vest, his hat full of sharks' teeth. Ripped, if it weren't for the beer belly.",
+    action: 'tip',
+  },
+  mario: {
+    flag: 'Italy · 40',
+    line: 'Short. Round. Nobody starts faster.',
+    story: 'A plumber from Padova who loves his pipes almost as much as his wife Daisy, whom he misses terribly and phones from the Sunny Bar every night. Eats a funny mushroom before every ride. Says it makes him go faster. It does.',
+    action: 'wahoo',
+  },
+  darklord: {
+    flag: 'Great Britain',
+    line: 'Fast. Flawless. Feared.',
+    story: 'Nobody at the club has seen his face, and nobody has asked. Here to put any aspiring youngling in their place. The cape, they say, does nothing for his drag. It doesn\'t need to.',
+    action: 'choke',
   },
 };
 
@@ -79,6 +98,8 @@ export class SelectMode {
   /** Which step of the choice is showing: the rider, then (for a free ride) the toboggan. */
   private stage: 'rider' | 'toboggan' = 'rider';
   private career = false;
+  /** Riders unlocked on this device; the rest show as a silhouette, with how to unlock them. */
+  private unlocked = unlockedRiders();
   /** Share of the screen height above the panel, eased as the panel changes height between steps. */
   private visible = 0;
   onDone: (selection: Selection) => void = () => {};
@@ -95,7 +116,9 @@ export class SelectMode {
     this.heading = track.heading(0);
     this.anchor.compose(this.spot, new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), this.heading), new THREE.Vector3(1, 1, 1));
     this.buildCards();
+    this.listenOnCards();
     $('select-done').addEventListener('click', () => {
+      if (!this.unlocked.has(this.selection.rider)) return;
       if (this.stage === 'rider' && !this.career) this.setStage('toboggan');
       else this.onDone(this.selection);
     });
@@ -123,7 +146,15 @@ export class SelectMode {
       const card = document.createElement('div');
       card.className = 'rider-card';
       card.dataset.rider = id;
-      card.innerHTML = `
+      const how = UNLOCKS[id]?.how;
+      if (!this.unlocked.has(id) && how) {
+        // Who's that rider? Only a silhouette, and what it takes.
+        card.classList.add('locked');
+        card.innerHTML = `
+        <div class="rider-name">???</div>
+        <div class="rider-unlock">Unlock this character by ${how}</div>`;
+      } else {
+        card.innerHTML = `
         <div class="rider-name"><img class="flag" src="${flagUrl(LOOKS[id].flag)}" alt="" />${r.name}</div>
         <div class="rider-flag">${p.flag}</div>
         <div class="rider-line">${p.line}</div>
@@ -131,13 +162,19 @@ export class SelectMode {
         <div class="rider-stats">${ratings(r)
           .map(([label, v]) => `<div class="stat"><span>${label}</span><i><b style="width:${Math.round(v * 100)}%"></b></i></div>`)
           .join('')}</div>`;
+      }
       list.append(card);
       const dot = document.createElement('button');
       dot.dataset.rider = id;
-      dot.setAttribute('aria-label', r.name);
+      dot.classList.toggle('locked', !this.unlocked.has(id));
+      dot.setAttribute('aria-label', this.unlocked.has(id) ? r.name : 'Locked rider');
       dot.addEventListener('click', () => this.choose({ ...this.selection, rider: id }, true));
       dots.append(dot);
     }
+  }
+
+  private listenOnCards() {
+    const list = $('select-riders');
     // Swiping the cards changes the rider as soon as the next card is mostly in view.
     list.addEventListener(
       'scroll',
@@ -184,7 +221,7 @@ export class SelectMode {
 
   private choose(selection: Selection, scroll: boolean) {
     this.selection = selection;
-    saveSelection(selection);
+    if (this.unlocked.has(selection.rider)) saveSelection(selection);
     this.refresh();
     if (scroll) this.scrollToRider('smooth');
   }
@@ -197,10 +234,12 @@ export class SelectMode {
   }
 
   private modelFor(rider: RiderId, toboggan: TobogganId): RiderModel {
-    const key = `${rider}-${toboggan}`;
+    const locked = !this.unlocked.has(rider);
+    const key = `${rider}-${toboggan}${locked ? '-locked' : ''}`;
     let model = this.models.get(key);
     if (!model) {
       model = new RiderModel(LOOKS[rider], toboggan, { helmet: false });
+      if (locked) model.silhouette();
       model.root.position.copy(this.spot);
       model.root.rotation.y = this.heading;
       this.models.set(key, model);
@@ -211,6 +250,7 @@ export class SelectMode {
   private refresh() {
     for (const dot of document.querySelectorAll<HTMLElement>('#select-dots button')) dot.classList.toggle('chosen', dot.dataset.rider === this.selection.rider);
     for (const b of document.querySelectorAll<HTMLElement>('[data-toboggan]')) b.classList.toggle('chosen', b.dataset.toboggan === this.selection.toboggan);
+    ($('select-done') as HTMLButtonElement).disabled = !this.unlocked.has(this.selection.rider);
     // Models are kept once built (and the others are built ahead, a frame at a time).
     const model = this.modelFor(this.selection.rider, this.selection.toboggan);
     if (model === this.preview) return;
@@ -246,6 +286,14 @@ export class SelectMode {
   open(options: { career?: boolean } = {}) {
     const career = !!options.career;
     this.career = career;
+    // Riders unlocked since last time come out of the shadows.
+    const unlocked = unlockedRiders();
+    if ([...unlocked].some((id) => !this.unlocked.has(id))) {
+      this.unlocked = unlocked;
+      this.buildCards();
+      for (const key of [...this.models.keys()]) if (key.endsWith('-locked')) this.models.delete(key);
+    }
+    if (!this.unlocked.has(this.selection.rider)) this.selection = { ...this.selection, rider: 'adelaide' };
     $('select').classList.toggle('career', career);
     if (career) this.selection = { ...this.selection, toboggan: 'traditional' };
     this.time = 0;
@@ -312,7 +360,7 @@ export class SelectMode {
   /** Build the other riders on this toboggan ahead of time, one per frame, so swiping never stalls. */
   private prebuild() {
     if (this.swap < 1) return;
-    const missing = this.ids.find((id) => !this.models.has(`${id}-${this.selection.toboggan}`));
+    const missing = this.ids.find((id) => !this.models.has(`${id}-${this.selection.toboggan}${this.unlocked.has(id) ? '' : '-locked'}`));
     if (missing) this.modelFor(missing, this.selection.toboggan);
   }
 

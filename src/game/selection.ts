@@ -1,6 +1,7 @@
 // The chosen rider and toboggan, remembered on this device.
 
 import { RIDERS, TOBOGGANS, type RiderId, type TobogganId } from '../sim/rider';
+import { unlockedRiders } from '../career/unlocks';
 
 export interface Selection {
   rider: RiderId;
@@ -12,7 +13,7 @@ const KEY = 'vlc-selection';
 export function loadSelection(): Selection {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? 'null') as Partial<Selection> | null;
-    if (saved && saved.rider && saved.rider in RIDERS && saved.toboggan && saved.toboggan in TOBOGGANS) {
+    if (saved && saved.rider && saved.rider in RIDERS && unlockedRiders().has(saved.rider) && saved.toboggan && saved.toboggan in TOBOGGANS) {
       return { rider: saved.rider, toboggan: saved.toboggan };
     }
   } catch {
