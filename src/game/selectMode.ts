@@ -32,21 +32,21 @@ const PROFILES: Record<RiderId, { flag: string; line: string; story: string; act
     action: 'burp',
   },
   kletus: {
-    flag: 'Australia · 45',
-    line: 'Tough as nails. Cold? Never heard of it.',
-    story: "Born in the bush, raised on crocodile: he has killed more of them than he can count, and the machete on his back has never left it. Rides in jean shorts and a vest, his hat full of sharks' teeth. Ripped, if it weren't for the beer belly.",
+    flag: 'Australia · 66',
+    line: 'Tough as nails. Cold? She’ll be right.',
+    story: "Grew up on a cattle station out past the Never Never, where the nearest neighbour was a day's drive and the creek was full of salties. He's put down more crocs than he's had cold beers, which is saying something, and the machete on his back has never once seen the inside of a drawer. Turned up in jean shorts, a vest and a hat full of shark's teeth, looked at the ice, and said: “Bit nippy.”",
     action: 'tip',
   },
   mario: {
     flag: 'Italy · 40',
-    line: 'Short. Round. Nobody starts faster.',
-    story: 'A plumber from Padova who loves his pipes almost as much as his wife Daisy, whom he misses terribly and phones from the Sunny Bar every night. Eats a funny mushroom before every ride. Says it makes him go faster. It does.',
+    line: 'Small. Quick. Gone before you’ve blinked.',
+    story: "A plumber from Padova who came up one January to fix the clubhouse boiler and never quite went home. Spends his evenings at the Sunny Bar on the phone to Daisy, who would like him back in Padova, please. Nobody gets off the start faster. Nobody asks about the mushrooms.",
     action: 'wahoo',
   },
   darklord: {
     flag: 'Great Britain',
-    line: 'Fast. Flawless. Feared.',
-    story: 'Nobody at the club has seen his face, and nobody has asked. Here to put any aspiring youngling in their place. The cape, they say, does nothing for his drag. It doesn\'t need to.',
+    line: 'Breathes loudly. Never loses.',
+    story: "A member since before anyone can remember: his name is on every board in the clubhouse, and nobody is quite sure what it is. Rides in the cape, against every rule in the book; the Tower has stopped mentioning it. Here to put any aspiring youngling in their place. Shuttlecock has never once had the pleasure.",
     action: 'choke',
   },
 };

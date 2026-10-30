@@ -19,6 +19,8 @@ export interface RiderLook {
   beard?: string;
   /** The beard grown long, hanging down to the chest (Kletus). */
   longBeard?: boolean;
+  /** How lined the face is with age (0 none, 1 an old man of the bush). */
+  wrinkles?: number;
   /** A few days' growth. */
   stubble?: string;
   /** A big moustache (Mario). */
@@ -135,8 +137,8 @@ export const LOOKS: Record<RiderId, RiderLook> = {
       bottle: true,
     },
   },
-  // Australian, from the bush: taller than Maximilian, ripped but for the beer belly, a long grey
-  // beard. An open leather vest over a bare chest, loose frayed denim shorts, work gloves and boots,
+  // Australian, from the bush, in his sixties: taller than Maximilian, ripped but for the beer
+  // belly, a weathered, lined face and a long grey beard. An open leather vest over a bare chest, loose frayed denim shorts, work gloves and boots,
   // a machete on his back, and a bush hat with a band of shark's teeth. Bare to the cold.
   kletus: {
     id: 'kletus',
@@ -146,8 +148,9 @@ export const LOOKS: Record<RiderId, RiderLook> = {
     arms: 1,
     limbs: 1.25,
     skin: '#c98d6c',
-    hair: { style: 'shaggy', color: '#6a625a' },
-    beard: '#a19c94',
+    hair: { style: 'shaggy', color: '#9b968e' },
+    beard: '#c9c5bd',
+    wrinkles: 1,
     longBeard: true,
     headwear: 'bushhat',
     helmet: null,

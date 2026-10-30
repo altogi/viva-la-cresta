@@ -49,8 +49,8 @@ MACROS = {
     "adelaide": {"gender": 0.0, "age": 0.5, "muscle": 0.55, "weight": 0.42, "proportions": 0.7, "height": 0.5, "cupsize": 0.28, "firmness": 0.7, "race": CAUCASIAN},
     # Swiss, 50: burly.
     "remo": {"gender": 1.0, "age": 0.69, "muscle": 0.75, "weight": 1.0, "proportions": 0.35, "height": 0.5, "cupsize": 0.5, "firmness": 0.5, "race": CAUCASIAN},
-    # Australian, from the bush: big, hard muscle.
-    "kletus": {"gender": 1.0, "age": 0.62, "muscle": 1.0, "weight": 0.72, "proportions": 0.55, "height": 0.5, "cupsize": 0.5, "firmness": 0.5, "race": CAUCASIAN},
+    # Australian, from the bush, in his sixties: big, hard muscle gone a little stringy.
+    "kletus": {"gender": 1.0, "age": 0.9, "muscle": 0.9, "weight": 0.72, "proportions": 0.55, "height": 0.5, "cupsize": 0.5, "firmness": 0.5, "race": CAUCASIAN},
     # Italian, short and stocky.
     "mario": {"gender": 1.0, "age": 0.6, "muscle": 0.5, "weight": 0.9, "proportions": 0.25, "height": 0.5, "cupsize": 0.5, "firmness": 0.5, "race": CAUCASIAN},
     # Broad and strong under the armour.

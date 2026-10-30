@@ -10,6 +10,7 @@ crown +Z, the rider's left +X; the skull's centre at the origin) and exported as
 """
 
 import math
+import random
 
 import bmesh
 import bpy
@@ -191,6 +192,18 @@ def bush_kit(rid, j, s, look, body, mats):
     seat = [v for v in bm.verts if abs(v.co.x) < 0.065 * s and crotch - 0.03 * s < v.co.z < j["pelvis"][2] + 0.1 * s]
     for _ in range(14):
         bmesh.ops.smooth_vert(bm, verts=seat, factor=0.7, use_axis_x=True, use_axis_y=True, use_axis_z=False)
+    # The crotch hangs lower than the body's: the insides of the two legs drawn together down to
+    # a hand's width below it, so the gap between the legs opens low, as in real shorts.
+    hipx = abs(j["hip_L"][0])
+    for v in bm.verts:
+        if crotch - 0.15 * s < v.co.z < crotch + 0.03 * s and abs(v.co.x) < hipx * 1.1:
+            k = clamp01((v.co.z - (crotch - 0.15 * s)) / (0.18 * s)) ** 0.7
+            inner = clamp01((hipx - abs(v.co.x)) / hipx * 2.5)
+            v.co.x *= 1 - 0.85 * k * inner
+    # Nor does it dip into the fork between the legs at the front: bridge it.
+    fork = [v for v in bm.verts if abs(v.co.x) < 0.05 * s and crotch - 0.1 * s < v.co.z < crotch + 0.03 * s and v.co.y < j["pelvis"][1]]
+    for _ in range(20):
+        bmesh.ops.smooth_vert(bm, verts=fork, factor=0.8, use_axis_x=True, use_axis_y=True, use_axis_z=True)
     hem = [(v.co.copy(), "L" if v.co.x > 0 else "R") for v in bm.verts if v.is_boundary and v.co.z < crotch - 0.05 * s]
     me = bpy.data.meshes.new(f"shorts_{rid}")
     bm.to_mesh(me)
@@ -210,6 +223,9 @@ def bush_kit(rid, j, s, look, body, mats):
         d = (Vector(j[f"knee_{side}"]) - Vector(j[f"hip_{side}"])).normalized()
         length = (0.01 + 0.016 * ((k * 7) % 5) / 4) * s
         parts.append(tube_along(f"fray_{rid}_{k}", [p - d * 0.006 * s, p + d * length], 0.0022 * s, fray))
+    # Grey chest hair in the open front of the vest: curly tufts lying on the skin, thickest over
+    # the breastbone and the chest, a line of it down over the belly.
+    parts.append(chest_hair(rid, j, s, b, surf))
     # The machete on his back: the handle up over the right shoulder, the blade down to the left hip,
     # in a pair of leather loops, on a strap across the chest.
     a0 = surf.hit((-0.11 * s, 1, j["neck"][2] - 0.03 * s), (0, -1, 0), 0.0)
@@ -259,6 +275,61 @@ def bush_kit(rid, j, s, look, body, mats):
         if front and over:
             parts.append(ribbon(f"strap_{rid}", over + front, 0.03 * s, strap, 0.005))
     return parts, rigid_parts
+
+
+def hair_texture(name):
+    """Curly grey hairs on a clear ground, for tufts of body hair."""
+    import numpy as np
+    r = random.Random(17)
+    img = np.zeros((128, 128, 4), dtype=np.float32)
+    for _ in range(46):
+        x, y = 10 + r.random() * 108, 120 - r.random() * 20
+        a = -math.pi / 2 + (r.random() - 0.5) * 0.9
+        shade = 0.55 + r.random() * 0.4
+        steps = 6 + int(r.random() * 6)
+        for k in range(steps):
+            a += (r.random() - 0.5) * 1.3
+            nx, ny = x + math.cos(a) * 9, y + math.sin(a) * 9
+            lib.stroke(img, x, y, nx, ny, (shade, shade, shade * 0.97, 0.95), 1.6)
+            x, y = nx, ny
+    return lib.image_from_array(name, img)
+
+
+def chest_hair(rid, j, s, b, surf):
+    """Tufts of grey hair on the chest and belly, cards lying a hair's breadth off the skin."""
+    mat = lib.material(f"{rid}_chesthair", (1, 1, 1), 0.9, image=hair_texture(f"{rid}_chesthair"), alpha_clip=True)
+    r = random.Random(29)
+    verts, faces, uvs = [], [], []
+    top = j["neck"][2] - 0.05 * s
+    bottom = shorts_top(j, s) + 0.02 * s
+    for _ in range(620):
+        z = bottom + (top - bottom) * r.random() ** 0.8
+        chest = z > j["chest"][2] - 0.02 * s
+        half = vest_half(z, j, s, b) * 0.95 if chest else 0.03 * s
+        x = (r.random() * 2 - 1) * half
+        # Thickest at the breastbone and across the pecs, thinning to a line down the belly.
+        keep = math.exp(-((x / (0.05 * s)) ** 2)) if chest else math.exp(-((x / (0.015 * s)) ** 2))
+        if r.random() > keep * (1.0 if chest else 0.8):
+            continue
+        h = surf.hit((x, -1, z), (0, 1, 0), 0.0015)
+        if not h:
+            continue
+        p, n = h
+        down = (Vector((0, 0, -1)) - n * (-n.z)).normalized()
+        across = n.cross(down).normalized()
+        turn = (r.random() - 0.5) * 1.4 + (0.6 if x > 0 else -0.6) * (1 if chest else 0)
+        d = (down * math.cos(turn) + across * math.sin(turn)).normalized()
+        w = n.cross(d).normalized()
+        size = (0.018 + r.random() * 0.016) * s
+        corners = [p - w * size * 0.5, p + w * size * 0.5, p + w * size * 0.5 + d * size, p - w * size * 0.5 + d * size]
+        # Lifted a touch at the far end, so it sits on the skin rather than in it.
+        corners[2] += n * size * 0.15
+        corners[3] += n * size * 0.15
+        k = len(verts)
+        verts += [tuple(c) for c in corners]
+        faces.append((k, k + 1, k + 2, k + 3))
+        uvs += [(0, 1), (1, 1), (1, 0), (0, 0)]
+    return lib.mesh_object(f"chesthair_{rid}", verts, faces, uvs, mat)
 
 
 # ---------- Mario: dungarees ----------

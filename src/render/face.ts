@@ -312,41 +312,105 @@ function stubbleShade(stubble: string, skin: THREE.Color): THREE.Color {
   return new THREE.Color(k(c.r, skin.r), k(c.g, skin.g), k(c.b, skin.b));
 }
 
+/** Loose strands of hair on a clear ground, for the wisps of a wild beard: thicker at the root. */
+function wispTexture(seed: number): THREE.CanvasTexture {
+  let s = seed;
+  const rand = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const tex = canvasTexture(64, 256, (g) => {
+    g.clearRect(0, 0, 64, 256);
+    for (let i = 0; i < 70; i++) {
+      const x = 6 + rand() * 52;
+      const end = 120 + rand() * 136;
+      const l = 200 + rand() * 55;
+      g.strokeStyle = `rgba(${l},${l},${l},${0.35 + rand() * 0.55})`;
+      g.lineWidth = 0.6 + rand() * 1.4;
+      g.beginPath();
+      g.moveTo(x, 0);
+      const bend = (rand() - 0.5) * 22;
+      g.bezierCurveTo(x + bend * 0.3, end * 0.35, x + bend, end * 0.7, x + bend * 1.3 + (rand() - 0.5) * 8, end);
+      g.stroke();
+    }
+  });
+  return tex;
+}
+
 /**
- * A long beard hanging from the chin to the chest: wide and full at the jaw, narrowing to a point,
- * curving forward a little over the chest, the strands running down it.
+ * A long, wild beard of wisps: narrow cards of strands rooted over the jaw, chin and upper lip,
+ * hanging down and a little forward with a sway of their own; longest and fullest at the chin,
+ * shorter on the cheeks, the moustache drooping over the mouth. Each wisp is its own shade of grey
+ * to white, and they're drawn see-through, so the beard is soft at its edges and light shows in it.
  */
-function longBeard(color: string): THREE.Mesh {
-  const rings = 24;
-  const around = 24;
+function wildBeard(shape: HeadShape, color: string): THREE.Mesh {
+  let seed = 977;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const base = new THREE.Color(color);
   const pos: number[] = [];
+  const col: number[] = [];
   const uv: number[] = [];
   const index: number[] = [];
-  for (let i = 0; i <= rings; i++) {
-    const t = i / rings;
-    const cx = 0.066 + 0.05 * t;
-    const cy = -0.08 - 0.2 * t;
-    const w = 0.06 * Math.pow(1 - t, 0.75) + 0.004;
-    const d = 0.032 * (1 - 0.65 * t) + 0.002;
-    for (let k = 0; k <= around; k++) {
-      const a = (k / around) * Math.PI * 2;
-      const wave = 1 + 0.07 * Math.sin(a * 6 + t * 11);
-      pos.push(cx + Math.cos(a) * d * wave, cy, Math.sin(a) * w * wave);
-      uv.push((k / around) * 3, t * 2);
+  const SEG = 6;
+  const card = (root: THREE.Vector3, dir0: THREE.Vector3, length: number, width: number, shade: number, curl = 0, fall = 1) => {
+    const start = pos.length / 3;
+    const p = root.clone();
+    const sway = (rand() - 0.5) * 0.5;
+    const twist = (rand() - 0.5) * 1.2;
+    const c = base.clone().multiplyScalar(shade);
+    for (let i = 0; i <= SEG; i++) {
+      const t = i / SEG;
+      // Hangs: the forward and outward lean gives way to gravity along the wisp.
+      const dir = new THREE.Vector3(dir0.x * (1 - 0.55 * t * fall) + curl * Math.sin(t * 5 + sway * 9) * 0.6, dir0.y * (1 - fall) - fall, dir0.z * (1 - 0.3 * t) + sway * t * 0.4 + curl * Math.cos(t * 5 + sway * 9) * 0.6).normalize();
+      if (i) p.addScaledVector(dir, length / SEG);
+      const across = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(1, 0, 0)).normalize();
+      across.applyAxisAngle(dir, twist * (0.4 + t));
+      const w = width * (1 - 0.65 * t);
+      for (const side of [-1, 1]) {
+        pos.push(p.x + across.x * w * side, p.y + across.y * w * side, p.z + across.z * w * side);
+        col.push(c.r, c.g, c.b);
+        uv.push(side < 0 ? 0 : 1, 1 - t);
+      }
+      if (i) {
+        const a = start + (i - 1) * 2;
+        index.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+      }
     }
+  };
+  const onFace = (y: number, z: number) => new THREE.Vector3(shape.surfaceX(y, z) - 0.002, y, z);
+  // The beard: over the jaw and chin, below the cheekbones, round the mouth.
+  for (let n = 0; n < 420; n++) {
+    const y = -0.03 - rand() * 0.095;
+    const z = (rand() * 2 - 1) * (0.072 - Math.max(0, -0.09 - y) * 0.6);
+    const lips = ((y + 0.049) / 0.014) ** 2 + (z / 0.032) ** 2;
+    if (lips < 1) continue;
+    if (y > -0.045 && Math.abs(z) < 0.045) continue;
+    const chin = Math.exp(-((z / 0.05) ** 2)) * smoothstep(-y, 0.06, 0.11);
+    const length = 0.045 + 0.13 * chin * (0.7 + rand() * 0.5) + rand() * 0.03;
+    const out = Math.sign(z) * (0.15 + Math.abs(z) * 4);
+    card(onFace(y, z), new THREE.Vector3(0.12 + 0.12 * chin, -1, out), length, 0.007 + rand() * 0.008, 0.8 + rand() * 0.45, 0.15);
   }
-  for (let i = 0; i < rings; i++) {
-    for (let k = 0; k < around; k++) {
-      const a = i * (around + 1) + k, b = a + 1, c = a + around + 1, d = c + 1;
-      index.push(a, c, b, b, c, d);
-    }
+  // Frizz: short, curling wisps standing out of it every which way, for the bushy look.
+  for (let n = 0; n < 520; n++) {
+    const y = -0.035 - rand() * 0.09;
+    const z = (rand() * 2 - 1) * (0.074 - Math.max(0, -0.09 - y) * 0.6);
+    if (((y + 0.049) / 0.016) ** 2 + (z / 0.034) ** 2 < 1) continue;
+    const out = new THREE.Vector3(0.6 + rand() * 0.6, (rand() - 0.6) * 1.2, Math.sign(z) * (0.3 + Math.abs(z) * 8) + (rand() - 0.5));
+    card(onFace(y, z), out, 0.02 + rand() * 0.035, 0.003 + rand() * 0.003, 0.9 + rand() * 0.4, 0.8, 0.35);
+  }
+  // The moustache: wisps from under the nose, drooping out over the corners of the mouth.
+  for (let n = 0; n < 70; n++) {
+    const z = (rand() * 2 - 1) * 0.034;
+    const y = -0.03 - rand() * 0.008;
+    card(onFace(y, z).add(new THREE.Vector3(0.004, 0, 0)), new THREE.Vector3(0.5, -1, Math.sign(z) * (0.6 + Math.abs(z) * 10)), 0.03 + rand() * 0.025, 0.005 + rand() * 0.004, 0.85 + rand() * 0.35);
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   geo.setIndex(index);
   geo.computeVertexNormals();
-  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, map: strandTexture(53), roughness: 0.85, side: THREE.DoubleSide }));
+  const mat = new THREE.MeshStandardMaterial({ map: wispTexture(61), vertexColors: true, roughness: 0.8, transparent: true, alphaTest: 0.08, depthWrite: false, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = 2;
+  return mesh;
 }
 
 export interface FaceRig {
@@ -387,7 +451,21 @@ export function buildFace(look: RiderLook): FaceRig {
     b -= (cheek + nose) * 0.24;
     const socket = 0.1 * gauss(y, az, 0.014, 0.034, 0.012, 0.018) * front;
     const nostril = 0.5 * gauss(y, az, -0.0285, 0.0066 * f.noseWidth, 0.0017, 0.0027) * front;
-    const shade = 1 - socket - nostril;
+    // Lines of age: across the forehead, crow's feet at the eyes, from the nose to the mouth, and
+    // bags under the eyes.
+    let lines = 0;
+    if (look.wrinkles) {
+      for (const y0 of [0.046, 0.056, 0.066, 0.076]) lines += Math.exp(-(((y - y0 - 0.003 * Math.sin(z * 45)) / 0.0019) ** 2)) * smoothstep(0.058 - az, 0, 0.015);
+      const crow = Math.atan2(y - 0.012, az - 0.05);
+      lines += 0.7 * Math.max(0, Math.sin(crow * 7)) ** 6 * gauss(y, az, 0.012, 0.062, 0.012, 0.01);
+      // Nose wing to mouth corner.
+      const k = THREE.MathUtils.clamp((0.0 - y) / 0.06, 0, 1);
+      const along = 0.019 + k * 0.014;
+      lines += Math.exp(-(((az - along) / 0.0025) ** 2)) * smoothstep(-y, 0.012, 0.022) * (1 - smoothstep(-y, 0.055, 0.065));
+      lines += 0.5 * gauss(y, az, -0.002, 0.033, 0.004, 0.011);
+      lines *= look.wrinkles * front;
+    }
+    const shade = 1 - socket - nostril - 0.42 * Math.min(1, lines);
     // A few days' growth over the jaw, the chin and the upper lip.
     const growth = stubble ? stubbleAt(y, z, dirs[i * 3]) : 0;
     colors.set([(r - growth * (stubble?.r ?? 0)) * shade, (g - growth * (stubble?.g ?? 0)) * shade, (b - growth * (stubble?.b ?? 0)) * shade], i * 3);
@@ -582,14 +660,21 @@ export function buildFace(look: RiderLook): FaceRig {
         const under = Math.min(-0.072 - p.y, (0.66 - t) * 0.25);
         return Math.min(Math.max(cheeks, under), (Math.sqrt(lipsClear(p)) - 1) * 0.012);
       },
-      (p, _t, inside) => inside * (0.0085 + 0.012 * smoothstep(p.y, -0.07, -0.125) + noise3(p.x * 60, p.y * 60, p.z * 60) * 0.004),
+      (p, _t, inside) => inside * (look.longBeard ? 0.004 : 0.0085 + 0.012 * smoothstep(p.y, -0.07, -0.125) + noise3(p.x * 60, p.y * 60, p.z * 60) * 0.004),
     );
-    group.add(new THREE.Mesh(beardGeo, beardMat));
-    const pts = [[-0.051, -0.034], [-0.041, -0.024], [-0.037, -0.01], [-0.0365, 0], [-0.037, 0.01], [-0.041, 0.024], [-0.051, 0.034]].map(
-      ([y, z]) => new THREE.Vector3(shape.surfaceX(y, z) + 0.0035, y, z),
-    );
-    group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.0052, 8), beardMat));
-    if (look.longBeard) group.add(longBeard(look.beard));
+    if (look.longBeard) {
+      // A long, wild beard: a thin, darker layer on the skin for its roots, then hundreds of loose
+      // wisps of hair you can see through, longest at the chin, the moustache drooping over the lip.
+      beardMat.color.multiplyScalar(0.7);
+      group.add(new THREE.Mesh(beardGeo, beardMat));
+      group.add(wildBeard(shape, look.beard));
+    } else {
+      group.add(new THREE.Mesh(beardGeo, beardMat));
+      const pts = [[-0.051, -0.034], [-0.041, -0.024], [-0.037, -0.01], [-0.0365, 0], [-0.037, 0.01], [-0.041, 0.024], [-0.051, 0.034]].map(
+        ([y, z]) => new THREE.Vector3(shape.surfaceX(y, z) + 0.0035, y, z),
+      );
+      group.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.0052, 8), beardMat));
+    }
   }
 
   if (look.moustache) {
@@ -624,7 +709,7 @@ export function buildFace(look: RiderLook): FaceRig {
     bun,
     express(wink: number, open: number) {
       // A slightly lowered, defiant lid; the left eye winks shut. The lower lids lift in the grin.
-      upperLids.forEach((lid, i) => (lid.rotation.z = -0.12 - (i === 0 ? wink * 1.1 : 0) - open * 0.25));
+      upperLids.forEach((lid, i) => (lid.rotation.z = -0.12 - 0.22 * (look.wrinkles ?? 0) - (i === 0 ? wink * 1.1 : 0) - open * 0.25));
       lowerLids.forEach((lid, i) => (lid.rotation.z = 0.12 * f.grin + (i === 0 ? wink * 0.3 : 0)));
       for (const mesh of morphing) mesh.morphTargetInfluences![0] = open;
     },
